@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f3f2f2" />
+    <title>WelliPay Provider | ABC Healthcare</title>
+    <link rel="stylesheet" href="_ds/styles.css" />
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar" aria-label="Main navigation">
+        <a class="brand" href="#dashboard" aria-label="WelliPay Provider home">
+          <span class="brand-mark"></span>
+          <span><strong>WelliPay</strong><small>PROVIDER</small></span>
+        </a>
+        <div class="tenant">
+          <strong>ABC Healthcare</strong>
+          <span>Multi-branch hospital · 5 branches</span>
+        </div>
+        <nav id="navigation"></nav>
+        <div class="sidebar-foot"><span class="status-dot"></span> All systems operational</div>
+      </aside>
+
+      <div class="app-main">
+        <header class="topbar">
+          <button class="icon-button menu-toggle" type="button" aria-label="Open navigation" data-action="toggle-menu">
+            <span class="menu-glyph"></span>
+          </button>
+          <div class="topbar-title" id="page-title">Dashboard</div>
+          <div class="topbar-tools">
+            <label class="branch-picker">
+              <span class="sr-only">Branch</span>
+              <select id="branch-select" aria-label="Select branch">
+                <option>All branches</option><option>Wuse</option><option>Garki</option><option>Maitama</option><option>Kaduna</option><option>Lagos</option>
+              </select>
+            </label>
+            <span class="role-tag">Finance Manager</span>
+            <button class="avatar" type="button" aria-label="Adaeze Okafor account">AO</button>
+          </div>
+        </header>
+        <main class="content" id="content" tabindex="-1"></main>
+      </div>
+    </div>
+    <div class="scrim" id="scrim" data-action="close-menu"></div>
+    <div id="modal-root"></div>
+    <script src="app.js" defer></script>
+  </body>
+</html>

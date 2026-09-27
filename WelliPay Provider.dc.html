@@ -1,0 +1,1390 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/modernist-a11364a6-4290-4e11-818b-fb5d9db692f0/styles.css">
+<script src="_ds/modernist-a11364a6-4290-4e11-818b-fb5d9db692f0/_ds_bundle.js"></script>
+<style>
+body{margin:0}
+a{color:var(--color-accent);text-decoration:none}
+a:hover{color:var(--color-accent-600)}
+*{box-sizing:border-box}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:var(--color-neutral-400)}
+@keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</helmet>
+<div style="display:flex;height:100vh;overflow:hidden;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body);font-size:14px">
+  <aside style="width:240px;flex:none;background:var(--color-surface);border-right:2px solid var(--color-divider);display:flex;flex-direction:column;overflow-y:auto;padding:20px 0">
+    <div style="padding:0 20px 20px;display:flex;flex-direction:column;gap:4px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="width:10px;height:10px;background:var(--color-accent);flex:none"></span>
+        <span style="font-family:var(--font-heading);font-weight:800;font-size:17px;letter-spacing:-0.01em">WelliPay</span>
+      </div>
+      <span style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-accent-700);margin-left:18px">Provider</span>
+    </div>
+    <div style="height:2px;background:var(--color-divider);margin:0 0 16px"></div>
+    <div style="padding:0 20px 16px">
+      <div style="font-family:var(--font-heading);font-weight:800;font-size:14px">ABC Healthcare</div>
+      <div style="font-size:11px;color:color-mix(in srgb,var(--color-text) 60%,transparent)">Multi-branch hospital &middot; 5 branches</div>
+    </div>
+    <sc-for list="{{ navGroups }}" as="grp" hint-placeholder-count="6">
+      <div style="padding:10px 20px 4px">
+        <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 55%,transparent);margin-bottom:4px">{{ grp.name }}</div>
+        <sc-for list="{{ grp.items }}" as="item" hint-placeholder-count="4">
+          <a href="javascript:void(0)" onClick="{{ item.onClick }}" style="{{ item.style }}">{{ item.label }}</a>
+        </sc-for>
+      </div>
+    </sc-for>
+  </aside>
+
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:16px;padding:14px 28px;border-bottom:2px solid var(--color-divider);background:var(--color-bg)">
+      <div style="font-family:var(--font-heading);font-weight:800;font-size:19px;letter-spacing:-0.01em">{{ activeLabel }}</div>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:14px">
+        <span style="font-size:13px;color:color-mix(in srgb,var(--color-text) 65%,transparent)">All branches &#9662;</span>
+        <span class="tag tag-neutral">Finance Manager</span>
+        <span style="width:32px;height:32px;background:var(--color-accent-100);color:var(--color-accent-800);display:flex;align-items:center;justify-content:center;font-family:var(--font-heading);font-weight:800;font-size:12px;flex:none">AO</span>
+      </div>
+    </div>
+
+    <div style="flex:1;overflow-y:auto;padding:28px">
+
+      <sc-if value="{{ isDashboard }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;flex-direction:column;gap:28px;animation:fadein .2s ease">
+
+          <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:12px">
+            <div>
+              <h1 style="margin:0;font-size:28px">Good afternoon, Adaeze</h1>
+              <p style="margin:4px 0 0;color:color-mix(in srgb,var(--color-text) 60%,transparent);font-size:13px">Sunday, September 27, 2026 &middot; ABC Healthcare, consolidated</p>
+            </div>
+            <div class="seg">
+              <label class="seg-opt"><input type="radio" checked="{{ isToday }}" onChange="{{ setFilterToday }}"/>Today</label>
+              <label class="seg-opt"><input type="radio" checked="{{ isWeek }}" onChange="{{ setFilterWeek }}"/>Week</label>
+              <label class="seg-opt"><input type="radio" checked="{{ isMonth }}" onChange="{{ setFilterMonth }}"/>Month</label>
+              <label class="seg-opt"><input type="radio" checked="{{ isQuarter }}" onChange="{{ setFilterQuarter }}"/>Quarter</label>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px">
+            <sc-for list="{{ todayTiles }}" as="tile" hint-placeholder-count="8">
+              <div class="card elev-sm">
+                <span class="card-kicker">{{ tile.kicker }}</span>
+                <span class="card-title" style="font-size:24px">{{ tile.value }}</span>
+                <span class="card-meta">{{ tile.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:20px">
+            <div class="card elev-sm" style="gap:14px">
+              <span class="card-kicker">Revenue trend &middot; last 7 days</span>
+              <div style="display:flex;align-items:flex-end;gap:10px;height:120px;padding-top:8px">
+                <sc-for list="{{ revenueTrend }}" as="day" hint-placeholder-count="7">
+                  <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end">
+                    <div style="width:100%;background:var(--color-accent-500);height:{{ day.pct }}"></div>
+                    <span style="font-size:10px;color:color-mix(in srgb,var(--color-text) 55%,transparent)">{{ day.label }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+            <div class="card elev-sm" style="gap:14px">
+              <span class="card-kicker">Payer mix &middot; this month</span>
+              <div style="display:flex;height:22px;overflow:hidden">
+                <sc-for list="{{ payerMix }}" as="seg" hint-placeholder-count="4">
+                  <div style="width:{{ seg.pct }};background:{{ seg.color }}"></div>
+                </sc-for>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:6px">
+                <sc-for list="{{ payerMix }}" as="seg" hint-placeholder-count="4">
+                  <div style="display:flex;align-items:center;gap:6px;font-size:12px">
+                    <span style="width:8px;height:8px;background:{{ seg.color }};flex:none"></span>{{ seg.name }} {{ seg.pct }}
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+
+          <div class="card elev-sm" style="gap:14px">
+            <span class="card-kicker">Branch revenue</span>
+            <sc-for list="{{ branchBars }}" as="b" hint-placeholder-count="5">
+              <div style="display:grid;grid-template-columns:100px 1fr 110px;align-items:center;gap:12px">
+                <span style="font-size:13px;font-weight:600">{{ b.name }}</span>
+                <div style="height:10px;background:var(--color-neutral-200)"><div style="height:100%;width:{{ b.pct }};background:var(--color-accent)"></div></div>
+                <span style="font-size:12px;text-align:right;font-feature-settings:'tnum' 1">{{ b.value }}</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:20px">
+            <div class="card elev-sm" style="gap:12px">
+              <div style="display:flex;justify-content:space-between;align-items:baseline">
+                <span class="card-kicker">Receivables &amp; ageing</span>
+                <a href="javascript:void(0)" onClick="{{ goReceivables }}" style="font-size:12px">View all &#8594;</a>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center">
+                <sc-for list="{{ receivablesSummary }}" as="r" hint-placeholder-count="4">
+                  <div>
+                    <div style="font-family:var(--font-heading);font-weight:800;font-size:18px">{{ r.value }}</div>
+                    <div style="font-size:10px;color:color-mix(in srgb,var(--color-text) 55%,transparent);text-transform:uppercase;letter-spacing:0.06em">{{ r.label }}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div class="card elev-sm" style="gap:12px">
+              <div style="display:flex;justify-content:space-between;align-items:baseline">
+                <span class="card-kicker">Smart Reconciliation Centre</span>
+                <a href="javascript:void(0)" onClick="{{ goReconciliation }}" style="font-size:12px">Open workspace &#8594;</a>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center;margin-bottom:6px">
+                <div><div style="font-family:var(--font-heading);font-weight:800;font-size:18px">{{ matchedCount }}</div><div style="font-size:10px;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 55%,transparent)">Matched</div></div>
+                <div><div style="font-family:var(--font-heading);font-weight:800;font-size:18px;color:var(--color-accent-700)">{{ unmatchedCount }}</div><div style="font-size:10px;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 55%,transparent)">Unmatched</div></div>
+                <div><div style="font-family:var(--font-heading);font-weight:800;font-size:18px">{{ exceptionsCount }}</div><div style="font-size:10px;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 55%,transparent)">Exceptions</div></div>
+                <div><div style="font-family:var(--font-heading);font-weight:800;font-size:18px">{{ duplicateCount }}</div><div style="font-size:10px;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 55%,transparent)">Duplicate</div></div>
+              </div>
+              <sc-for list="{{ unmatched }}" as="u" hint-placeholder-count="3">
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--color-divider)">
+                  <div>
+                    <div style="font-size:13px;font-weight:600">{{ u.amountFmt }} &middot; {{ u.source }}</div>
+                    <div style="font-size:11px;color:color-mix(in srgb,var(--color-text) 55%,transparent)">{{ u.suggestion }}</div>
+                  </div>
+                  <button type="button" class="btn btn-secondary" onClick="{{ u.onOpen }}" style="font-size:12px;padding:5px 10px">Match</button>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:20px">
+            <div class="card elev-sm" style="gap:10px">
+              <span class="card-kicker">Revenue leakage alerts</span>
+              <sc-for list="{{ leakageAlerts }}" as="al" hint-placeholder-count="3">
+                <div style="padding:10px 0;border-top:1px solid var(--color-divider)">
+                  <div style="display:flex;justify-content:space-between;align-items:baseline">
+                    <span style="font-family:var(--font-heading);font-weight:800;font-size:16px;color:var(--color-accent-700)">{{ al.amountFmt }}</span>
+                    <span class="tag tag-accent">{{ al.branch }}</span>
+                  </div>
+                  <p style="margin:4px 0 0;font-size:12.5px;opacity:0.85">{{ al.reason }}</p>
+                </div>
+              </sc-for>
+            </div>
+
+            <div class="card elev-sm" style="gap:10px">
+              <span class="card-kicker">Claim scrubbing readiness</span>
+              <sc-for list="{{ scrubbingClaims }}" as="c" hint-placeholder-count="3">
+                <div style="padding:10px 0;border-top:1px solid var(--color-divider)">
+                  <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+                    <span style="font-size:13px;font-weight:600">{{ c.id }} &middot; {{ c.hmo }}</span>
+                    <span style="font-family:var(--font-heading);font-weight:800;font-size:14px">{{ c.readiness }}%</span>
+                  </div>
+                  <div style="height:6px;background:var(--color-neutral-200);margin-bottom:6px"><div style="height:100%;width:{{ c.readinessPct }};background:var(--color-accent)"></div></div>
+                  <sc-if value="{{ c.hasIssues }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex;gap:6px;flex-wrap:wrap">
+                      <sc-for list="{{ c.issues }}" as="iss" hint-placeholder-count="2">
+                        <span class="tag tag-outline">{{ iss }}</span>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ c.noIssues }}" hint-placeholder-val="{{ false }}">
+                    <span class="tag tag-neutral">Ready to submit</span>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div class="card elev-sm" style="gap:10px">
+            <span class="card-kicker">Approval queue &middot; refunds &amp; write-offs</span>
+            <sc-if value="{{ hasApprovals }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex;flex-direction:column">
+                <div style="display:grid;grid-template-columns:100px 110px 1fr 1.4fr auto;gap:12px;padding:8px 0;border-bottom:2px solid var(--color-divider);font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 60%,transparent)">
+                  <span>Type</span><span>Amount</span><span>Requester</span><span>Reason</span><span></span>
+                </div>
+                <sc-for list="{{ approvals }}" as="ap" hint-placeholder-count="3">
+                  <div style="display:grid;grid-template-columns:100px 110px 1fr 1.4fr auto;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--color-divider)">
+                    <span>{{ ap.type }}</span>
+                    <span style="font-feature-settings:'tnum' 1">{{ ap.amountFmt }}</span>
+                    <span>{{ ap.requester }}</span>
+                    <span>{{ ap.reason }}</span>
+                    <span style="white-space:nowrap">
+                      <button type="button" class="btn btn-secondary" onClick="{{ ap.onReject }}" style="font-size:12px;padding:5px 10px;margin-right:6px">Reject</button>
+                      <button type="button" class="btn btn-primary" onClick="{{ ap.onApprove }}" style="font-size:12px;padding:5px 10px">Approve</button>
+                    </span>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{ noApprovals }}" hint-placeholder-val="{{ false }}">
+              <p style="margin:4px 0;font-size:13px;opacity:0.7">Queue is clear &mdash; nothing pending approval.</p>
+            </sc-if>
+          </div>
+
+          <div class="card elev-sm" style="gap:12px">
+            <span class="card-kicker">Ask WelliPay</span>
+            <div style="display:flex;flex-direction:column;gap:10px;max-height:220px;overflow-y:auto;padding-right:4px">
+              <sc-for list="{{ copilotMessages }}" as="m" hint-placeholder-count="1">
+                <div style="{{ m.wrapStyle }}">
+                  <div style="{{ m.bubbleStyle }}">{{ m.text }}</div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <sc-for list="{{ copilotSuggestions }}" as="s" hint-placeholder-count="4">
+                <button type="button" class="tag tag-outline" style="cursor:pointer;border:1px solid var(--color-accent);background:none" onClick="{{ s.onClick }}">{{ s.text }}</button>
+              </sc-for>
+            </div>
+            <div style="display:flex;gap:8px">
+              <input class="input" placeholder="Ask about revenue, claims, receivables..." value="{{ copilotInput }}" onChange="{{ setCopilotInput }}" onKeyDown="{{ handleCopilotKey }}"/>
+              <button type="button" class="btn btn-primary" onClick="{{ submitCopilot }}">Ask</button>
+            </div>
+          </div>
+
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isReceivables }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:20px;animation:fadein .2s ease">
+          <div>
+            <span class="card-kicker">Accounts Receivable</span>
+            <h2 style="margin:4px 0 0">Receivables &amp; ageing</h2>
+          </div>
+          <div class="card elev-sm" style="padding:0;overflow-x:auto">
+            <table class="table">
+              <thead><tr><th>Payer</th><th>0&ndash;30 days</th><th>31&ndash;60 days</th><th>61&ndash;90 days</th><th>90+ days</th><th>Total</th></tr></thead>
+              <tbody>
+                <sc-for list="{{ agingRows }}" as="row" hint-placeholder-count="5">
+                  <tr>
+                    <td style="font-weight:600">{{ row.payer }}</td>
+                    <td>{{ row.b0 }}</td><td>{{ row.b30 }}</td><td>{{ row.b60 }}</td><td>{{ row.b90 }}</td>
+                    <td style="font-weight:600">{{ row.total }}</td>
+                  </tr>
+                </sc-for>
+                <tr style="background:var(--color-surface)">
+                  <td style="font-weight:800">Total</td>
+                  <td style="font-weight:800">{{ agingTotals.b0 }}</td>
+                  <td style="font-weight:800">{{ agingTotals.b30 }}</td>
+                  <td style="font-weight:800">{{ agingTotals.b60 }}</td>
+                  <td style="font-weight:800">{{ agingTotals.b90 }}</td>
+                  <td style="font-weight:800">{{ agingTotals.total }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isReconciliation }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:20px;animation:fadein .2s ease">
+          <div>
+            <span class="card-kicker">Smart Reconciliation Centre</span>
+            <h2 style="margin:4px 0 0">Reconciliation workspace</h2>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px">
+            <div class="card elev-sm"><span class="card-title">{{ matchedCount }}</span><span class="card-meta">Matched</span></div>
+            <div class="card elev-sm"><span class="card-title" style="color:var(--color-accent-700)">{{ unmatchedCount }}</span><span class="card-meta">Unmatched</span></div>
+            <div class="card elev-sm"><span class="card-title">{{ exceptionsCount }}</span><span class="card-meta">Exceptions</span></div>
+            <div class="card elev-sm"><span class="card-title">{{ duplicateCount }}</span><span class="card-meta">Duplicate</span></div>
+          </div>
+          <div class="card elev-sm" style="gap:8px">
+            <span class="card-kicker">Unmatched payments</span>
+            <sc-if value="{{ hasUnmatched }}" hint-placeholder-val="{{ true }}">
+              <sc-for list="{{ unmatched }}" as="u" hint-placeholder-count="3">
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-top:1px solid var(--color-divider)">
+                  <div>
+                    <div style="font-size:13px;font-weight:600">{{ u.amountFmt }} &middot; {{ u.source }} &middot; {{ u.date }}</div>
+                    <div style="font-size:11px;color:color-mix(in srgb,var(--color-text) 55%,transparent)">Suggested: {{ u.suggestion }}</div>
+                  </div>
+                  <button type="button" class="btn btn-secondary" onClick="{{ u.onOpen }}" style="font-size:12px;padding:5px 10px">Review match</button>
+                </div>
+              </sc-for>
+            </sc-if>
+            <sc-if value="{{ noUnmatched }}" hint-placeholder-val="{{ false }}">
+              <p style="margin:4px 0;font-size:13px;opacity:0.7">Nothing unmatched right now.</p>
+            </sc-if>
+          </div>
+          <div class="card elev-sm" style="padding:0;overflow-x:auto">
+            <span class="card-kicker" style="padding:14px 14px 0;display:block">Recently matched</span>
+            <table class="table">
+              <thead><tr><th>Invoice</th><th>Amount</th><th>Matched via</th><th>When</th></tr></thead>
+              <tbody>
+                <sc-for list="{{ matchedLog }}" as="m" hint-placeholder-count="3">
+                  <tr><td>{{ m.invoice }}</td><td>{{ m.amountFmt }}</td><td>{{ m.via }}</td><td>{{ m.when }}</td></tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isHospitalDesk }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:24px;animation:fadein .2s ease">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:12px">
+            <div>
+              <span class="card-kicker">Hospital Desk</span>
+              <h2 style="margin:4px 0 0">Front desk &amp; cashier</h2>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button type="button" class="btn btn-secondary">New Patient</button>
+              <button type="button" class="btn btn-secondary">Find Patient</button>
+              <button type="button" class="btn btn-primary" onClick="{{ openWellipass }}">Scan WelliPass</button>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px">
+            <sc-for list="{{ todayActivity }}" as="tile" hint-placeholder-count="4">
+              <div class="card elev-sm">
+                <span class="card-kicker">{{ tile.kicker }}</span>
+                <span class="card-title" style="font-size:22px">{{ tile.value }}</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <div class="card elev-sm" style="gap:8px">
+            <span class="card-kicker">Payment queue</span>
+            <sc-for list="{{ queue }}" as="q" hint-placeholder-count="5">
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--color-divider)">
+                <span style="font-size:13px;font-weight:600">{{ q.patient }}</span>
+                <span style="font-size:13px;font-feature-settings:'tnum' 1">{{ q.amountFmt }}</span>
+                <span class="{{ q.tagClass }}">{{ q.status }}</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <div class="card elev-sm" style="gap:14px;max-width:560px">
+            <span class="card-kicker">Create bill &amp; collect payment</span>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;padding:10px;background:var(--color-bg)">
+              <div>
+                <div style="font-weight:700;font-size:14px">{{ hdPatient.name }} &middot; {{ hdPatient.welliId }}</div>
+                <div style="font-size:12px;opacity:0.7">{{ hdPatient.hmo }}</div>
+              </div>
+              <a href="javascript:void(0)" onClick="{{ openWellipass }}" style="font-size:12px">Change &#8594;</a>
+            </div>
+
+            <div>
+              <sc-for list="{{ billItems }}" as="it" hint-placeholder-count="3">
+                <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--color-divider);font-size:13px">
+                  <span>{{ it.name }}</span><span style="font-feature-settings:'tnum' 1">{{ it.amountFmt }}</span>
+                </div>
+              </sc-for>
+              <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:2px solid var(--color-divider);font-weight:800">
+                <span>Total</span><span>{{ billTotal }}</span>
+              </div>
+            </div>
+
+            <div>
+              <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 60%,transparent);margin-bottom:6px">Who is paying?</div>
+              <div class="seg">
+                <sc-for list="{{ payerSeg }}" as="opt" hint-placeholder-count="5">
+                  <label class="seg-opt"><input type="radio" checked="{{ opt.checked }}" onChange="{{ opt.onChange }}"/>{{ opt.label }}</label>
+                </sc-for>
+              </div>
+            </div>
+
+            <sc-if value="{{ famIdle }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <div style="font-size:12px;opacity:0.75">Choose who to request payment from:</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                  <sc-for list="{{ sponsorChips }}" as="sp" hint-placeholder-count="4">
+                    <button type="button" style="{{ sp.style }}" onClick="{{ sp.onClick }}">{{ sp.name }}</button>
+                  </sc-for>
+                </div>
+                <button type="button" class="btn btn-primary" style="align-self:flex-start" onClick="{{ sendFamilyRequest }}" disabled="{{ sendDisabled }}">Send payment request</button>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ famPending }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:12px;background:var(--color-accent-100);display:flex;flex-direction:column;gap:6px">
+                <div style="display:flex;justify-content:space-between;align-items:baseline">
+                  <span style="font-weight:700;font-size:13px">Awaiting family payment</span>
+                  <span class="tag tag-outline">Expires in 24h</span>
+                </div>
+                <div style="font-size:13px">{{ billTotal }} requested from <strong>{{ hdSponsor }}</strong></div>
+                <button type="button" class="btn btn-secondary" style="align-self:flex-start" onClick="{{ simulateFamilyPaid }}">Simulate: {{ hdSponsor }} pays</button>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ famPaid }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:12px;background:var(--color-surface);display:flex;flex-direction:column;gap:6px">
+                <div style="display:flex;justify-content:space-between;align-items:baseline">
+                  <span style="font-weight:700;font-size:13px">Paid by {{ hdSponsor }}</span>
+                  <span class="tag tag-neutral">Receipt sent</span>
+                </div>
+                <button type="button" class="btn btn-ghost" style="align-self:flex-start" onClick="{{ resetDemo }}">Reset demo</button>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ hmoAuthIdle }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:12px;background:var(--color-accent-100);display:flex;justify-content:space-between;align-items:center;gap:12px">
+                <span style="font-weight:700;font-size:13px">HMO authorization required</span>
+                <button type="button" class="btn btn-primary" onClick="{{ requestAuthorization }}">Request Authorization</button>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ hmoAuthPending }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:12px;background:var(--color-accent-100);display:flex;flex-direction:column;gap:6px">
+                <span style="font-weight:700;font-size:13px">Awaiting HMO decision&hellip;</span>
+                <button type="button" class="btn btn-secondary" style="align-self:flex-start" onClick="{{ approveHdAuth }}">Simulate: HMO approves</button>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ hmoAwaitingConsent }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:12px;background:var(--color-surface);display:flex;flex-direction:column;gap:8px">
+                <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;opacity:0.65">Financial consent</span>
+                <div style="display:flex;justify-content:space-between;font-size:13px"><span>HMO covers</span><strong>{{ hdHmoAmountFmt }}</strong></div>
+                <div style="display:flex;justify-content:space-between;font-size:13px"><span>Patient responsibility</span><strong>{{ hdPatientAmountFmt }}</strong></div>
+                <p style="margin:0;font-size:12px;opacity:0.75">Patient reviews the estimated cost and payer contribution before proceeding.</p>
+                <button type="button" class="btn btn-primary" style="align-self:flex-start" onClick="{{ giveConsent }}">Patient reviews &amp; authorizes</button>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ hmoConsentGiven }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:12px;background:var(--color-surface);display:flex;flex-direction:column;gap:8px">
+                <div style="display:flex;justify-content:space-between;font-size:13px"><span>HMO covers</span><strong>{{ hdHmoAmountFmt }}</strong></div>
+                <div style="display:flex;justify-content:space-between;font-size:13px"><span>Patient owes</span><strong>{{ hdPatientAmountFmt }}</strong></div>
+                <span class="tag tag-neutral" style="align-self:flex-start">Consent recorded</span>
+                <button type="button" class="btn btn-primary" style="align-self:flex-start" onClick="{{ receivePayment }}">Collect {{ hdPatientAmountFmt }}</button>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ nonFamilyIdle }}" hint-placeholder-val="{{ false }}">
+              <button type="button" class="btn btn-primary" style="align-self:flex-start" onClick="{{ receivePayment }}">Receive payment</button>
+            </sc-if>
+
+            <sc-if value="{{ nonFamilyPaid }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:12px;background:var(--color-surface);display:flex;justify-content:space-between;align-items:baseline;gap:12px">
+                <span style="font-weight:700;font-size:13px">{{ paidLabel }}</span>
+                <button type="button" class="btn btn-ghost" onClick="{{ resetDemo }}">Reset demo</button>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isAuthorization }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:20px;animation:fadein .2s ease">
+          <div>
+            <span class="card-kicker">Authorization Centre</span>
+            <h2 style="margin:4px 0 0">Pre-authorization &amp; eligibility</h2>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px">
+            <sc-for list="{{ authTiles }}" as="t" hint-placeholder-count="8">
+              <div class="card elev-sm">
+                <span class="card-title" style="font-size:22px">{{ t.value }}</span>
+                <span class="card-meta">{{ t.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:20px">
+            <div class="card elev-sm" style="gap:10px">
+              <span class="card-kicker">SLA by HMO &middot; avg response time</span>
+              <sc-for list="{{ slaData }}" as="row" hint-placeholder-count="3">
+                <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid var(--color-divider);font-size:13px">
+                  <span>{{ row.hmo }}</span><span style="font-weight:700">{{ row.time }}</span>
+                </div>
+              </sc-for>
+            </div>
+
+            <div class="card elev-sm" style="gap:10px">
+              <span class="card-kicker">Coverage &amp; benefit limit &middot; sample patient</span>
+              <div style="display:flex;justify-content:space-between;font-size:13px"><span>Annual limit</span><strong>{{ coverage.limit }}</strong></div>
+              <div style="height:8px;background:var(--color-neutral-200)"><div style="height:100%;width:{{ coverage.usedPct }};background:var(--color-accent)"></div></div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;opacity:0.75"><span>Used {{ coverage.used }}</span><span>Remaining {{ coverage.remaining }}</span></div>
+            </div>
+          </div>
+
+          <div class="card elev-sm" style="gap:8px;max-width:420px">
+            <span class="card-kicker">Cost estimator &middot; sample treatment plan</span>
+            <sc-for list="{{ costEstimator }}" as="row" hint-placeholder-count="5">
+              <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--color-divider);font-size:13px">
+                <span>{{ row.label }}</span><span style="font-feature-settings:'tnum' 1">{{ row.value }}</span>
+              </div>
+            </sc-for>
+            <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:2px solid var(--color-divider);font-weight:800">
+              <span>Patient balance</span><span>&#8358;0</span>
+            </div>
+          </div>
+
+          <div class="card elev-sm" style="gap:0;padding:4px 0">
+            <span class="card-kicker" style="padding:10px 14px 4px;display:block">Authorization inbox</span>
+            <sc-for list="{{ authItemsRendered }}" as="it" hint-placeholder-count="3">
+              <div style="border-top:1px solid var(--color-divider);padding:12px 14px">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;cursor:pointer" onClick="{{ it.onToggle }}">
+                  <div>
+                    <div style="font-size:13px;font-weight:700">{{ it.patient }} &middot; {{ it.service }}</div>
+                    <div style="font-size:11px;opacity:0.7">{{ it.hmo }} &middot; {{ it.amountFmt }}</div>
+                  </div>
+                  <span class="{{ it.statusTagClass }}">{{ it.status }}</span>
+                </div>
+                <sc-if value="{{ it.expanded }}" hint-placeholder-val="{{ false }}">
+                  <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--color-divider);display:flex;flex-direction:column;gap:8px">
+                    <sc-if value="{{ it.hasReadiness }}" hint-placeholder-val="{{ false }}">
+                      <div style="display:flex;align-items:center;gap:8px">
+                        <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;opacity:0.65">Readiness</span>
+                        <div style="flex:1;height:6px;background:var(--color-neutral-200)"><div style="height:100%;width:{{ it.readinessPct }};background:var(--color-accent)"></div></div>
+                        <span style="font-weight:700;font-size:12px">{{ it.readiness }}%</span>
+                      </div>
+                    </sc-if>
+                    <sc-for list="{{ it.timeline }}" as="ev" hint-placeholder-count="3">
+                      <div style="display:flex;gap:10px;font-size:12px">
+                        <span style="width:48px;flex:none;opacity:0.6;font-feature-settings:'tnum' 1">{{ ev.time }}</span>
+                        <span>{{ ev.text }}</span>
+                      </div>
+                    </sc-for>
+                    <div style="display:flex;gap:8px">
+                      <sc-if value="{{ it.canSubmit }}" hint-placeholder-val="{{ false }}">
+                        <button type="button" class="btn btn-primary" onClick="{{ it.onSubmit }}">Submit to HMO</button>
+                      </sc-if>
+                      <sc-if value="{{ it.canApprove }}" hint-placeholder-val="{{ false }}">
+                        <button type="button" class="btn btn-secondary" onClick="{{ it.onApprove }}">Simulate: HMO approves</button>
+                      </sc-if>
+                      <sc-if value="{{ it.isApproved }}" hint-placeholder-val="{{ false }}">
+                        <span style="font-size:12px;opacity:0.7">Patient notified.</span>
+                      </sc-if>
+                    </div>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isSettlements }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:20px;animation:fadein .2s ease">
+          <div><span class="card-kicker">Settlements</span><h2 style="margin:4px 0 0">Gateway payouts &amp; branch settlement</h2></div>
+          <div class="card elev-sm" style="gap:8px">
+            <span class="card-kicker">Payout timeline</span>
+            <sc-for list="{{ settlementTimeline }}" as="ev" hint-placeholder-count="5">
+              <div style="display:flex;gap:12px;font-size:13px;padding:6px 0;border-top:1px solid var(--color-divider)">
+                <span style="width:52px;flex:none;opacity:0.6;font-feature-settings:'tnum' 1">{{ ev.time }}</span><span>{{ ev.text }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div class="card elev-sm" style="padding:0;overflow-x:auto">
+            <span class="card-kicker" style="padding:14px 14px 0;display:block">Per-branch settlement</span>
+            <table class="table">
+              <thead><tr><th>Branch</th><th>Settled</th><th>Pending</th></tr></thead>
+              <tbody>
+                <sc-for list="{{ branchSettlement }}" as="b" hint-placeholder-count="5">
+                  <tr><td style="font-weight:600">{{ b.name }}</td><td>{{ b.settled }}</td><td>{{ b.pending }}</td></tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isClaims }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:20px;animation:fadein .2s ease">
+          <div><span class="card-kicker">HMO Claims</span><h2 style="margin:4px 0 0">Submission, tracking &amp; resubmission</h2></div>
+          <div class="card elev-sm" style="gap:0;padding:4px 0">
+            <sc-for list="{{ claimsRendered }}" as="c" hint-placeholder-count="4">
+              <div style="border-top:1px solid var(--color-divider);padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+                  <div>
+                    <div style="font-size:13px;font-weight:700">{{ c.ref }}</div>
+                    <div style="font-size:11px;opacity:0.7">{{ c.hmo }} &middot; {{ c.amountFmt }}</div>
+                  </div>
+                  <span class="{{ c.tagClass }}">{{ c.status }}</span>
+                </div>
+                <sc-if value="{{ c.isRejected }}" hint-placeholder-val="{{ false }}">
+                  <p style="margin:0;font-size:12px;color:var(--color-accent-700)">{{ c.rejectionReason }}</p>
+                </sc-if>
+                <div style="display:flex;gap:8px">
+                  <sc-if value="{{ c.isDraft }}" hint-placeholder-val="{{ false }}">
+                    <button type="button" class="btn btn-primary" onClick="{{ c.onSubmit }}">Submit claim</button>
+                  </sc-if>
+                  <sc-if value="{{ c.isSubmitted }}" hint-placeholder-val="{{ false }}">
+                    <button type="button" class="btn btn-secondary" onClick="{{ c.onApprove }}">Simulate: approve</button>
+                    <button type="button" class="btn btn-secondary" onClick="{{ c.onReject }}">Simulate: reject</button>
+                  </sc-if>
+                  <sc-if value="{{ c.isRejected }}" hint-placeholder-val="{{ false }}">
+                    <button type="button" class="btn btn-primary" onClick="{{ c.onResubmit }}">Resubmit</button>
+                  </sc-if>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isFamilySponsors }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:20px;animation:fadein .2s ease">
+          <div><span class="card-kicker">Family / Sponsors</span><h2 style="margin:4px 0 0">Multi-sponsor funding</h2></div>
+          <div class="card elev-sm" style="gap:10px;max-width:480px">
+            <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700"><span>Chidi O. — Treatment plan</span><span>{{ familyTotal }}</span></div>
+            <sc-for list="{{ familyContributions }}" as="fc" hint-placeholder-count="3">
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:1px solid var(--color-divider);font-size:13px">
+                <span>{{ fc.name }}</span>
+                <span style="font-feature-settings:'tnum' 1">{{ fc.amountFmt }}</span>
+                <sc-if value="{{ fc.paid }}" hint-placeholder-val="{{ false }}"><span class="tag tag-neutral">Paid</span></sc-if>
+                <sc-if value="{{ fc.notPaid }}" hint-placeholder-val="{{ true }}">
+                  <button type="button" class="btn btn-secondary" onClick="{{ fc.onPay }}">Simulate pays</button>
+                </sc-if>
+              </div>
+            </sc-for>
+            <div style="height:8px;background:var(--color-neutral-200);margin-top:4px"><div style="height:100%;width:{{ familyPct }};background:var(--color-accent)"></div></div>
+            <div style="display:flex;justify-content:space-between;font-size:12px;opacity:0.75"><span>Funded</span><span>Remaining {{ familyRemaining }}</span></div>
+            <sc-if value="{{ familyFullyFunded }}" hint-placeholder-val="{{ false }}">
+              <span class="tag tag-neutral">Bill fully funded — settled to provider</span>
+            </sc-if>
+          </div>
+          <div class="card elev-sm" style="gap:0;padding:4px 14px">
+            <sc-for list="{{ stub.rows }}" as="r" hint-placeholder-count="3">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--color-divider)">
+                <div><div style="font-size:13px;font-weight:600">{{ r.a }}</div><div style="font-size:12px;opacity:0.7">{{ r.b }}</div></div>
+                <span class="{{ r.tagClass }}">{{ r.tag }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isSettingsPage }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:20px;max-width:520px;animation:fadein .2s ease">
+          <div><span class="card-kicker">Settings</span><h2 style="margin:4px 0 0">Approval rules &amp; organization</h2></div>
+          <div class="card elev-sm" style="gap:10px">
+            <span class="card-kicker">Refund approval threshold</span>
+            <div class="field"><label>Amount above which refunds need Finance Manager + Owner approval</label>
+              <input class="input" type="number" value="{{ settingsRefundThreshold }}" onChange="{{ setRefundThreshold }}"/>
+            </div>
+          </div>
+          <div class="card elev-sm" style="gap:10px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span class="card-kicker">Second approval on bank-detail change</span>
+              <button type="button" class="btn btn-secondary" onClick="{{ toggleSecondApproval }}">{{ settingsSecondApproval }}</button>
+            </div>
+            <p style="margin:0;font-size:12.5px;opacity:0.75">When enabled, a change to the settlement bank account needs a second approver before it takes effect.</p>
+          </div>
+          <div class="card elev-sm" style="gap:0;padding:4px 14px">
+            <sc-for list="{{ stub.rows }}" as="r" hint-placeholder-count="3">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--color-divider)">
+                <div><div style="font-size:13px;font-weight:600">{{ r.a }}</div><div style="font-size:12px;opacity:0.7">{{ r.b }}</div></div>
+                <span class="{{ r.tagClass }}">{{ r.tag }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isPatientApp }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:16px;animation:fadein .2s ease">
+          <div><span class="card-kicker">Patient App Preview</span><h2 style="margin:4px 0 0">WelliPay Patient — mobile</h2></div>
+          <div style="width:340px;border:2px solid var(--color-divider);background:var(--color-bg);display:flex;flex-direction:column">
+            <div style="display:flex;justify-content:space-between;padding:8px 14px;font-size:11px;opacity:0.6">
+              <span>9:41</span><span>WELLIPAY</span>
+            </div>
+            <div style="flex:1;min-height:420px;padding:16px;display:flex;flex-direction:column;gap:14px;border-top:2px solid var(--color-divider);border-bottom:2px solid var(--color-divider)">
+
+              <sc-if value="{{ isPatHome }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex;flex-direction:column;gap:14px">
+                  <h3 style="margin:0">Hi, Ngozi</h3>
+                  <div class="card elev-sm">
+                    <span class="card-kicker">Outstanding</span>
+                    <span class="card-title" style="font-size:22px">&#8358;45,000</span>
+                    <span class="card-meta">ABC Hospital</span>
+                    <button type="button" class="btn btn-primary btn-block" onClick="{{ setPatientTabPay }}">Pay now</button>
+                  </div>
+                  <button type="button" class="btn btn-secondary btn-block" onClick="{{ setPatientTabFamily }}">Request family payment</button>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ isPatPay }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;flex-direction:column;gap:8px">
+                  <h3 style="margin:0 0 4px">Pay</h3>
+                  <button type="button" class="btn btn-secondary btn-block">Pay a Provider</button>
+                  <button type="button" class="btn btn-secondary btn-block">Pay as a Person</button>
+                  <button type="button" class="btn btn-secondary btn-block">Pay for Someone</button>
+                  <button type="button" class="btn btn-secondary btn-block">Scan QR</button>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ isPatBills }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;flex-direction:column;gap:10px">
+                  <h3 style="margin:0 0 4px">My Bills</h3>
+                  <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--color-divider)"><div><div style="font-size:13px;font-weight:600">ABC Hospital</div><div style="font-size:11px;opacity:0.6">&#8358;250,000</div></div><span class="tag tag-outline">Pending</span></div>
+                  <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--color-divider)"><div><div style="font-size:13px;font-weight:600">XYZ Diagnostic</div><div style="font-size:11px;opacity:0.6">&#8358;45,000</div></div><span class="tag tag-neutral">Paid</span></div>
+                  <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--color-divider)"><div><div style="font-size:13px;font-weight:600">ABC Pharmacy</div><div style="font-size:11px;opacity:0.6">&#8358;12,500</div></div><span class="tag tag-neutral">Paid</span></div>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ isPatFamily }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;flex-direction:column;gap:10px">
+                  <h3 style="margin:0 0 4px">Family</h3>
+                  <div style="font-size:13px;padding:6px 0;border-top:1px solid var(--color-divider)">Mum</div>
+                  <div style="font-size:13px;padding:6px 0;border-top:1px solid var(--color-divider)">Brother (UK)</div>
+                  <div style="font-size:13px;padding:6px 0;border-top:1px solid var(--color-divider)">Sister</div>
+                  <button type="button" class="btn btn-primary btn-block">Request payment from family</button>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ isPatProfile }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;flex-direction:column;gap:8px">
+                  <h3 style="margin:0 0 4px">Profile</h3>
+                  <div style="font-size:13px"><strong>Ngozi A.</strong></div>
+                  <div style="font-size:12px;opacity:0.7">WR-2291-04</div>
+                  <div style="font-size:12px;opacity:0.7">+234 80X XXX XXXX</div>
+                </div>
+              </sc-if>
+
+            </div>
+            <div style="display:flex">
+              <button type="button" onClick="{{ setPatientTabHome }}" style="flex:1;padding:10px 0;font-size:11px;background:none;border:0;cursor:pointer;color:var(--color-text)">Home</button>
+              <button type="button" onClick="{{ setPatientTabPay }}" style="flex:1;padding:10px 0;font-size:11px;background:none;border:0;cursor:pointer;color:var(--color-text)">Pay</button>
+              <button type="button" onClick="{{ setPatientTabBills }}" style="flex:1;padding:10px 0;font-size:11px;background:none;border:0;cursor:pointer;color:var(--color-text)">Bills</button>
+              <button type="button" onClick="{{ setPatientTabFamily }}" style="flex:1;padding:10px 0;font-size:11px;background:none;border:0;cursor:pointer;color:var(--color-text)">Family</button>
+              <button type="button" onClick="{{ setPatientTabProfile }}" style="flex:1;padding:10px 0;font-size:11px;background:none;border:0;cursor:pointer;color:var(--color-text)">Profile</button>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isStub }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:20px;max-width:900px;animation:fadein .2s ease">
+          <div>
+            <span class="card-kicker">{{ stub.kicker }}</span>
+            <h2 style="margin:6px 0 6px">{{ activeLabel }}</h2>
+            <p style="margin:0;max-width:60ch;opacity:0.8">{{ stub.blurb }}</p>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px">
+            <sc-for list="{{ stub.stats }}" as="s" hint-placeholder-count="3">
+              <div class="card elev-sm">
+                <span class="card-title" style="font-size:22px">{{ s.value }}</span>
+                <span class="card-meta">{{ s.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div class="card elev-sm" style="gap:0;padding:4px 14px">
+            <sc-for list="{{ stub.rows }}" as="r" hint-placeholder-count="4">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--color-divider)">
+                <div>
+                  <div style="font-size:13px;font-weight:600">{{ r.a }}</div>
+                  <div style="font-size:12px;opacity:0.7">{{ r.b }}</div>
+                </div>
+                <span class="{{ r.tagClass }}">{{ r.tag }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+    </div>
+  </div>
+
+  <sc-if value="{{ modalItem }}" hint-placeholder-val="{{ false }}">
+    <div class="dialog-backdrop">
+      <div class="dialog">
+        <span class="dialog-title">Confirm match</span>
+        <div class="dialog-body">
+          <p style="margin:0 0 10px">An unmatched payment of <strong>{{ modalItem.amountFmt }}</strong> via {{ modalItem.source }} looks like it belongs to:</p>
+          <p style="margin:0;padding:10px;background:var(--color-bg);font-weight:600">{{ modalItem.suggestion }}</p>
+        </div>
+        <div class="dialog-actions">
+          <button type="button" class="btn btn-secondary" onClick="{{ rejectMatch }}">Not a match</button>
+          <button type="button" class="btn btn-primary" onClick="{{ confirmMatch }}">Confirm match</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ wellipassOpen }}" hint-placeholder-val="{{ false }}">
+    <div class="dialog-backdrop">
+      <div class="dialog" style="width:min(380px,100%)">
+        <div style="background:var(--color-accent);color:var(--color-bg);padding:16px;display:flex;flex-direction:column;gap:10px;margin:-16px -16px 0">
+          <div style="display:flex;justify-content:space-between;align-items:baseline">
+            <span style="font-family:var(--font-heading);font-weight:800;font-size:13px;letter-spacing:0.08em;text-transform:uppercase">WelliPass</span>
+            <span style="width:8px;height:8px;background:var(--color-bg)"></span>
+          </div>
+          <div style="font-family:var(--font-heading);font-weight:800;font-size:20px">Ngozi A.</div>
+          <div style="font-size:12px;opacity:0.9">WR-2291-04 &middot; Reliance HMO — Gold</div>
+        </div>
+        <div style="display:flex;justify-content:center;padding:14px 0">
+          <div style="display:grid;grid-template-columns:repeat(6,10px);grid-template-rows:repeat(6,10px);gap:2px">
+            <sc-for list="{{ qrCells }}" as="cell" hint-placeholder-count="36">
+              <span style="width:10px;height:10px;background:{{ cell.color }}"></span>
+            </sc-for>
+          </div>
+        </div>
+        <div class="dialog-body" style="font-size:12.5px;text-align:center">Scanned at Wuse Front Desk</div>
+        <div class="dialog-actions" style="justify-content:center">
+          <button type="button" class="btn btn-secondary" onClick="{{ closeWellipass }}">Cancel</button>
+          <button type="button" class="btn btn-primary" onClick="{{ scanContinue }}">Continue to Hospital Desk</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const NAV_STRUCT = [
+  { name: 'Overview', items: [['dashboard','Dashboard'],['hospital-desk','Hospital Desk'],['ai-insights','AI Insights'],['notifications','Notifications']] },
+  { name: 'Revenue Cycle', items: [['patients','Patients'],['invoices','Invoices'],['payments','Payments'],['services-pricing','Services & Pricing']] },
+  { name: 'Claims & Payers', items: [['claims','Claims'],['hmo-insurance','HMO / Insurance'],['authorization','Authorization Centre'],['family-sponsors','Family / Sponsors'],['wellipass','WelliPass'],['receivables','Receivables'],['reconciliation','Reconciliation'],['settlements','Settlements'],['refunds','Refunds']] },
+  { name: 'Growth', items: [['financing','Financing'],['payment-plans','Payment Plans'],['referrals','Referrals'],['partners','Providers / Partners']] },
+  { name: 'Operations', items: [['reports','Reports'],['branches','Branches'],['staff','Staff'],['integrations','Integrations'],['api-developers','API & Developers']] },
+  { name: 'Account', items: [['subscription','Subscription'],['audit-log','Audit Log'],['support','Support'],['settings','Settings']] },
+  { name: 'Preview', items: [['patient-app','Patient App']] },
+];
+
+const STUB_DATA = {
+  'ai-insights': { kicker: 'AI Insights', blurb: "Ask WelliPay about revenue, claims and receivables — plain-language answers over your own data.",
+    stats: [{label:'Insights this week',value:'31'},{label:'Alerts surfaced',value:'6'},{label:'Avg time to answer',value:'1.2s'}],
+    rows: [{a:'Revenue dipped in Kaduna',b:'\u221212% vs last month',tag:'Investigate',tagClass:'tag tag-accent'},
+      {a:'HMO tariff below private rate',b:'Reliance HMO — ECG',tag:'Review pricing',tagClass:'tag tag-outline'},
+      {a:'3 claims likely to reject',b:'Missing pre-authorization',tag:'Fix before submit',tagClass:'tag tag-accent'}] },
+  'notifications': { kicker:'Notification Centre', blurb:'One inbox for payment, claim, settlement and system alerts across every branch.',
+    stats:[{label:'Unread',value:'14'},{label:'Sent today',value:'212'},{label:'Channels active',value:'4'}],
+    rows:[{a:'Settlement completed — Paystack',b:'\u20a61,950,000 to GTBank \u2022\u20224471',tag:'Settlement',tagClass:'tag tag-neutral'},
+      {a:'Claim rejected — CLM-5543',b:'AXA Mansard',tag:'Claim',tagClass:'tag tag-outline'},
+      {a:'Failed payment retry succeeded',b:'INV-2033',tag:'Payment',tagClass:'tag tag-neutral'}] },
+  'patients': { kicker:'Patient Management', blurb:'Financial patient profiles — WelliID, outstanding bills and payment history.',
+    stats:[{label:'Active patients',value:'3,204'},{label:'Outstanding balance',value:'\u20a62.1M'},{label:'Avg balance age',value:'18 days'}],
+    rows:[{a:'Ngozi A. — WR-2291-04',b:'\u20a645,000 due',tag:'HMO pending',tagClass:'tag tag-outline'},
+      {a:'Femi O. — WR-1187-22',b:'\u20a60 due',tag:'Settled',tagClass:'tag tag-neutral'},
+      {a:'Blessing K. — WR-3390-11',b:'\u20a6120,000 due',tag:'Payment plan',tagClass:'tag tag-outline'}] },
+  'invoices': { kicker:'Digital Invoice Engine', blurb:'Itemised invoices built automatically from existing Charge records.',
+    stats:[{label:'Open invoices',value:'142'},{label:'Invoiced this month',value:'\u20a68.4M'},{label:'Avg time to pay',value:'6 days'}],
+    rows:[{a:'INV-2048 — Femi O.',b:'\u20a658,000',tag:'Part-paid',tagClass:'tag tag-outline'},
+      {a:'INV-2049 — Blessing K.',b:'\u20a623,000',tag:'Unpaid',tagClass:'tag tag-accent'},
+      {a:'INV-2050 — Chinwe E.',b:'\u20a6120,000',tag:'Paid',tagClass:'tag tag-neutral'}] },
+  'payments': { kicker:'Payment Collection', blurb:'Card, bank transfer, USSD and cash — one reconciliation surface.',
+    stats:[{label:'Successful today',value:'86'},{label:'Success rate',value:'96.4%'},{label:'Failed retries queued',value:'4'}],
+    rows:[{a:'Card',b:'\u20a6620,000',tag:'44%',tagClass:'tag tag-neutral'},
+      {a:'Bank transfer',b:'\u20a6510,000',tag:'36%',tagClass:'tag tag-neutral'},
+      {a:'USSD / Cash',b:'\u20a6280,000',tag:'20%',tagClass:'tag tag-neutral'}] },
+  'services-pricing': { kicker:'Service Catalogue & Pricing Engine', blurb:'Prices, packages and per-payer tariffs for every service.',
+    stats:[{label:'Active services',value:'214'},{label:'HMO tariffs mapped',value:'38 of 41'},{label:'Packages',value:'12'}],
+    rows:[{a:'ECG',b:'\u20a618,000 cash \u00b7 \u20a615,000 HMO A',tag:'Cardiology',tagClass:'tag tag-neutral'},
+      {a:'Executive Checkup',b:'\u20a6250,000 package',tag:'Bundle',tagClass:'tag tag-outline'},
+      {a:'Full Blood Count',b:'\u20a68,500',tag:'Lab',tagClass:'tag tag-neutral'}] },
+  'hmo-insurance': { kicker:'HMO / Insurance Directory', blurb:'Eligibility, benefit, tariff and authorization per plan.',
+    stats:[{label:'Contracted HMOs',value:'9'},{label:'Active plans',value:'27'},{label:'Avg tariff variance',value:'\u221214%'}],
+    rows:[{a:'Reliance HMO — Gold',b:'Consultation covered \u00b7 Diagnostics 80%',tag:'Active',tagClass:'tag tag-neutral'},
+      {a:'Hygeia HMO — Silver',b:'Copay 20%',tag:'Active',tagClass:'tag tag-neutral'},
+      {a:'AXA Mansard — Bronze',b:'Pharmacy excluded',tag:'Review',tagClass:'tag tag-outline'}] },
+  'family-sponsors': { kicker:'Family / Sponsors', blurb:'Track family and sponsor-funded payments — who paid, how much, and for which invoice.',
+    stats:[{label:'Sponsor-funded this month',value:'\u20a61.8M'},{label:'Active sponsors',value:'34'},{label:'Avg time to fund',value:'6.2 hrs'}],
+    rows:[{a:'Femi O. — Invoice INV-2048',b:'Sponsor: Brother (UK) — \u20a658,000',tag:'Paid',tagClass:'tag tag-neutral'},
+      {a:'Blessing K. — Invoice INV-2061',b:'Sponsor: Daughter — \u20a623,500',tag:'Awaiting payment',tagClass:'tag tag-outline'},
+      {a:'Chidi O. — Treatment plan',b:'3 sponsors — \u20a61,000,000 total',tag:'Partially funded',tagClass:'tag tag-outline'}] },
+  'wellipass': { kicker:'WelliPass', blurb:"The patient's healthcare access and payment-authorization pass — scanned at the front desk to skip manual lookup.",
+    stats:[{label:'WelliPass scans today',value:'62'},{label:'Avg desk time saved',value:'2.1 min'},{label:'Linked dependants',value:'118'}],
+    rows:[{a:'WelliPass adoption',b:'3,204 of 3,540 active patients',tag:'90%',tagClass:'tag tag-neutral'},
+      {a:'Emergency financial authorization',b:'Enabled for 41 patients',tag:'Active',tagClass:'tag tag-outline'},
+      {a:'Child WelliPass (dependant)',b:'Parent as funding authority',tag:'118 linked',tagClass:'tag tag-neutral'}] },
+  'refunds': { kicker:'Refund Engine', blurb:'Full, partial and failed-transaction refunds — every one authorized and logged.',
+    stats:[{label:'Refunded this month',value:'\u20a635,000'},{label:'Pending approval',value:'2'},{label:'Avg approval time',value:'4.1 hrs'}],
+    rows:[{a:'REF-881 — Chidi O.',b:'\u20a6120,000',tag:'Pending',tagClass:'tag tag-outline'},
+      {a:'REF-880 — Blessing K.',b:'\u20a618,500',tag:'Approved',tagClass:'tag tag-neutral'},
+      {a:'REF-879 — Tunde A.',b:'\u20a645,000',tag:'Pending',tagClass:'tag tag-outline'}] },
+  'financing': { kicker:'Financing Marketplace', blurb:'Patients see eligible options from regulated financing partners at checkout.',
+    stats:[{label:'Active financing plans',value:'41'},{label:'Financed this month',value:'\u20a64.1M'},{label:'Approval rate',value:'68%'}],
+    rows:[{a:'Cataract surgery — Femi O.',b:'\u20a6100,000 over 6 months',tag:'Active',tagClass:'tag tag-neutral'},
+      {a:'Dental implant — Ngozi A.',b:'\u20a6180,000 over 12 months',tag:'Active',tagClass:'tag tag-neutral'},
+      {a:'Executive checkup — Chinwe E.',b:'\u20a660,000 over 3 months',tag:'Pending approval',tagClass:'tag tag-outline'}] },
+  'payment-plans': { kicker:'Patient Payment Plans', blurb:'Installment plans on treatment cost, tracked to the next due date.',
+    stats:[{label:'Active plans',value:'57'},{label:'Collected this month',value:'\u20a62.3M'},{label:'Missed installments',value:'4'}],
+    rows:[{a:'Blessing K. — \u20a6100,000 \u00d7 5',b:'Installment 3 of 5 due Oct 2',tag:'On track',tagClass:'tag tag-neutral'},
+      {a:'Emeka N. — \u20a675,000 \u00d7 3',b:'Installment 2 missed',tag:'Overdue',tagClass:'tag tag-accent'}] },
+  'referrals': { kicker:'Referral Network', blurb:'Patients referred between providers, and the transactions that follow.',
+    stats:[{label:'Referrals this month',value:'23'},{label:'Completed',value:'17'},{label:'Avg time to completion',value:'3.4 days'}],
+    rows:[{a:'ABC Clinic \u2192 ABC Laboratory',b:'Full blood count',tag:'Completed',tagClass:'tag tag-neutral'},
+      {a:'ABC Clinic \u2192 Radiant Imaging',b:'MRI — knee',tag:'Awaiting payment',tagClass:'tag tag-outline'}] },
+  'partners': { kicker:'Providers & Partners', blurb:'The network of labs, pharmacies and specialist centres connected to ABC Healthcare.',
+    stats:[{label:'Connected partners',value:'9'},{label:'Referrals sent',value:'23'},{label:'Referrals received',value:'11'}],
+    rows:[{a:'ABC Laboratory',b:'Lab services',tag:'Connected',tagClass:'tag tag-neutral'},
+      {a:'Radiant Imaging',b:'Diagnostics',tag:'Connected',tagClass:'tag tag-neutral'},
+      {a:'CarePlus Pharmacy',b:'Pharmacy',tag:'Pending invite',tagClass:'tag tag-outline'}] },
+  'reports': { kicker:'Reports', blurb:'Revenue, receivables, claims and reconciliation, exportable to CSV.',
+    stats:[{label:'Scheduled reports',value:'6'},{label:'Exported this month',value:'41'},{label:'Last export',value:'2 hrs ago'}],
+    rows:[{a:'Monthly revenue report — Sep 2026',b:'CSV \u00b7 212 KB',tag:'Ready',tagClass:'tag tag-neutral'},
+      {a:'Claim ageing report — Q3',b:'CSV \u00b7 88 KB',tag:'Ready',tagClass:'tag tag-neutral'},
+      {a:'Branch reconciliation — Sep',b:'Generating',tag:'In progress',tagClass:'tag tag-outline'}] },
+  'branches': { kicker:'Branch Management', blurb:'Five branches, one consolidated view of staff, services and revenue.',
+    stats:[{label:'Branches',value:'5'},{label:'Consolidated revenue',value:'\u20a619.25M'},{label:'Top branch',value:'Maitama'}],
+    rows:[{a:'Wuse',b:'\u20a65,200,000',tag:'12 staff',tagClass:'tag tag-neutral'},
+      {a:'Garki',b:'\u20a63,400,000',tag:'8 staff',tagClass:'tag tag-neutral'},
+      {a:'Maitama',b:'\u20a67,100,000',tag:'15 staff',tagClass:'tag tag-neutral'},
+      {a:'Kaduna',b:'\u20a61,450,000',tag:'6 staff',tagClass:'tag tag-neutral'}] },
+  'staff': { kicker:'Staff & Roles', blurb:'Cashiers, billing officers and finance managers, each with scoped access.',
+    stats:[{label:'Active staff',value:'46'},{label:'Roles configured',value:'5'},{label:'Pending invites',value:'2'}],
+    rows:[{a:'Adaeze O.',b:'Finance Manager — Maitama',tag:'Active',tagClass:'tag tag-neutral'},
+      {a:'Tunde A.',b:'Cashier — Wuse',tag:'Active',tagClass:'tag tag-neutral'},
+      {a:'Ngozi F.',b:'Billing Officer — Garki',tag:'Active',tagClass:'tag tag-neutral'}] },
+  'integrations': { kicker:'Integrations', blurb:"Connect existing EHR, LIS and pharmacy systems to WelliPay's financial layer.",
+    stats:[{label:'Connected',value:'3'},{label:'Available',value:'12'},{label:'Data synced today',value:'4,204 records'}],
+    rows:[{a:'WelliRecord',b:'Charges, patients, consent',tag:'Connected',tagClass:'tag tag-neutral'},
+      {a:'Termii',b:'SMS payment links',tag:'Connected',tagClass:'tag tag-neutral'},
+      {a:'Paystack',b:'Checkout, transfers, webhooks',tag:'Connected',tagClass:'tag tag-neutral'}] },
+  'api-developers': { kicker:'API & Developers', blurb:'Keys, sandbox and webhook logs for facilities that connect their own systems.',
+    stats:[{label:'Active API keys',value:'2'},{label:'Requests this month',value:'18,204'},{label:'Webhook success rate',value:'99.6%'}],
+    rows:[{a:'payment.success',b:'webhook',tag:'Live',tagClass:'tag tag-neutral'},
+      {a:'claim.approved',b:'webhook',tag:'Live',tagClass:'tag tag-neutral'},
+      {a:'Sandbox key — test_wp_...',b:'Created Aug 14',tag:'Active',tagClass:'tag tag-outline'}] },
+  'subscription': { kicker:'Subscription', blurb:'Platform plan, transaction fees and usage for ABC Healthcare.',
+    stats:[{label:'Plan',value:'Business'},{label:'Monthly fee',value:'\u20a685,000'},{label:'Transaction fee',value:'1.4%'}],
+    rows:[{a:'Business plan',b:'5 branches, unlimited staff',tag:'Active',tagClass:'tag tag-neutral'},
+      {a:'HMO Claims add-on',b:'\u20a625,000/mo',tag:'Active',tagClass:'tag tag-neutral'},
+      {a:'AI Copilot add-on',b:'\u20a615,000/mo',tag:'Active',tagClass:'tag tag-neutral'}] },
+  'audit-log': { kicker:'Audit Log', blurb:'Every payment, refund, tariff and bank-detail change — who, what, when.',
+    stats:[{label:'Events today',value:'212'},{label:'Sensitive changes',value:'3'},{label:'Retention',value:'7 years'}],
+    rows:[{a:'Adaeze O. approved refund REF-880',b:'\u20a618,500',tag:'09:41',tagClass:'tag tag-neutral'},
+      {a:'Tunde A. issued receipt RCT-9021',b:'\u20a645,000',tag:'09:12',tagClass:'tag tag-neutral'},
+      {a:'System bank-detail change requested',b:'Awaiting second approval',tag:'08:55',tagClass:'tag tag-outline'}] },
+  'support': { kicker:'Support Centre', blurb:'Documentation, chat support and dispute or settlement issue tickets.',
+    stats:[{label:'Open tickets',value:'2'},{label:'Avg first response',value:'18 min'},{label:'Satisfaction',value:'4.8/5'}],
+    rows:[{a:'Settlement delay — SET-1189',b:'Awaiting gateway confirmation',tag:'Open',tagClass:'tag tag-outline'},
+      {a:'Payment link not loading',b:'Resolved Sep 24',tag:'Closed',tagClass:'tag tag-neutral'}] },
+  'settings': { kicker:'Settings', blurb:'Organization profile, branding, bank settlement account and approval rules.',
+    stats:[{label:'Bank account',value:'Verified'},{label:'Approval rules',value:'3 configured'},{label:'Branding',value:'Set'}],
+    rows:[{a:'Settlement account',b:'GTBank \u2022\u20224471',tag:'Verified',tagClass:'tag tag-neutral'},
+      {a:'Refund approval limit',b:'> \u20a6100,000 needs 2 approvers',tag:'Configured',tagClass:'tag tag-outline'},
+      {a:'Bank-detail change',b:'Requires second approval',tag:'Configured',tagClass:'tag tag-outline'}] },
+};
+
+class Component extends DCLogic {
+  state = {
+    activeNav: 'dashboard',
+    dateFilter: 'Month',
+    unmatched: [
+      { id: 1, amount: 85000, source: 'Paystack transfer', suggestion: 'Invoice #INV-2048 — Femi O.', date: 'Sep 24' },
+      { id: 2, amount: 23500, source: 'Bank transfer — GTBank', suggestion: 'Invoice #INV-2061 — Blessing K.', date: 'Sep 25' },
+      { id: 3, amount: 12000, source: 'USSD payment', suggestion: 'Invoice #INV-2077 — Chinwe E.', date: 'Sep 26' },
+    ],
+    matchedCount: 1248,
+    exceptionsCount: 8,
+    duplicateCount: 3,
+    modalItemId: null,
+    approvals: [
+      { id: 1, type: 'Refund', amount: 45000, requester: 'Tunde A. (Cashier)', reason: 'Duplicate payment' },
+      { id: 2, type: 'Write-off', amount: 18500, requester: 'Ngozi F. (Billing)', reason: 'HMO short-pay' },
+      { id: 3, type: 'Refund', amount: 120000, requester: 'Chidi O. (Cashier)', reason: 'Cancelled service' },
+    ],
+    copilotMessages: [{ role: 'assistant', text: 'Ask me about revenue, claims, reconciliation, or receivables.' }],
+    copilotInput: '',
+    hospitalDesk: {
+      patient: { name: 'Femi O.', welliId: 'WR-1187-22', hmo: 'Reliance HMO — Gold' },
+      wellipassOpen: false,
+      payerChoice: 'patient',
+      sponsor: null,
+      paymentStatus: 'idle',
+      authStage: 'idle',
+      hmoAmount: 0,
+      patientAmount: 0,
+      consentGiven: false,
+    },
+    claimsItems: [
+      { id: 1, ref: 'INV-2049 — Blessing K.', hmo: 'Hygeia HMO', amount: 23000, status: 'Draft' },
+      { id: 2, ref: 'INV-2050 — Chinwe E.', hmo: 'Reliance HMO', amount: 120000, status: 'Submitted' },
+      { id: 3, ref: 'INV-2048 — Femi O.', hmo: 'AXA Mansard', amount: 58000, status: 'Rejected', rejectionReason: 'Missing pre-authorization reference.' },
+      { id: 4, ref: 'INV-2044 — Tunde A.', hmo: 'Reliance HMO', amount: 45000, status: 'Approved' },
+    ],
+    familySplit: {
+      total: 1000000,
+      contributions: [{ name: 'Brother', amount: 400000, paid: false }, { name: 'Sister', amount: 300000, paid: false }, { name: 'Uncle', amount: 300000, paid: false }],
+    },
+    settings: { refundThreshold: 100000, secondApprovalEnabled: true },
+    patientTab: 'home',
+    authCounts: { draft: 12, submitted: 18, pending: 7, approved: 35, partial: 4, rejected: 3, expired: 2, appeal: 1 },
+    selectedAuthId: null,
+    authItems: [
+      { id: 1, patient: 'Emeka N.', service: 'MRI — Knee', hmo: 'Reliance HMO', amount: 180000, status: 'Draft', readiness: 92,
+        timeline: [{ time: '09:02', text: 'Doctor requested MRI' }, { time: '09:04', text: 'Eligibility verified — active, Gold plan' }] },
+      { id: 2, patient: 'Blessing K.', service: 'Surgery Package', hmo: 'Hygeia HMO', amount: 500000, status: 'Submitted', readiness: null,
+        timeline: [{ time: '08:10', text: 'Surgery Package requested' }, { time: '08:12', text: 'Eligibility verified' }, { time: '08:15', text: 'Submitted to Hygeia HMO' }] },
+      { id: 3, patient: 'Chidi O.', service: 'Dialysis', hmo: 'AXA Mansard', amount: 120000, status: 'Pending', readiness: null,
+        timeline: [{ time: '07:40', text: 'Dialysis requested' }, { time: '07:42', text: 'Eligibility verified' }, { time: '07:45', text: 'Submitted to AXA Mansard' }, { time: '10:31', text: 'AXA Mansard requested documentation' }] },
+    ],
+  };
+
+  fmt(n) { return '\u20a6' + Math.round(n).toLocaleString('en-US'); }
+
+  setActiveNav(id) { this.setState({ activeNav: id }); }
+  setFilterToday() { this.setState({ dateFilter: 'Today' }); }
+  setFilterWeek() { this.setState({ dateFilter: 'Week' }); }
+  setFilterMonth() { this.setState({ dateFilter: 'Month' }); }
+  setFilterQuarter() { this.setState({ dateFilter: 'Quarter' }); }
+  goReceivables() { this.setState({ activeNav: 'receivables' }); }
+  goReconciliation() { this.setState({ activeNav: 'reconciliation' }); }
+
+  openMatch(id) { this.setState({ modalItemId: id }); }
+  closeModal() { this.setState({ modalItemId: null }); }
+  confirmMatch() {
+    const id = this.state.modalItemId;
+    this.setState(s => ({
+      unmatched: s.unmatched.filter(u => u.id !== id),
+      matchedCount: s.matchedCount + 1,
+      modalItemId: null,
+    }));
+  }
+  rejectMatch() {
+    this.setState(s => ({ exceptionsCount: s.exceptionsCount + 1, modalItemId: null }));
+  }
+
+  approveRequest(id) { this.setState(s => ({ approvals: s.approvals.filter(a => a.id !== id) })); }
+  rejectRequest(id) { this.setState(s => ({ approvals: s.approvals.filter(a => a.id !== id) })); }
+
+  openWellipass() { this.setState(s => ({ hospitalDesk: { ...s.hospitalDesk, wellipassOpen: true } })); }
+  closeWellipass() { this.setState(s => ({ hospitalDesk: { ...s.hospitalDesk, wellipassOpen: false } })); }
+  scanContinue() {
+    this.setState(s => ({
+      hospitalDesk: { ...s.hospitalDesk, wellipassOpen: false,
+        patient: { name: 'Ngozi A.', welliId: 'WR-2291-04', hmo: 'Reliance HMO — Gold' },
+        payerChoice: 'patient', sponsor: null, paymentStatus: 'idle', authStage: 'idle', hmoAmount: 0, patientAmount: 0, consentGiven: false },
+    }));
+  }
+  setPayerChoice(choice) { this.setState(s => ({ hospitalDesk: { ...s.hospitalDesk, payerChoice: choice, sponsor: null, paymentStatus: 'idle', authStage: 'idle', hmoAmount: 0, patientAmount: 0, consentGiven: false } })); }
+  selectSponsor(name) { this.setState(s => ({ hospitalDesk: { ...s.hospitalDesk, sponsor: name } })); }
+  sendFamilyRequest() { this.setState(s => ({ hospitalDesk: { ...s.hospitalDesk, paymentStatus: 'pending' } })); }
+  simulateFamilyPaid() { this.setState(s => ({ hospitalDesk: { ...s.hospitalDesk, paymentStatus: 'paid' } })); }
+  receivePayment() { this.setState(s => ({ hospitalDesk: { ...s.hospitalDesk, paymentStatus: 'paid' } })); }
+  resetDemo() { this.setState(s => ({ hospitalDesk: { ...s.hospitalDesk, sponsor: null, paymentStatus: 'idle', authStage: 'idle', hmoAmount: 0, patientAmount: 0, consentGiven: false } })); }
+
+  requestAuthorization() {
+    this.setState(s => ({ hospitalDesk: { ...s.hospitalDesk, authStage: 'pending' }, authCounts: { ...s.authCounts, submitted: s.authCounts.submitted + 1 } }));
+  }
+  approveHdAuth() {
+    this.setState(s => {
+      const total = [15000, 18000, 25000].reduce((a, b) => a + b, 0);
+      const hmoAmount = Math.round(total * 0.8);
+      const patientAmount = total - hmoAmount;
+      return { hospitalDesk: { ...s.hospitalDesk, authStage: 'approved', hmoAmount, patientAmount }, authCounts: { ...s.authCounts, submitted: s.authCounts.submitted - 1, approved: s.authCounts.approved + 1 } };
+    });
+  }
+
+  giveConsent() { this.setState(s => ({ hospitalDesk: { ...s.hospitalDesk, consentGiven: true } })); }
+
+  submitClaim(id) { this.setState(s => ({ claimsItems: s.claimsItems.map(c => c.id === id ? { ...c, status: 'Submitted' } : c) })); }
+  simulateApproveClaim(id) { this.setState(s => ({ claimsItems: s.claimsItems.map(c => c.id === id ? { ...c, status: 'Approved' } : c) })); }
+  simulateRejectClaim(id) { this.setState(s => ({ claimsItems: s.claimsItems.map(c => c.id === id ? { ...c, status: 'Rejected', rejectionReason: 'Tariff mismatch — requested amount exceeds contracted tariff.' } : c) })); }
+  resubmitClaim(id) { this.setState(s => ({ claimsItems: s.claimsItems.map(c => c.id === id ? { ...c, status: 'Submitted', rejectionReason: null } : c) })); }
+
+  simulateContribution(name) {
+    this.setState(s => ({ familySplit: { ...s.familySplit, contributions: s.familySplit.contributions.map(c => c.name === name ? { ...c, paid: true } : c) } }));
+  }
+
+  setRefundThreshold(e) { const v = Number(e.target.value) || 0; this.setState(s => ({ settings: { ...s.settings, refundThreshold: v } })); }
+  toggleSecondApproval() { this.setState(s => ({ settings: { ...s.settings, secondApprovalEnabled: !s.settings.secondApprovalEnabled } })); }
+
+  setPatientTab(tab) { this.setState({ patientTab: tab }); }
+
+  toggleAuth(id) { this.setState(s => ({ selectedAuthId: s.selectedAuthId === id ? null : id })); }
+  submitAuthorization(id) {
+    this.setState(s => ({
+      authItems: s.authItems.map(it => it.id === id ? { ...it, status: 'Submitted', timeline: [...it.timeline, { time: 'Just now', text: 'Submitted to ' + it.hmo }] } : it),
+      authCounts: { ...s.authCounts, draft: s.authCounts.draft - 1, submitted: s.authCounts.submitted + 1 },
+    }));
+  }
+  approveAuthorization(id) {
+    this.setState(s => {
+      const item = s.authItems.find(it => it.id === id);
+      const wasPending = item.status === 'Pending';
+      return {
+        authItems: s.authItems.map(it => it.id === id ? { ...it, status: 'Approved', timeline: [...it.timeline, { time: 'Just now', text: 'Approved by ' + it.hmo }] } : it),
+        authCounts: { ...s.authCounts, submitted: wasPending ? s.authCounts.submitted : s.authCounts.submitted - 1, pending: wasPending ? s.authCounts.pending - 1 : s.authCounts.pending, approved: s.authCounts.approved + 1 },
+      };
+    });
+  }
+
+  setCopilotInput(e) { this.setState({ copilotInput: e.target.value }); }
+  handleCopilotKey(e) { if (e.key === 'Enter') this.submitCopilot(); }
+  askCopilot(text) { this.setState({ copilotInput: text }, () => this.submitCopilot()); }
+
+  matchCopilot(text) {
+    const t = text.toLowerCase();
+    if (t.includes('hmo') && (t.includes('owe') || t.includes('most'))) return 'Reliance HMO owes the most: \u20a61.2M across 34 unpaid claims, averaging 52 days outstanding.';
+    if (t.includes('unpaid') || t.includes('30 days') || t.includes('overdue')) return '18 invoices are over 30 days old, totaling \u20a6610,000. Wuse branch accounts for about 40% of that.';
+    if (t.includes('reject')) return '3 claims are flagged likely-to-reject: missing pre-authorization (2) and a tariff mismatch (1).';
+    if (t.includes('reconcil') || t.includes("haven't been") || t.includes('unmatched')) return '3 payments are unmatched right now, totaling around \u20a6120,500 — mostly transfers without an invoice reference.';
+    if (t.includes('revenue') && (t.includes('branch') || t.includes('lower') || t.includes('fall') || t.includes('why'))) return 'Kaduna branch revenue is down 12% this month, driven by fewer diagnostic bookings.';
+    if (t.includes('leak')) return 'Estimated leakage this month: \u20a6185,000, mostly from services performed without a matching invoice at Maitama.';
+    if (t.includes('highest') || t.includes('best') || (t.includes('service') && t.includes('revenue'))) return 'Executive Checkup packages and ECG generate the highest revenue per service this quarter.';
+    return "I don't have that one yet — try asking about revenue, claims, reconciliation, or receivables.";
+  }
+
+  submitCopilot() {
+    const text = this.state.copilotInput.trim();
+    if (!text) return;
+    const reply = this.matchCopilot(text);
+    this.setState(s => ({
+      copilotMessages: [...s.copilotMessages, { role: 'user', text }, { role: 'assistant', text: reply }],
+      copilotInput: '',
+    }));
+  }
+
+  renderVals() {
+    const s = this.state;
+    const navGroups = NAV_STRUCT.map(g => ({
+      name: g.name,
+      items: g.items.map(([id, label]) => ({
+        id, label,
+        onClick: () => this.setActiveNav(id),
+        style: `display:block;padding:7px 10px;margin:2px 0;font-size:13px;font-weight:${s.activeNav === id ? 700 : 400};color:${s.activeNav === id ? 'var(--color-accent)' : 'var(--color-text)'};background:${s.activeNav === id ? 'var(--color-accent-100)' : 'transparent'};cursor:pointer`,
+      })),
+    }));
+
+    let activeLabel = 'Dashboard';
+    NAV_STRUCT.forEach(g => g.items.forEach(([id, label]) => { if (id === s.activeNav) activeLabel = label; }));
+
+    const isDashboard = s.activeNav === 'dashboard';
+    const isReceivables = s.activeNav === 'receivables';
+    const isReconciliation = s.activeNav === 'reconciliation';
+    const isHospitalDesk = s.activeNav === 'hospital-desk';
+    const isAuthorization = s.activeNav === 'authorization';
+    const isSettlements = s.activeNav === 'settlements';
+    const isClaims = s.activeNav === 'claims';
+    const isFamilySponsors = s.activeNav === 'family-sponsors';
+    const isSettingsPage = s.activeNav === 'settings';
+    const isPatientApp = s.activeNav === 'patient-app';
+    const isStub = !isDashboard && !isReceivables && !isReconciliation && !isHospitalDesk && !isAuthorization
+      && !isSettlements && !isClaims && !isFamilySponsors && !isSettingsPage && !isPatientApp;
+    const stub = STUB_DATA[s.activeNav] || { kicker: '', blurb: '', stats: [], rows: [] };
+
+    const todayTiles = [
+      { kicker: 'Revenue', value: '\u20a62,450,000', label: 'This period' },
+      { kicker: 'Collected', value: '\u20a61,950,000', label: 'This period' },
+      { kicker: 'Outstanding', value: '\u20a6500,000', label: 'This period' },
+      { kicker: 'HMO receivables', value: '\u20a61,200,000', label: 'Owed to facility' },
+      { kicker: 'Pending claims', value: '\u20a6750,000', label: 'Awaiting HMO decision' },
+      { kicker: 'Pending settlements', value: '\u20a6450,000', label: 'In gateway pipeline' },
+      { kicker: 'Patients served', value: '124', label: 'This period' },
+      { kicker: 'Refunds', value: '\u20a635,000', label: 'This period' },
+    ];
+
+    const trendValues = [1.8, 2.1, 1.6, 2.4, 2.0, 2.6, 2.45];
+    const trendMax = Math.max(...trendValues);
+    const revenueTrend = trendValues.map((v, i) => ({
+      label: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][i],
+      pct: Math.round((v / trendMax) * 100) + '%',
+    }));
+
+    const payerMix = [
+      { name: 'Patient', pct: '40%', color: 'var(--color-neutral-300)' },
+      { name: 'HMO', pct: '45%', color: 'var(--color-accent-500)' },
+      { name: 'Insurance', pct: '10%', color: 'var(--color-accent-800)' },
+      { name: 'Corporate', pct: '5%', color: 'var(--color-neutral-600)' },
+    ];
+
+    const branchData = [
+      { name: 'Wuse', revenue: 5200000 }, { name: 'Garki', revenue: 3400000 },
+      { name: 'Maitama', revenue: 7100000 }, { name: 'Kaduna', revenue: 1450000 }, { name: 'Lagos', revenue: 2100000 },
+    ];
+    const branchMax = Math.max(...branchData.map(b => b.revenue));
+    const branchBars = branchData.map(b => ({ name: b.name, value: this.fmt(b.revenue), pct: Math.round((b.revenue / branchMax) * 100) + '%' }));
+
+    const receivablesSummary = [
+      { label: 'Patient', value: '\u20a6450K' }, { label: 'HMO', value: '\u20a63.2M' },
+      { label: 'Insurance', value: '\u20a6800K' }, { label: 'Financing', value: '\u20a6400K' },
+    ];
+
+    const unmatched = s.unmatched.map(u => ({ ...u, amountFmt: this.fmt(u.amount), onOpen: () => this.openMatch(u.id) }));
+
+    const leakageData = [
+      { amount: 185000, reason: '14 completed services have no corresponding invoice.', branch: 'Maitama' },
+      { amount: 62000, reason: '3 HMO-eligible services were billed as self-pay.', branch: 'Wuse' },
+      { amount: 41000, reason: 'Duplicate discount applied on 6 invoices.', branch: 'Garki' },
+    ];
+    const leakageAlerts = leakageData.map(a => ({ ...a, amountFmt: this.fmt(a.amount) }));
+
+    const scrubbingData = [
+      { id: 'CLM-5544', hmo: 'Reliance HMO', readiness: 87, issues: ['Missing pre-auth ref'] },
+      { id: 'CLM-5545', hmo: 'Hygeia HMO', readiness: 62, issues: ['Tariff mismatch', 'Expired eligibility'] },
+      { id: 'CLM-5546', hmo: 'AXA Mansard', readiness: 95, issues: [] },
+    ];
+    const scrubbingClaims = scrubbingData.map(c => ({ ...c, readinessPct: c.readiness + '%', hasIssues: c.issues.length > 0, noIssues: c.issues.length === 0 }));
+
+    const approvals = s.approvals.map(a => ({ ...a, amountFmt: this.fmt(a.amount), onApprove: () => this.approveRequest(a.id), onReject: () => this.rejectRequest(a.id) }));
+
+    const copilotMessages = s.copilotMessages.map(m => ({
+      text: m.text,
+      wrapStyle: `display:flex;justify-content:${m.role === 'user' ? 'flex-end' : 'flex-start'}`,
+      bubbleStyle: `max-width:80%;padding:8px 12px;font-size:13px;background:${m.role === 'user' ? 'var(--color-accent-100)' : 'var(--color-surface)'};color:${m.role === 'user' ? 'var(--color-accent-800)' : 'var(--color-text)'}`,
+    }));
+    const copilotSuggestions = ['Which HMO owes us the most?', 'Show unpaid invoices over 30 days', 'Which claims are likely to be rejected?', 'What payments haven\u2019t been reconciled?']
+      .map(text => ({ text, onClick: () => this.askCopilot(text) }));
+
+    const agingData = [
+      { payer: 'Patient', b0: 200000, b30: 120000, b60: 80000, b90: 50000 },
+      { payer: 'HMO', b0: 1200000, b30: 900000, b60: 700000, b90: 400000 },
+      { payer: 'Insurance', b0: 350000, b30: 250000, b60: 150000, b90: 50000 },
+      { payer: 'Corporate', b0: 120000, b30: 80000, b60: 30000, b90: 20000 },
+      { payer: 'Financing', b0: 200000, b30: 120000, b60: 60000, b90: 20000 },
+    ];
+    const agingRows = agingData.map(r => ({
+      payer: r.payer, b0: this.fmt(r.b0), b30: this.fmt(r.b30), b60: this.fmt(r.b60), b90: this.fmt(r.b90),
+      total: this.fmt(r.b0 + r.b30 + r.b60 + r.b90),
+    }));
+    const sumCol = k => agingData.reduce((sum, r) => sum + r[k], 0);
+    const agingTotals = {
+      b0: this.fmt(sumCol('b0')), b30: this.fmt(sumCol('b30')), b60: this.fmt(sumCol('b60')), b90: this.fmt(sumCol('b90')),
+      total: this.fmt(sumCol('b0') + sumCol('b30') + sumCol('b60') + sumCol('b90')),
+    };
+
+    const matchedLogData = [
+      { invoice: 'INV-2040', amount: 45000, via: 'Auto — reference match', when: '09:02' },
+      { invoice: 'INV-2041', amount: 18000, via: 'Manual — confirmed by Adaeze O.', when: '08:47' },
+      { invoice: 'INV-2039', amount: 120000, via: 'Auto — reference match', when: '08:30' },
+    ];
+    const matchedLog = matchedLogData.map(m => ({ ...m, amountFmt: this.fmt(m.amount) }));
+
+    const modalItem = s.modalItemId ? unmatched.find(u => u.id === s.modalItemId) : null;
+
+    const settlementTimeline = [
+      { time: '08:30', text: 'SET-1187 — \u20a62,100,000 — Flutterwave payout initiated' },
+      { time: '08:34', text: 'SET-1187 — Completed to GTBank \u2022\u20224471' },
+      { time: '09:02', text: 'SET-1188 — \u20a61,950,000 — Paystack payout initiated' },
+      { time: '09:10', text: 'SET-1188 — Completed to GTBank \u2022\u20224471' },
+      { time: '\u2014', text: 'SET-1189 — \u20a6450,000 — Pending (Paystack processing)' },
+    ];
+    const branchSettlement = [
+      { name: 'Wuse', settled: this.fmt(1240000), pending: this.fmt(120000) },
+      { name: 'Garki', settled: this.fmt(780000), pending: this.fmt(0) },
+      { name: 'Maitama', settled: this.fmt(1650000), pending: this.fmt(210000) },
+      { name: 'Kaduna', settled: this.fmt(310000), pending: this.fmt(60000) },
+      { name: 'Lagos', settled: this.fmt(420000), pending: this.fmt(60000) },
+    ];
+
+    const claimStatusClass = { Draft: 'tag tag-outline', Submitted: 'tag tag-outline', Approved: 'tag tag-neutral', Rejected: 'tag tag-accent' };
+    const claimsRendered = s.claimsItems.map(c => ({
+      ...c, amountFmt: this.fmt(c.amount), tagClass: claimStatusClass[c.status],
+      isDraft: c.status === 'Draft', isSubmitted: c.status === 'Submitted', isRejected: c.status === 'Rejected', isApproved: c.status === 'Approved',
+      onSubmit: () => this.submitClaim(c.id), onApprove: () => this.simulateApproveClaim(c.id), onReject: () => this.simulateRejectClaim(c.id), onResubmit: () => this.resubmitClaim(c.id),
+    }));
+
+    const fam = s.familySplit;
+    const fundedAmount = fam.contributions.filter(c => c.paid).reduce((sum, c) => sum + c.amount, 0);
+    const familyRemaining = fam.total - fundedAmount;
+    const familyContributions = fam.contributions.map(c => ({ ...c, amountFmt: this.fmt(c.amount), notPaid: !c.paid, onPay: () => this.simulateContribution(c.name) }));
+    const familyFullyFunded = familyRemaining <= 0;
+    const familyPct = Math.round((fundedAmount / fam.total) * 100) + '%';
+
+    const settingsRefundThreshold = s.settings.refundThreshold;
+    const settingsSecondApproval = s.settings.secondApprovalEnabled;
+
+    const patientTab = s.patientTab;
+
+    const hd = s.hospitalDesk;
+    const todayActivity = [
+      { kicker: 'Patients', value: '87' }, { kicker: 'Bills', value: '74' },
+      { kicker: 'Collected', value: '\u20a63.4M' }, { kicker: 'Pending', value: '\u20a6850K' },
+    ];
+    const queueData = [
+      { patient: 'John', amount: 50000, status: 'Awaiting', tagClass: 'tag tag-outline' },
+      { patient: 'Mary', amount: 120000, status: 'HMO', tagClass: 'tag tag-outline' },
+      { patient: 'Peter', amount: 80000, status: 'Family', tagClass: 'tag tag-accent' },
+      { patient: 'David', amount: 200000, status: 'Financing', tagClass: 'tag tag-outline' },
+      { patient: 'Sarah', amount: 30000, status: 'Partial', tagClass: 'tag tag-neutral' },
+    ];
+    const queue = queueData.map(q => ({ ...q, amountFmt: this.fmt(q.amount) }));
+
+    const billItemsData = [{ name: 'Consultation', amount: 15000 }, { name: 'ECG', amount: 18000 }, { name: 'Lab — Full Blood Count', amount: 25000 }];
+    const billItems = billItemsData.map(it => ({ ...it, amountFmt: this.fmt(it.amount) }));
+    const billTotal = this.fmt(billItemsData.reduce((sum, it) => sum + it.amount, 0));
+
+    const payerOptions = [['patient', 'Patient'], ['family', 'Family'], ['hmo', 'HMO'], ['financing', 'Financing'], ['mixed', 'Mixed']];
+    const payerSeg = payerOptions.map(([id, label]) => ({ id, label, checked: hd.payerChoice === id, onChange: () => this.setPayerChoice(id) }));
+
+    const sponsorChips = ['Mother', 'Brother', 'Sister', 'Uncle'].map(name => ({
+      name, onClick: () => this.selectSponsor(name),
+      style: `padding:6px 12px;font-size:12px;font-family:var(--font-heading);font-weight:700;cursor:pointer;border:1px solid var(--color-accent);background:${hd.sponsor === name ? 'var(--color-accent)' : 'none'};color:${hd.sponsor === name ? 'var(--color-bg)' : 'var(--color-accent)'}`,
+    }));
+
+    const isFamily = hd.payerChoice === 'family';
+    const isHmo = hd.payerChoice === 'hmo';
+    const billTotalRaw = billItemsData.reduce((sum, it) => sum + it.amount, 0);
+    const needsAuth = isHmo && billTotalRaw >= 50000;
+    const famIdle = isFamily && hd.paymentStatus === 'idle';
+    const famPending = isFamily && hd.paymentStatus === 'pending';
+    const famPaid = isFamily && hd.paymentStatus === 'paid';
+    const hmoAuthIdle = needsAuth && hd.authStage === 'idle';
+    const hmoAuthPending = needsAuth && hd.authStage === 'pending';
+    const hmoAuthApproved = needsAuth && hd.authStage === 'approved' && hd.paymentStatus === 'idle';
+    const hmoAwaitingConsent = hmoAuthApproved && !hd.consentGiven;
+    const hmoConsentGiven = hmoAuthApproved && hd.consentGiven;
+    const nonFamilyIdle = !isFamily && !needsAuth && hd.paymentStatus === 'idle';
+    const nonFamilyPaid = !isFamily && hd.paymentStatus === 'paid';
+    const paidLabels = { patient: 'Paid by patient', hmo: 'Paid via HMO', financing: 'Paid via financing partner', mixed: 'Paid — mixed funding' };
+    const finalPaidLabel = needsAuth
+      ? `Paid by patient — ${this.fmt(hd.patientAmount)} (HMO covered ${this.fmt(hd.hmoAmount)})`
+      : (paidLabels[hd.payerChoice] || 'Paid');
+
+    const authTiles = [
+      { label: 'Draft', value: s.authCounts.draft }, { label: 'Submitted', value: s.authCounts.submitted },
+      { label: 'Pending', value: s.authCounts.pending }, { label: 'Approved', value: s.authCounts.approved },
+      { label: 'Partially Approved', value: s.authCounts.partial }, { label: 'Rejected', value: s.authCounts.rejected },
+      { label: 'Expired', value: s.authCounts.expired }, { label: 'Appeal', value: s.authCounts.appeal },
+    ];
+    const slaData = [{ hmo: 'Reliance HMO', time: '2h 14m' }, { hmo: 'Hygeia HMO', time: '7h 31m' }, { hmo: 'AXA Mansard', time: '4h 02m' }];
+    const coverage = { limit: this.fmt(1000000), used: this.fmt(650000), remaining: this.fmt(350000), usedPct: '65%' };
+    const costEstimator = [
+      { label: 'Treatment', value: this.fmt(1200000) }, { label: 'HMO coverage', value: '\u2212' + this.fmt(600000) },
+      { label: 'WelliSave', value: '\u2212' + this.fmt(150000) }, { label: 'Family', value: '\u2212' + this.fmt(200000) },
+      { label: 'Financing', value: '\u2212' + this.fmt(250000) },
+    ];
+    const statusTagClass = { Draft: 'tag tag-outline', Submitted: 'tag tag-outline', Pending: 'tag tag-outline', Approved: 'tag tag-neutral', Rejected: 'tag tag-accent' };
+    const authItemsRendered = s.authItems.map(it => ({
+      ...it, amountFmt: this.fmt(it.amount), expanded: s.selectedAuthId === it.id,
+      statusTagClass: statusTagClass[it.status] || 'tag tag-neutral',
+      hasReadiness: it.readiness != null, readinessPct: it.readiness + '%',
+      canSubmit: it.status === 'Draft', canApprove: it.status === 'Submitted' || it.status === 'Pending', isApproved: it.status === 'Approved',
+      onToggle: () => this.toggleAuth(it.id), onSubmit: () => this.submitAuthorization(it.id), onApprove: () => this.approveAuthorization(it.id),
+    }));
+
+    const QR_PATTERN = [1,0,1,1,0,1, 0,1,0,0,1,0, 1,1,1,0,1,1, 0,0,1,1,0,0, 1,0,0,1,1,1, 0,1,1,0,0,1];
+    const qrCells = QR_PATTERN.map(v => ({ color: v ? 'var(--color-text)' : 'var(--color-neutral-200)' }));
+
+    return {
+      navGroups, activeLabel, isDashboard, isReceivables, isReconciliation, isHospitalDesk, isAuthorization,
+      isSettlements, isClaims, isFamilySponsors, isSettingsPage, isPatientApp, isStub, stub,
+      hmoAwaitingConsent, hmoConsentGiven, giveConsent: () => this.giveConsent(),
+      settlementTimeline, branchSettlement,
+      claimsRendered,
+      familyContributions, familyRemaining: this.fmt(familyRemaining), familyFullyFunded, familyPct, familyTotal: this.fmt(fam.total),
+      settingsRefundThreshold, setRefundThreshold: e => this.setRefundThreshold(e),
+      settingsSecondApproval: settingsSecondApproval ? 'Enabled' : 'Disabled', toggleSecondApproval: () => this.toggleSecondApproval(),
+      patientTab, setPatientTabHome: () => this.setPatientTab('home'), setPatientTabPay: () => this.setPatientTab('pay'),
+      setPatientTabBills: () => this.setPatientTab('bills'), setPatientTabFamily: () => this.setPatientTab('family'), setPatientTabProfile: () => this.setPatientTab('profile'),
+      isPatHome: patientTab === 'home', isPatPay: patientTab === 'pay', isPatBills: patientTab === 'bills', isPatFamily: patientTab === 'family', isPatProfile: patientTab === 'profile',
+      authTiles, slaData, coverage, costEstimator, authItemsRendered,
+      hmoAuthIdle, hmoAuthPending, hmoAuthApproved,
+      requestAuthorization: () => this.requestAuthorization(), approveHdAuth: () => this.approveHdAuth(),
+      hdHmoAmountFmt: this.fmt(hd.hmoAmount), hdPatientAmountFmt: this.fmt(hd.patientAmount),
+      todayActivity, queue, hdPatient: hd.patient, wellipassOpen: hd.wellipassOpen,
+      openWellipass: () => this.openWellipass(), closeWellipass: () => this.closeWellipass(), scanContinue: () => this.scanContinue(),
+      billItems, billTotal, payerSeg, sponsorChips,
+      famIdle, famPending, famPaid, nonFamilyIdle, nonFamilyPaid,
+      hdSponsor: hd.sponsor, sendDisabled: !hd.sponsor,
+      sendFamilyRequest: () => this.sendFamilyRequest(), simulateFamilyPaid: () => this.simulateFamilyPaid(),
+      receivePayment: () => this.receivePayment(), resetDemo: () => this.resetDemo(),
+      paidLabel: finalPaidLabel, qrCells,
+      isToday: s.dateFilter === 'Today', isWeek: s.dateFilter === 'Week', isMonth: s.dateFilter === 'Month', isQuarter: s.dateFilter === 'Quarter',
+      setFilterToday: () => this.setFilterToday(), setFilterWeek: () => this.setFilterWeek(),
+      setFilterMonth: () => this.setFilterMonth(), setFilterQuarter: () => this.setFilterQuarter(),
+      todayTiles, revenueTrend, payerMix, branchBars,
+      goReceivables: () => this.goReceivables(), goReconciliation: () => this.goReconciliation(),
+      receivablesSummary,
+      matchedCount: s.matchedCount, unmatchedCount: s.unmatched.length, exceptionsCount: s.exceptionsCount, duplicateCount: s.duplicateCount,
+      unmatched, hasUnmatched: unmatched.length > 0, noUnmatched: unmatched.length === 0,
+      leakageAlerts, scrubbingClaims,
+      approvals, hasApprovals: approvals.length > 0, noApprovals: approvals.length === 0,
+      copilotMessages, copilotSuggestions, copilotInput: s.copilotInput,
+      setCopilotInput: e => this.setCopilotInput(e), handleCopilotKey: e => this.handleCopilotKey(e), submitCopilot: () => this.submitCopilot(),
+      agingRows, agingTotals,
+      matchedLog,
+      modalItem, confirmMatch: () => this.confirmMatch(), rejectMatch: () => this.rejectMatch(),
+    };
+  }
+}
+
+</script>
+</body>
+</html>

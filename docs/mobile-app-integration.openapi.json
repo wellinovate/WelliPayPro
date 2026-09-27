@@ -1,0 +1,213 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "WelliPay Patient MobileApp Integration API",
+    "version": "0.1.0",
+    "summary": "Draft contract for provider and separate patient MobileApp data exchange.",
+    "description": "Server-to-server contract. The Provider SaaS browser must not call privileged endpoints directly. Amounts use integer minor units; for NGN, 5800000 represents NGN 58000. See mobile-app-integration.md for trust rules and open decisions."
+  },
+  "servers": [
+    { "url": "https://api.wellipay.example/v1", "description": "Placeholder host; replace after environment ownership is agreed." }
+  ],
+  "security": [{ "oauth2": ["mobile.integration.read"] }],
+  "tags": [
+    { "name": "Invoices" },
+    { "name": "Family funding" },
+    { "name": "Eligibility" },
+    { "name": "Financial consent" }
+  ],
+  "paths": {
+    "/provider/invoices": {
+      "post": {
+        "tags": ["Invoices"],
+        "operationId": "createProviderInvoice",
+        "summary": "Publish an invoice to a linked patient MobileApp account",
+        "security": [{ "oauth2": ["mobile.integration.write"] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/CreateInvoice" },
+        "responses": {
+          "201": { "description": "Invoice created and queued for app delivery.", "headers": { "Location": { "$ref": "#/components/headers/ResourceLocation" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Invoice" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "422": { "$ref": "#/components/responses/Unprocessable" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/provider/invoices/{invoiceId}": {
+      "get": {
+        "tags": ["Invoices"],
+        "operationId": "getProviderInvoice",
+        "summary": "Fetch invoice state and paid amount",
+        "parameters": [{ "$ref": "#/components/parameters/InvoiceId" }],
+        "responses": {
+          "200": { "description": "Current invoice resource.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Invoice" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/provider/family-funding-requests": {
+      "post": {
+        "tags": ["Family funding"],
+        "operationId": "createFamilyFundingRequest",
+        "summary": "Create a patient-facing request for sponsor contributions",
+        "security": [{ "oauth2": ["mobile.integration.write"] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateFamilyFundingRequest" } } } },
+        "responses": {
+          "201": { "description": "Funding request created.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FamilyFundingRequest" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "422": { "$ref": "#/components/responses/Unprocessable" }
+        }
+      }
+    },
+    "/provider/eligibility-checks": {
+      "post": {
+        "tags": ["Eligibility"],
+        "operationId": "checkPatientEligibility",
+        "summary": "Request benefit eligibility for a patient and service",
+        "security": [{ "oauth2": ["mobile.integration.write"] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EligibilityCheckRequest" } } } },
+        "responses": {
+          "202": { "description": "Check accepted; result may arrive asynchronously.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EligibilityCheck" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "422": { "$ref": "#/components/responses/Unprocessable" }
+        }
+      }
+    },
+    "/provider/financial-consents": {
+      "post": {
+        "tags": ["Financial consent"],
+        "operationId": "recordFinancialConsent",
+        "summary": "Record acceptance of a specific estimate and payer split",
+        "security": [{ "oauth2": ["mobile.integration.write"] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FinancialConsentRequest" } } } },
+        "responses": {
+          "201": { "description": "Consent record created.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FinancialConsent" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "422": { "$ref": "#/components/responses/Unprocessable" }
+        }
+      }
+    }
+  },
+  "webhooks": {
+    "providerEvent": {
+      "post": {
+        "operationId": "receiveProviderEvent",
+        "summary": "Events delivered to the provider's registered webhook endpoint",
+        "description": "The integration service signs the exact raw body. Verify X-WelliPay-Timestamp and X-WelliPay-Signature before processing; deduplicate by eventId. Retries and retention are subject to the final SLA.",
+        "parameters": [
+          { "name": "X-WelliPay-Timestamp", "in": "header", "required": true, "schema": { "type": "integer", "format": "int64" }, "description": "Unix timestamp in seconds used in the signature base string." },
+          { "name": "X-WelliPay-Signature", "in": "header", "required": true, "schema": { "type": "string", "pattern": "^sha256=[a-f0-9]{64}$" }, "description": "HMAC-SHA256 of timestamp + '.' + exact raw request body using the configured endpoint secret." }
+        ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProviderEvent" }, "examples": { "paymentSucceeded": { "value": { "eventId": "evt_demo_01", "eventType": "payment.succeeded", "occurredAt": "2026-09-27T09:41:00Z", "tenantRef": "ten_abc", "resourceRef": "inv_2048", "data": { "invoiceRef": "inv_2048", "paymentRef": "pay_demo_01", "amountMinor": 5800000, "currency": "NGN", "paymentStatus": "succeeded", "processorRef": "psp_demo_01" } } } } } } },
+        "responses": { "204": { "description": "Event accepted or safely deduplicated." }, "400": { "description": "Invalid event envelope." }, "401": { "description": "Signature invalid or timestamp outside the accepted tolerance." }, "5XX": { "description": "Transient receiver error; sender may retry." } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "oauth2": { "type": "oauth2", "flows": { "clientCredentials": { "tokenUrl": "https://auth.wellipay.example/oauth/token", "scopes": { "mobile.integration.read": "Read tenant-scoped mobile integration resources", "mobile.integration.write": "Create tenant-scoped invoices, funding requests, eligibility checks, and consent records" } } } }
+    },
+    "parameters": {
+      "IdempotencyKey": { "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "minLength": 16, "maxLength": 128 }, "description": "Unique per logical write; retain on retries." },
+      "InvoiceId": { "name": "invoiceId", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,80}$" } }
+    },
+    "headers": {
+      "ResourceLocation": { "description": "Relative URI of the created resource.", "schema": { "type": "string" } }
+    },
+    "requestBodies": {
+      "CreateInvoice": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateInvoice" }, "example": { "providerInvoiceRef": "INV-2048", "facilityRef": "fac_wuse", "patientRef": "pat_opaque_1187", "description": "Consultation, ECG and Full Blood Count", "amountMinor": 5800000, "currency": "NGN", "dueAt": "2026-10-04T23:59:59Z", "metadata": { "source": "provider-console" } } } } }
+    },
+    "schemas": {
+      "Money": {
+        "type": "object", "additionalProperties": false, "required": ["amountMinor", "currency"],
+        "properties": { "amountMinor": { "type": "integer", "minimum": 0, "description": "Integer in currency minor units; NGN uses kobo." }, "currency": { "type": "string", "pattern": "^[A-Z]{3}$", "examples": ["NGN"] } }
+      },
+      "CreateInvoice": {
+        "type": "object", "additionalProperties": false, "required": ["providerInvoiceRef", "facilityRef", "patientRef", "description", "amountMinor", "currency"],
+        "properties": {
+          "providerInvoiceRef": { "type": "string", "maxLength": 80 }, "facilityRef": { "type": "string", "maxLength": 80 }, "patientRef": { "type": "string", "maxLength": 100, "description": "Opaque provider-controlled patient reference; never a name or phone number." },
+          "description": { "type": "string", "maxLength": 240 }, "amountMinor": { "type": "integer", "minimum": 1 }, "currency": { "type": "string", "const": "NGN" },
+          "dueAt": { "type": "string", "format": "date-time" }, "metadata": { "type": "object", "maxProperties": 20, "additionalProperties": { "type": "string", "maxLength": 120 }, "description": "Non-sensitive integration metadata only." }
+        }
+      },
+      "Invoice": {
+        "allOf": [{ "$ref": "#/components/schemas/CreateInvoice" }, { "type": "object", "required": ["invoiceId", "status", "paidAmountMinor", "createdAt", "updatedAt"], "properties": {
+          "invoiceId": { "type": "string" }, "status": { "type": "string", "enum": ["OPEN", "PARTIALLY_PAID", "PAID", "CANCELLED"] }, "paidAmountMinor": { "type": "integer", "minimum": 0 },
+          "createdAt": { "type": "string", "format": "date-time" }, "updatedAt": { "type": "string", "format": "date-time" }, "mobileDeliveryStatus": { "type": "string", "enum": ["QUEUED", "DELIVERED", "NOT_LINKED", "FAILED"] }
+        } }]
+      },
+      "CreateFamilyFundingRequest": {
+        "type": "object", "additionalProperties": false, "required": ["providerRequestRef", "invoiceId", "patientRef", "facilityRef", "currency", "contributions"],
+        "properties": {
+          "providerRequestRef": { "type": "string", "maxLength": 80 }, "invoiceId": { "type": "string" }, "patientRef": { "type": "string" }, "facilityRef": { "type": "string" },
+          "currency": { "type": "string", "const": "NGN" }, "expiresAt": { "type": "string", "format": "date-time" },
+          "contributions": { "type": "array", "minItems": 1, "maxItems": 20, "items": { "type": "object", "additionalProperties": false, "required": ["sponsorRef", "amountMinor"], "properties": { "sponsorRef": { "type": "string", "maxLength": 100 }, "amountMinor": { "type": "integer", "minimum": 1 } } } }
+        }
+      },
+      "FamilyFundingRequest": {
+        "type": "object", "required": ["requestId", "status", "fundedAmountMinor", "createdAt"], "properties": {
+          "requestId": { "type": "string" }, "providerRequestRef": { "type": "string" }, "invoiceId": { "type": "string" },
+          "status": { "type": "string", "enum": ["OPEN", "PARTIALLY_FUNDED", "FUNDED", "CANCELLED", "EXPIRED"] }, "fundedAmountMinor": { "type": "integer", "minimum": 0 }, "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "EligibilityCheckRequest": {
+        "type": "object", "additionalProperties": false, "required": ["providerRequestRef", "facilityRef", "patientRef", "payerRef", "serviceCodes", "requestedAt"], "properties": {
+          "providerRequestRef": { "type": "string" }, "facilityRef": { "type": "string" }, "patientRef": { "type": "string" }, "payerRef": { "type": "string" },
+          "serviceCodes": { "type": "array", "minItems": 1, "maxItems": 100, "items": { "type": "string", "maxLength": 80 } }, "requestedAt": { "type": "string", "format": "date-time" }, "amount": { "$ref": "#/components/schemas/Money" }
+        }
+      },
+      "EligibilityCheck": {
+        "type": "object", "required": ["eligibilityId", "status", "decision", "checkedAt"], "properties": {
+          "eligibilityId": { "type": "string" }, "status": { "type": "string", "enum": ["PENDING", "COMPLETE"] }, "decision": { "type": "string", "enum": ["ELIGIBLE", "PARTIALLY_ELIGIBLE", "INELIGIBLE", "PENDING"] },
+          "reasonCode": { "type": "string" }, "coveredAmount": { "$ref": "#/components/schemas/Money" }, "patientResponsibility": { "$ref": "#/components/schemas/Money" }, "validUntil": { "type": "string", "format": "date-time" }, "checkedAt": { "type": "string", "format": "date-time" }, "isPreAuthorization": { "type": "boolean", "const": false, "description": "Eligibility alone is not formal pre-authorization." }
+        }
+      },
+      "FinancialConsentRequest": {
+        "type": "object", "additionalProperties": false, "required": ["providerConsentRef", "facilityRef", "patientRef", "invoiceId", "estimateRevision", "policyVersion", "acceptedAt", "payerSplit"], "properties": {
+          "providerConsentRef": { "type": "string" }, "facilityRef": { "type": "string" }, "patientRef": { "type": "string" }, "invoiceId": { "type": "string" },
+          "estimateRevision": { "type": "string" }, "policyVersion": { "type": "string" }, "acceptedAt": { "type": "string", "format": "date-time" }, "actorRef": { "type": "string", "description": "Opaque authenticated patient/delegate reference." },
+          "payerSplit": { "type": "array", "minItems": 1, "maxItems": 10, "items": { "type": "object", "required": ["payerType", "amountMinor", "currency"], "properties": { "payerType": { "type": "string", "enum": ["PATIENT", "HMO", "INSURANCE", "FAMILY", "FINANCING", "CORPORATE"] }, "payerRef": { "type": "string" }, "amountMinor": { "type": "integer", "minimum": 0 }, "currency": { "type": "string", "const": "NGN" } } } }
+        }
+      },
+      "FinancialConsent": {
+        "type": "object", "required": ["consentId", "status", "recordedAt"], "properties": { "consentId": { "type": "string" }, "providerConsentRef": { "type": "string" }, "status": { "type": "string", "enum": ["RECORDED", "REVOKED"] }, "recordedAt": { "type": "string", "format": "date-time" } }
+      },
+      "ProviderEvent": {
+        "type": "object", "additionalProperties": false, "required": ["eventId", "eventType", "occurredAt", "tenantRef", "resourceRef", "data"], "properties": {
+          "eventId": { "type": "string" }, "eventType": { "type": "string", "enum": ["invoice.delivered", "payment.succeeded", "payment.failed", "family.contribution.updated", "eligibility.completed", "consent.recorded", "consent.revoked", "patient.linked", "patient.unlinked"] },
+          "occurredAt": { "type": "string", "format": "date-time" }, "tenantRef": { "type": "string" }, "resourceRef": { "type": "string" }, "data": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "Problem": {
+        "type": "object", "required": ["type", "title", "status"], "properties": {
+          "type": { "type": "string", "format": "uri-reference" }, "title": { "type": "string" }, "status": { "type": "integer" }, "detail": { "type": "string" }, "instance": { "type": "string", "format": "uri-reference" }, "code": { "type": "string" }, "correlationId": { "type": "string" }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": { "description": "Malformed request.", "content": { "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+      "Unauthorized": { "description": "Missing or invalid token.", "content": { "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+      "Forbidden": { "description": "Insufficient scope or resource is outside the credential tenant.", "content": { "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+      "NotFound": { "description": "Resource not found within the authenticated tenant.", "content": { "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+      "Conflict": { "description": "Idempotency key reused with a different request or resource state conflicts.", "content": { "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+      "Unprocessable": { "description": "Request violates domain validation.", "content": { "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+      "RateLimited": { "description": "Rate limit exceeded; honor Retry-After.", "headers": { "Retry-After": { "schema": { "type": "integer" } } }, "content": { "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } } } }
+    }
+  }
+}

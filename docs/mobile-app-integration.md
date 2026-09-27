@@ -1,7 +1,7 @@
 # Patient MobileApp Integration Contract
 
 **Status:** Draft for Provider SaaS and Patient MobileApp team review  
-**Contract:** [`openapi.json`](openapi.json), OpenAPI 3.1  
+**Contract:** [`mobile-app-integration.openapi.json`](mobile-app-integration.openapi.json), OpenAPI 3.1
 **Scope:** Provider backend ↔ WelliPay integration service ↔ separate Patient MobileApp
 
 The Provider SaaS remains a staff-facing web product. The Patient MobileApp is a separate patient-facing client. This contract describes the backend exchange between them; it does not embed the mobile app in the SaaS or make the browser console a trusted integration client.

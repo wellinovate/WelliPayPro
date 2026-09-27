@@ -25,6 +25,7 @@ This schedule is intended to replace the incomplete Technical Schedule and syste
 | Bank settlement evidence | WelliPay finance/treasury owner | Bank statement/API and processor settlement reports | Technology Partner supports data export and investigation if contracted |
 | Webhook event publication | WelliPay for WelliPay events; processor for processor events to the agreed receiver | WelliPay event/outbox log and processor event records | Technology Partner operates and secures any receiver assigned to it |
 | Reconciliation, refunds and chargebacks | WelliPay | WelliPay reconciliation/case records linked to external evidence | Applications submit authorized requests and display resulting status |
+| Reconciliation, settlement and refund UI surfaces | [WelliPay or Technology Partner, per screen/workflow] | No independent financial record; render canonical WelliPay API resources | Other party supplies requirements, consumes APIs, or embeds the agreed surface; UI operation does not confer authority over matching, adjustments, refunds or settlement state |
 | HMO/insurance eligibility and formal authorization | [Named payer integration owner] | Payer response/authorization reference plus WelliPay’s audit record | Parties must label eligibility separately from formal authorization |
 | Financial consent | [Named WelliPay/Wellinovate consent-service owner] | Versioned consent record and evidence of authenticated action | Apps present the approved estimate and collect the action; this is not clinical consent |
 | Clinical records | WelliRecord / [named clinical-system owner] | Designated clinical system | Financial systems receive minimum necessary data only |
@@ -81,7 +82,7 @@ All transitions, including late/out-of-order events, are applied idempotently. D
 
 WelliPay approves and initiates refunds under its documented approval policy; the processor executes processor refunds; WelliPay records processor confirmation and updates the linked invoice allocation. WelliPay owns processor disputes/chargebacks, evidence submission, deadlines and financial accounting. Provider staff may supply service/invoice evidence. Technology Partner provides contracted technical assistance but may not submit evidence or concede liability without written delegated authority.
 
-WelliPay owns daily processor-to-ledger and processor/bank-to-settlement reconciliation. Unmatched or financially material exceptions are assigned to **[role]**, acknowledged within **[X]**, and escalated after **[Y]**. Define materiality threshold, evidence retention, close calendar and adjustment approvals in the Finance Operations Schedule.
+WelliPay owns daily processor-to-ledger and processor/bank-to-settlement reconciliation. Unmatched or financially material exceptions are assigned to **[role]**, acknowledged within **[X]**, and escalated after **[Y]**. Define materiality threshold, evidence retention, close calendar and adjustment approvals in the Finance Operations Schedule. The party that implements or operates a dashboard reconciliation widget, detailed reconciliation workspace, settlement view, or refund queue is separately designated in the matrix and below; presenting or operating a UI does not create a competing record or authorize a financial mutation outside WelliPay controls.
 
 ## 5. API and webhook operating schedule
 
@@ -144,6 +145,9 @@ Production launch is blocked until both parties sign off on all items below:
 - OAuth issuer/audience/scopes, key rotation/revocation, tenant isolation and privileged-access tests passed.
 - Named processor and merchant/settlement arrangement; verified processor webhooks; capture/refund/dispute test cases passed.
 - Payment, invoice, refund, settlement and reconciliation state models approved by Finance and Engineering; duplicates/out-of-order/late events tested.
+- Every asynchronous screen and action has explicit loading, success, recoverable error, terminal error, and empty states; retry, cancellation, timeout and stale-data behavior are tested.
+- Failed payment initiation/capture, delayed or failed webhook delivery, duplicate/out-of-order events, stale or expired authorization, and failed settlement/reconciliation are visible, accurately labeled, and recoverable/escalated without showing a false success state.
+- UI surfaces for reconciliation, settlement and refunds are assigned independently from the WelliPay data/ledger authority; actions are authorized server-side and UI-only state cannot override canonical records.
 - Family allocations cannot exceed invoice/request amount; multi-payer rounding and reversal cases tested.
 - Webhook retries, signature failure, replay protection, event replay, dead-letter alerting and operational ownership tested.
 - Consent record identifies the exact estimate revision, displayed payer split, authenticated actor/delegate, wording/policy version and timestamp; legal retention approved.
@@ -165,6 +169,8 @@ Production launch is blocked until both parties sign off on all items below:
 | Merchant and settlement account owner | WelliPay legal entity | [legal entity/account control and dual approvers] |
 | Eligibility versus formal authorization sources | Separate payer-specific contracts | [payer/source; clinical-financial approver] |
 | Financial consent service and retention | WelliPay/Wellinovate-designated service | [owner, legal basis, period; privacy approver] |
+| Reconciliation UI surface and workflow operation | WelliPay financial data authority; UI owner to be named per surface | [owner for dashboard widget, detailed workspace, exception workflow, and approvals; WelliPay Finance + product approver] |
+| Settlement/refund UI surface operation | WelliPay owns financial records and controls; UI owner to be named per surface | [owner for settlement views and refund request/decision screens; WelliPay Finance + product approver] |
 | SLA, retry and event retention targets | See Sections 5–6 proposed values | [final values; both operational owners] |
 | Custom IP and transition terms | Assignment/licence model in Section 7 | [exceptions, fees and counsel approval] |
 

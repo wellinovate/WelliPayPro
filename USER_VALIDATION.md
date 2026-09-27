@@ -65,6 +65,6 @@ Prioritize issues seen by both roles or that could cause an incorrect payment, a
 
 ## Facilitator preflight (not user findings)
 
-Smoke-tested in the demo: HMO authorization → 80/20 split → consent → collection; family request → pending → paid; WelliPass patient switch; draft claim submission; and both reconciliation match outcomes. “Not a match” increments Exceptions and leaves the payment unmatched.
+Smoke-tested in the demo: HMO authorization → 80/20 split → consent → collection; family request → pending → paid; WelliPass patient switch; draft claim submission; both reconciliation match outcomes; and distinct approval/rejection decisions recorded with actor and time. “Not a match” increments Exceptions and leaves the payment unmatched.
 
-Known prototype limitation: Approve and Reject in the dashboard approval queue currently have the same effect: each removes the row, with no decision record or confirmation. Treat this as a known behavior gap, not participant confusion. Demo state is also in-memory and resets on reload. Do not use this prototype to authorize or process real transactions.
+Known prototype limitations: demo state is in-memory and resets on reload; approval decisions are illustrative and are not persisted or connected to real authorization controls. Treat the queue as a UI demo, not an operational approval record. Chat messages are HTML-escaped in this prototype; production implementations should render untrusted user content as text, not concatenate it into HTML. Do not use this prototype to authorize or process real transactions.

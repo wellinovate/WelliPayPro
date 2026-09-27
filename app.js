@@ -347,7 +347,7 @@ function renderInvoices() {
     ${renderBranchBanner()}
     ${pageHeading('Revenue Cycle', 'Digital Invoice Engine', 'Itemised billing, multi-payer split tracking, payment status and SMS dispatch.')}
     ${metricGrid([['142','Open Invoices','Ledger'],['₦8.4M','Invoiced This Month','Billed'],['6 days','Avg Time to Pay','Collection'],['96.2%','Collection Rate','Settled']])}
-    ${card('<div class="section-heading"><span>Invoice Ledger</span><div class="toolbar"><button class="btn btn-primary" data-action="open-create-invoice">Create Invoice</button><button class="btn btn-secondary" data-action="export-invoices">Export CSV</button></div></div>', `
+    ${card('<div class="section-heading"><span>Invoice Ledger</span><div class="toolbar"><button class="btn btn-primary" data-action="open-create-invoice">Create Invoice</button><button class="btn btn-secondary" data-action="export-invoices-pdf">Export PDF</button><button class="btn btn-secondary" data-action="export-invoices">Export CSV</button></div></div>', `
       <div class="filter-bar">
         <div class="filter-group">
           ${['All','Unpaid','Part-paid','Paid','Draft'].map(f => `<button class="filter-btn ${state.invoiceFilter === f ? 'active' : ''}" data-action="filter-invoices" data-filter="${f}">${f}</button>`).join('')}
@@ -716,25 +716,29 @@ function renderReports() {
       ${card('Monthly Revenue Statement', `
         <p>Comprehensive transaction journal detailing cash, card, HMO copays and sponsor funding across all branches for Sep 2026.</p>
         <div class="toolbar" style="margin-top:12px;">
-          <button class="btn btn-primary" data-action="export-revenue-report">Download CSV (Revenue)</button>
+          <button class="btn btn-primary" data-action="export-revenue-report-pdf">Download PDF</button>
+          <button class="btn btn-secondary" data-action="export-revenue-report">Download CSV (Revenue)</button>
         </div>
       `)}
       ${card('HMO Claims Ageing & Scrubbing Audit', `
         <p>Breakdown of outstanding claims by HMO, ageing bracket, and pre-submission error flags.</p>
         <div class="toolbar" style="margin-top:12px;">
-          <button class="btn btn-primary" data-action="export-claims-report">Download CSV (Claims)</button>
+          <button class="btn btn-primary" data-action="export-claims-report-pdf">Download PDF</button>
+          <button class="btn btn-secondary" data-action="export-claims-report">Download CSV (Claims)</button>
         </div>
       `)}
       ${card('Branch Reconciliation Ledger', `
         <p>Detailed breakdown of bank settlements, Paystack payouts and outstanding batch deposits by branch.</p>
         <div class="toolbar" style="margin-top:12px;">
-          <button class="btn btn-primary" data-action="export-recon-report">Download CSV (Reconciliation)</button>
+          <button class="btn btn-primary" data-action="export-recon-report-pdf">Download PDF</button>
+          <button class="btn btn-secondary" data-action="export-recon-report">Download CSV (Reconciliation)</button>
         </div>
       `)}
       ${card('Revenue Leakage Audit Report', `
         <p>Identifies diagnostic services rendered without matching invoices, duplicate discounts, and untariffed items.</p>
         <div class="toolbar" style="margin-top:12px;">
-          <button class="btn btn-primary" data-action="export-leakage-report">Download CSV (Leakage)</button>
+          <button class="btn btn-primary" data-action="export-leakage-report-pdf">Download PDF</button>
+          <button class="btn btn-secondary" data-action="export-leakage-report">Download CSV (Leakage)</button>
         </div>
       `)}
     </div>
@@ -1149,7 +1153,8 @@ function renderModal() {
         </div>
         <div class="modal-actions">
           <button class="btn btn-secondary" data-action="close-modal">Close</button>
-          <button class="btn btn-primary" onclick="window.print()">Print / Save PDF</button>
+          <button class="btn btn-primary" data-action="export-receipt-pdf">Download PDF Receipt</button>
+          <button class="btn btn-secondary" onclick="window.print()">Print</button>
         </div>
       </section>
     </div>`;
@@ -1639,6 +1644,49 @@ function dispatch(action, target, domEvent) {
         ['Wuse', '₦62,000', '3 HMO-eligible services billed as self-pay', 'Enforce WelliPass eligibility check at desk'],
         ['Garki', '₦41,000', 'Duplicate discount applied on 6 bills', 'Restrict discount override permission']
       ]);
+      break;
+    }
+
+    /* PDF Exports */
+    case 'export-receipt-pdf': {
+      const element = document.querySelector('.receipt-paper');
+      if (element && window.html2pdf) {
+        showToast('Exporting PDF...', 'Generating receipt document.');
+        const opt = {
+          margin: 10,
+          filename: `Receipt_${state.modal.invoice ? state.modal.invoice.id : Date.now()}.pdf`,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+        window.html2pdf().set(opt).from(element).save().then(() => {
+          logAudit('Receipt Exported', 'PDF receipt generated and downloaded');
+        });
+      } else {
+         window.print();
+      }
+      break;
+    }
+    case 'export-invoices-pdf':
+    case 'export-revenue-report-pdf':
+    case 'export-claims-report-pdf':
+    case 'export-recon-report-pdf':
+    case 'export-leakage-report-pdf': {
+      // Export the current page content as PDF
+      const element = document.querySelector('.content');
+      if (element && window.html2pdf) {
+        showToast('Exporting PDF...', 'Generating report document.');
+        const opt = {
+          margin: 10,
+          filename: `${action.replace('-pdf', '')}_${Date.now()}.pdf`,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+        window.html2pdf().set(opt).from(element).save().then(() => {
+          logAudit('Report Exported', `PDF document ${opt.filename} generated`);
+        });
+      }
       break;
     }
 

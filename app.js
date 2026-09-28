@@ -173,6 +173,8 @@ function openProfileDropdown() {
   }, 50);
 }
 
+import { wellipayApi, toMinor } from './api.js';
+
 const groups = [
   { name: 'Overview', items: [['dashboard', 'Dashboard', 'grid'], ['hospital-desk', 'Hospital Desk', 'wallet'], ['ai-insights', 'AI Insights', 'spark'], ['notifications', 'Notifications', 'bell']] },
   { name: 'Revenue Cycle', items: [['patients', 'Patients', 'users'], ['invoices', 'Invoices', 'file'], ['payments', 'Payments', 'credit'], ['services-pricing', 'Services & Pricing', 'list']] },
@@ -225,6 +227,12 @@ const state = {
   hmoAmount: 0,
   patientAmount: 0,
   consent: false,
+  // Real backend record IDs created via the API during this session's demo
+  // flows (null until the corresponding API call succeeds). Kept separate
+  // from the mock arrays above so a failed API call never corrupts the demo.
+  deskInvoiceId: null,
+  familyInvoiceId: null,
+  familyRequestId: null,
   patient: { name: 'Femi O.', welliId: 'WR-1187-22', hmo: 'Reliance HMO — Gold' },
   claims: [
     { id: 1, ref: 'INV-2049 — Blessing K.', hmo: 'Hygeia HMO', amount: 23000, status: 'Draft' },
@@ -1626,6 +1634,121 @@ function updateClaim(id, status) {
   render();
 }
 
+/* --- Live API wiring -----------------------------------------------------
+ * These flows call the real wellipay-api backend. They run "fire and
+ * forget" from inside `dispatch` (the UI already reflects the outcome
+ * optimistically, same as the rest of this demo) and report success or
+ * failure via a toast, so a network/API problem is visible without
+ * blocking the click. `receive-payment`, `approve-hmo` and the incremental
+ * "sponsor pays" step stay purely local: the backend has no endpoints yet
+ * for collecting payment against an invoice or for per-sponsor settlement,
+ * only for creating the funding request itself.
+ * ------------------------------------------------------------------------- */
+
+async function ensureDeskInvoice() {
+  if (state.deskInvoiceId) return state.deskInvoiceId;
+  const created = await wellipayApi.createInvoice({
+    providerInvoiceRef: `DESK-${state.patient.welliId}-${Date.now()}`,
+    facilityRef: state.branch === 'All branches' ? 'facility-wuse' : `facility-${state.branch.toLowerCase()}`,
+    patientRef: state.patient.welliId,
+    description: 'Consultation + ECG + Full Blood Count',
+    amountMinor: toMinor(58000),
+    currency: 'NGN',
+  });
+  state.deskInvoiceId = created.invoiceId;
+  return created.invoiceId;
+}
+
+async function syncDeskEligibilityCheck() {
+  try {
+    await ensureDeskInvoice();
+    await wellipayApi.createEligibilityCheck({
+      providerRequestRef: `DESK-ELIG-${Date.now()}`,
+      facilityRef: state.branch === 'All branches' ? 'facility-wuse' : `facility-${state.branch.toLowerCase()}`,
+      patientRef: state.patient.welliId,
+      payerRef: state.patient.hmo.split(' — ')[0],
+      serviceCodes: ['CONSULT-GEN', 'ECG', 'LAB-FBC'],
+      requestedAt: new Date().toISOString(),
+      amount: { amountMinor: toMinor(58000), currency: 'NGN' },
+    });
+    showToast('Synced to WelliPay API', 'Eligibility check recorded on the server.');
+  } catch (err) {
+    showToast('API Sync Failed', `Eligibility check not recorded: ${err.message}`);
+  }
+}
+
+async function syncDeskConsent() {
+  try {
+    const invoiceId = await ensureDeskInvoice();
+    await wellipayApi.createFinancialConsent({
+      providerConsentRef: `DESK-CONSENT-${Date.now()}`,
+      facilityRef: state.branch === 'All branches' ? 'facility-wuse' : `facility-${state.branch.toLowerCase()}`,
+      patientRef: state.patient.welliId,
+      invoiceId,
+      estimateRevision: 'rev-1',
+      policyVersion: 'policy-v1',
+      acceptedAt: new Date().toISOString(),
+      payerSplit: [
+        { payerType: 'HMO', amountMinor: toMinor(state.hmoAmount), currency: 'NGN' },
+        { payerType: 'PATIENT', amountMinor: toMinor(state.patientAmount), currency: 'NGN' },
+      ],
+    });
+    showToast('Synced to WelliPay API', 'Financial consent recorded on the server.');
+  } catch (err) {
+    showToast('API Sync Failed', `Consent not recorded: ${err.message}`);
+  }
+}
+
+async function syncAuthItemEligibilityCheck(item) {
+  try {
+    await wellipayApi.createEligibilityCheck({
+      providerRequestRef: `AUTH-${item.id}-${Date.now()}`,
+      facilityRef: 'facility-wuse',
+      patientRef: item.patient.replace(/\s+/g, '-').toLowerCase(),
+      payerRef: item.hmo,
+      serviceCodes: [item.service.replace(/\s+/g, '-').toUpperCase()],
+      requestedAt: new Date().toISOString(),
+      amount: { amountMinor: toMinor(item.amount), currency: 'NGN' },
+    });
+    showToast('Synced to WelliPay API', `Eligibility check recorded for ${item.patient}.`);
+  } catch (err) {
+    showToast('API Sync Failed', `Not recorded: ${err.message}`);
+  }
+}
+
+async function syncFamilyFundingRequest() {
+  try {
+    if (!state.familyInvoiceId) {
+      const invoice = await wellipayApi.createInvoice({
+        providerInvoiceRef: `FAMILY-CHIDI-${Date.now()}`,
+        facilityRef: 'facility-maitama',
+        patientRef: 'WR-4412-88',
+        description: 'Dialysis Cycle & Nephrology Care Plan',
+        amountMinor: toMinor(1000000),
+        currency: 'NGN',
+      });
+      state.familyInvoiceId = invoice.invoiceId;
+    }
+    if (!state.familyRequestId) {
+      const request = await wellipayApi.createFamilyFundingRequest({
+        providerRequestRef: `FUND-CHIDI-${Date.now()}`,
+        invoiceId: state.familyInvoiceId,
+        patientRef: 'WR-4412-88',
+        facilityRef: 'facility-maitama',
+        currency: 'NGN',
+        contributions: state.family.map((sponsor) => ({
+          sponsorRef: sponsor.name,
+          amountMinor: toMinor(sponsor.amount),
+        })),
+      });
+      state.familyRequestId = request.requestId;
+      showToast('Synced to WelliPay API', 'Family funding request recorded on the server.');
+    }
+  } catch (err) {
+    showToast('API Sync Failed', `Funding request not recorded: ${err.message}`);
+  }
+}
+
 function resetPayment(clearSponsor=true) {
   state.payment='idle';
   state.authStage='idle';
@@ -1766,13 +1889,16 @@ function dispatch(action, target, domEvent) {
     case 'family-paid': state.payment='paid';logAudit('Family Contribution Paid', `${money(58000)} paid by ${state.sponsor}`);showToast('Payment Received', `Paid by ${state.sponsor}`);render();break;
     case 'reset-payment': resetPayment();render();break;
     case 'receive-payment': state.payment='paid';logAudit('Payment Collected', `Cashier desk collected ₦58,000 for ${state.patient.name}`);showToast('Payment Collected', 'Receipt generated successfully.');render();break;
-    case 'request-auth': state.authStage='pending';state.authCounts.Submitted++;logAudit('Pre-Auth Submitted', `Hospital Desk requested authorization for ${state.patient.name}`);showToast('Pre-Auth Requested', 'Submitted to HMO clearing portal.');render();break;
+    case 'request-auth': state.authStage='pending';state.authCounts.Submitted++;logAudit('Pre-Auth Submitted', `Hospital Desk requested authorization for ${state.patient.name}`);showToast('Pre-Auth Requested', 'Submitted to HMO clearing portal.');render();syncDeskEligibilityCheck();break;
+    // No real payer adapter is wired up yet (the eligibility-checks endpoint
+    // always comes back PENDING) — the HMO's decision itself stays a local
+    // simulation until that adapter exists.
     case 'approve-hmo': state.authStage='approved';state.authCounts.Submitted=Math.max(0,state.authCounts.Submitted-1);state.authCounts.Approved++;state.hmoAmount=46400;state.patientAmount=11600;logAudit('HMO Approved Pre-Auth', 'Reliance HMO approved 80% split (₦46,400)');showToast('HMO Approved', '80/20 copay split calculated');render();break;
-    case 'consent': state.consent=true;logAudit('Financial Consent Signed', `Patient ${state.patient.name} approved copay estimate`);showToast('Consent Recorded', 'Patient authorized ₦11,600 copay responsibility');render();break;
+    case 'consent': state.consent=true;logAudit('Financial Consent Signed', `Patient ${state.patient.name} approved copay estimate`);showToast('Consent Recorded', 'Patient authorized ₦11,600 copay responsibility');render();syncDeskConsent();break;
 
     /* Pre-Auth & Claims */
     case 'toggle-auth': state.selectedAuth=state.selectedAuth===Number(id)?null:Number(id);render();break;
-    case 'submit-auth': { const item=state.authItems.find(entry=>entry.id===Number(id));if(item)updateAuthCounts(item,'Submitted');render();break; }
+    case 'submit-auth': { const item=state.authItems.find(entry=>entry.id===Number(id));if(item){updateAuthCounts(item,'Submitted');syncAuthItemEligibilityCheck(item);}render();break; }
     case 'approve-auth': { const item=state.authItems.find(entry=>entry.id===Number(id));if(item)updateAuthCounts(item,'Approved');render();break; }
     case 'claim-submit': updateClaim(Number(id),'Submitted');break;
     case 'claim-approve': updateClaim(Number(id),'Approved');break;
@@ -1805,6 +1931,11 @@ function dispatch(action, target, domEvent) {
         logAudit('Family Pool Payment', `${item.name} contributed ${money(item.amount)}`);
         showToast('Contribution Received', `${item.name} paid ${money(item.amount)}`);
         render();
+        // The API only has one call — create the funding request with every
+        // sponsor's contribution at once — so the first "Simulate pays"
+        // click records the whole request; per-sponsor settlement itself
+        // has no backend endpoint yet and stays local.
+        syncFamilyFundingRequest();
       }
       break;
     }
@@ -2087,7 +2218,7 @@ document.addEventListener('change', event => {
   }
 });
 
-document.addEventListener('submit', event => {
+document.addEventListener('submit', async event => {
   if (event.target.id === 'chat-form') {
     event.preventDefault();
     const question = new FormData(event.target).get('question')?.toString().trim();
@@ -2144,6 +2275,21 @@ document.addEventListener('submit', event => {
     logAudit('Invoice Created', `${newInv.id} for ${newInv.patient} (${money(totalAmt)})`);
     showToast('Invoice Published', `${newInv.id} created for ${newInv.patient}`);
     render();
+    try {
+      const created = await wellipayApi.createInvoice({
+        providerInvoiceRef: newInv.id,
+        facilityRef: `facility-${newInv.branch.toLowerCase()}`,
+        patientRef: pt.id,
+        description: srvName,
+        amountMinor: toMinor(totalAmt),
+        currency: 'NGN',
+      });
+      newInv.apiInvoiceId = created.invoiceId;
+      showToast('Synced to WelliPay API', `${newInv.id} recorded on the server as ${created.invoiceId}.`);
+      render();
+    } catch (err) {
+      showToast('API Sync Failed', `${newInv.id} saved locally only: ${err.message}`);
+    }
   }
   if (event.target.id === 'add-service-form') {
     event.preventDefault();

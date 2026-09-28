@@ -73,4 +73,8 @@ export const wellipayApi = {
   listPatients: (query) => apiRequest(`/provider/patients${toQueryString(query)}`),
   listPayments: (query) => apiRequest(`/provider/payments${toQueryString(query)}`),
   createPayment: (body) => apiRequest('/provider/payments', { method: 'POST', body, idempotent: 'pmt' }),
+  listClaims: (query) => apiRequest(`/provider/claims${toQueryString(query)}`),
+  createClaim: (body) => apiRequest('/provider/claims', { method: 'POST', body, idempotent: 'claim' }),
+  updateClaimStatus: (claimId, body) =>
+    apiRequest(`/provider/claims/${encodeURIComponent(claimId)}/status`, { method: 'PATCH', body }),
 };

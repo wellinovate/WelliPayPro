@@ -240,6 +240,9 @@ const state = {
   patientsSyncing: false,
   paymentsSynced: false,
   paymentsSyncing: false,
+  claimsSynced: false,
+  claimsSyncing: false,
+  liveClaims: [],
   patient: { name: 'Femi O.', welliId: 'WR-1187-22', hmo: 'Reliance HMO — Gold' },
   claims: [
     { id: 1, ref: 'INV-2049 — Blessing K.', hmo: 'Hygeia HMO', amount: 23000, status: 'Draft' },
@@ -663,11 +666,32 @@ function renderServicesPricing() {
 }
 
 /* 7. Claims */
+// Renders one claim row for either a mock claim item (id: number, status
+// capitalized like the rest of this demo's local state) or a live claim
+// fetched from GET /provider/claims (claimId: string, status upper-case
+// like the API). A live row's buttons call the live-claim-* actions, which
+// hit the real PATCH endpoint directly — a mock row's submit/resubmit call
+// the real API too (see submitMockClaim below), but its approve/reject stay
+// local "simulations," matching this demo's existing "Simulate: approve" /
+// "Simulate: reject" labels (there's no real payer decision to call out to).
+function renderClaimItem(item, isLive) {
+  const id = isLive ? item.claimId : item.id;
+  const ref = isLive ? `${item.providerClaimRef} — ${item.patientRef}` : item.ref;
+  const hmo = isLive ? item.payerRef : item.hmo;
+  const amount = isLive ? fromMinor(item.amountMinor) : item.amount;
+  const status = isLive ? (CLAIM_STATUS_LABEL[item.status] || item.status) : item.status;
+  const reason = item.reason;
+  const prefix = isLive ? 'live-' : '';
+  const simulateLabel = isLive ? '' : 'Simulate: ';
+  return `<div class="auth-item"><div class="auth-head"><div class="data-primary"><strong>${ref}</strong><span>${hmo} · ${money(amount)}${isLive ? ' <small style="color:var(--muted)">(Live)</small>' : ''}</span></div>${tag(status,status==='Approved'?'neutral':status==='Rejected'?'accent':'outline')}</div>${reason?`<p class="claim-reason" style="color:var(--color-accent-700);margin:6px 0;"><strong>Rejection reason:</strong> ${reason}</p>`:''}<div class="toolbar" style="margin-top:8px;">${status==='Draft'?`<button class="btn btn-primary" data-action="${prefix}claim-submit" data-id="${id}">Submit claim</button>`:''}${status==='Submitted'?`<button class="btn btn-secondary" data-action="${prefix}claim-approve" data-id="${id}">${simulateLabel}approve</button><button class="btn btn-secondary" data-action="${prefix}claim-reject" data-id="${id}">${simulateLabel}reject</button>`:''}${status==='Rejected'?`<button class="btn btn-primary" data-action="${prefix}claim-resubmit" data-id="${id}">Resubmit claim</button>`:''}</div></div>`;
+}
+
 function renderClaims() {
+  const rows = [...state.claims.map(item=>renderClaimItem(item,false)), ...state.liveClaims.map(item=>renderClaimItem(item,true))];
   return `<div class="page">
     ${renderBranchBanner()}
     ${pageHeading('HMO Claims','Submission, tracking & resubmission','A live claim queue for ABC Healthcare’s payer submissions.')}
-    ${card('Claim lifecycle',state.claims.map(item=>`<div class="auth-item"><div class="auth-head"><div class="data-primary"><strong>${item.ref}</strong><span>${item.hmo} · ${money(item.amount)}</span></div>${tag(item.status,item.status==='Approved'?'neutral':item.status==='Rejected'?'accent':'outline')}</div>${item.reason?`<p class="claim-reason" style="color:var(--color-accent-700);margin:6px 0;"><strong>Rejection reason:</strong> ${item.reason}</p>`:''}<div class="toolbar" style="margin-top:8px;">${item.status==='Draft'?`<button class="btn btn-primary" data-action="claim-submit" data-id="${item.id}">Submit claim</button>`:''}${item.status==='Submitted'?`<button class="btn btn-secondary" data-action="claim-approve" data-id="${item.id}">Simulate: approve</button><button class="btn btn-secondary" data-action="claim-reject" data-id="${item.id}">Simulate: reject</button>`:''}${item.status==='Rejected'?`<button class="btn btn-primary" data-action="claim-resubmit" data-id="${item.id}">Resubmit claim</button>`:''}</div></div>`).join(''))}
+    ${card('Claim lifecycle',rows.join(''))}
   </div>`;
 }
 
@@ -1259,6 +1283,7 @@ function render() {
 
   if (state.active === 'patients' && !state.patientsSynced) syncPatientsFromApi();
   if (state.active === 'payments' && !state.paymentsSynced) syncPaymentsFromApi();
+  if (state.active === 'claims' && !state.claimsSynced) syncClaimsFromApi();
 
   if (state.active === 'dashboard' || state.active === 'reports') {
     setTimeout(() => initializeCharts(), 0);
@@ -1667,6 +1692,7 @@ function updateClaim(id, status) {
 const FACILITY_BRANCH = { 'facility-wuse': 'Wuse', 'facility-maitama': 'Maitama', 'facility-garki': 'Garki', 'facility-kaduna': 'Kaduna', 'facility-lagos': 'Lagos' };
 const PAYMENT_CHANNEL_LABEL = { card: 'Card (Live)', bank_transfer: 'Bank Transfer (Live)', ussd: 'USSD (Live)', cash: 'Cash (Live)', hmo_direct: 'HMO Direct (Live)', wellipass: 'WelliPass (Live)' };
 const PAYMENT_STATUS_LABEL = { SUCCESS: 'Success', PENDING: 'Pending', FAILED: 'Failed' };
+const CLAIM_STATUS_LABEL = { DRAFT: 'Draft', SUBMITTED: 'Submitted', APPROVED: 'Approved', PARTIALLY_APPROVED: 'Partially Approved', REJECTED: 'Rejected' };
 
 async function syncPatientsFromApi() {
   if (state.patientsSyncing) return;
@@ -1718,6 +1744,61 @@ async function syncPaymentsFromApi() {
     state.paymentsSyncing = false;
     if (state.active === 'payments') render();
   }
+}
+
+async function syncClaimsFromApi() {
+  if (state.claimsSyncing) return;
+  state.claimsSyncing = true;
+  try {
+    const data = await wellipayApi.listClaims({ limit: 50 });
+    state.liveClaims = data.items;
+    state.claimsSynced = true;
+  } catch (err) {
+    showToast('API Sync Failed', `Live claims not loaded: ${err.message}`);
+  } finally {
+    state.claimsSyncing = false;
+    if (state.active === 'claims') render();
+  }
+}
+
+// Backs the mock claim list's "Submit claim" / "Resubmit claim" buttons: the
+// first time either fires for a given mock item, it creates a real claim
+// (reusing the desk demo invoice) and submits it; on a later resubmit for
+// the same item it just re-submits. `item.apiClaimId` tracks the real claim
+// once one exists. A resubmit after a purely-local "Simulate: reject" has no
+// real REJECTED state to resubmit from — that fails server-side (still
+// SUBMITTED there) and just surfaces as a toast, same as any other sync
+// failure in this file.
+async function submitMockClaim(item) {
+  try {
+    if (!item.apiClaimId) {
+      const invoiceId = await ensureDeskInvoice();
+      const created = await wellipayApi.createClaim({
+        providerClaimRef: `CLAIM-${item.id}-${Date.now()}`,
+        invoiceId,
+        payerRef: item.hmo,
+        amountMinor: toMinor(item.amount),
+        currency: 'NGN',
+      });
+      item.apiClaimId = created.claimId;
+    }
+    await wellipayApi.updateClaimStatus(item.apiClaimId, { status: 'SUBMITTED' });
+    showToast('Synced to WelliPay API', 'Claim submitted on the server.');
+  } catch (err) {
+    showToast('API Sync Failed', `Claim not recorded: ${err.message}`);
+  }
+}
+
+async function updateLiveClaimStatus(claimId, status, extra) {
+  try {
+    const updated = await wellipayApi.updateClaimStatus(claimId, { status, ...(extra || {}) });
+    const idx = state.liveClaims.findIndex(c => c.claimId === claimId);
+    if (idx !== -1) state.liveClaims[idx] = updated;
+    showToast(`Claim ${CLAIM_STATUS_LABEL[status] || status}`, `${updated.providerClaimRef} updated.`);
+  } catch (err) {
+    showToast('API Sync Failed', `Claim update failed: ${err.message}`);
+  }
+  render();
 }
 
 async function ensureDeskInvoice() {
@@ -1975,7 +2056,7 @@ function dispatch(action, target, domEvent) {
     case 'toggle-auth': state.selectedAuth=state.selectedAuth===Number(id)?null:Number(id);render();break;
     case 'submit-auth': { const item=state.authItems.find(entry=>entry.id===Number(id));if(item){updateAuthCounts(item,'Submitted');syncAuthItemEligibilityCheck(item);}render();break; }
     case 'approve-auth': { const item=state.authItems.find(entry=>entry.id===Number(id));if(item)updateAuthCounts(item,'Approved');render();break; }
-    case 'claim-submit': updateClaim(Number(id),'Submitted');break;
+    case 'claim-submit': { const item=state.claims.find(entry=>entry.id===Number(id)); updateClaim(Number(id),'Submitted'); if (item) submitMockClaim(item); break; }
     case 'claim-approve': updateClaim(Number(id),'Approved');break;
     case 'claim-reject': {
       const item=state.claims.find(entry=>entry.id===Number(id));
@@ -1996,9 +2077,14 @@ function dispatch(action, target, domEvent) {
         logAudit('Claim Resubmitted', `${item.ref} corrected and resubmitted`);
         showToast('Claim Resubmitted', 'Sent to clearing house');
         render();
+        submitMockClaim(item);
       }
       break;
     }
+    case 'live-claim-submit': updateLiveClaimStatus(id, 'SUBMITTED'); break;
+    case 'live-claim-approve': updateLiveClaimStatus(id, 'APPROVED'); break;
+    case 'live-claim-reject': updateLiveClaimStatus(id, 'REJECTED', { reason: 'Tariff mismatch — requested amount exceeds contracted tariff.' }); break;
+    case 'live-claim-resubmit': updateLiveClaimStatus(id, 'SUBMITTED'); break;
     case 'contribute': {
       const item=state.family.find(entry=>entry.name===target.dataset.name);
       if(item){

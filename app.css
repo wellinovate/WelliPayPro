@@ -5,18 +5,21 @@
   --soft: color-mix(in srgb, var(--color-text) 4%, transparent);
 }
 
-/* Dark mode transition */
-*, *::before, *::after { transition: background-color .25s ease, border-color .25s ease, color .1s ease; }
+/* Dark mode transition — only colour properties, NOT layout/overflow */
+*:not(html):not(body), *::before, *::after { transition: background-color .25s ease, border-color .25s ease, color .1s ease; }
 
 /* ── Auth / Login Screen ── */
 .auth-screen {
   position: fixed; inset: 0; z-index: 9000;
-  display: grid; place-items: center;
+  display: grid; place-items: start;
   background: var(--color-bg);
   animation: enter .3s ease both;
+  overflow-y: auto;
+  padding: 24px 0 40px;
 }
 .auth-card {
   width: min(420px, 92vw);
+  margin: auto;
   padding: 40px 36px 36px;
   background: var(--color-surface);
   border: var(--line-strong);
@@ -100,7 +103,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .branch-picker select { max-width: 180px; border: 0; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; }
 .role-tag { padding: 4px 8px; background: var(--color-neutral-100); color: var(--color-neutral-800); font-size: 10px; }
 .avatar { width: 32px; height: 32px; border: 0; background: var(--color-accent-100); color: var(--color-accent-800); font: 800 11px var(--font-heading); cursor: pointer; }
-.content { flex: 1; overflow-y: auto; padding: 27px 30px 40px; }
+.content { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 27px 30px 40px; scroll-behavior: smooth; }
 .page { display: flex; max-width: 1440px; flex-direction: column; gap: 21px; margin: 0 auto; animation: enter .18s ease both; }
 @keyframes enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 .page-heading { display: flex; align-items: end; justify-content: space-between; flex-wrap: wrap; gap: 12px; }

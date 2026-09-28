@@ -173,7 +173,7 @@ function openProfileDropdown() {
   }, 50);
 }
 
-import { wellipayApi, toMinor } from './api.js';
+import { wellipayApi, toMinor, fromMinor } from './api.js';
 
 const groups = [
   { name: 'Overview', items: [['dashboard', 'Dashboard', 'grid'], ['hospital-desk', 'Hospital Desk', 'wallet'], ['ai-insights', 'AI Insights', 'spark'], ['notifications', 'Notifications', 'bell']] },
@@ -233,6 +233,13 @@ const state = {
   deskInvoiceId: null,
   familyInvoiceId: null,
   familyRequestId: null,
+  // Real-data sync flags for the Patients/Payments pages (see "Live API
+  // wiring" below) — track whether a GET has completed or is in flight so
+  // navigating back and forth doesn't re-fire the request every render.
+  patientsSynced: false,
+  patientsSyncing: false,
+  paymentsSynced: false,
+  paymentsSyncing: false,
   patient: { name: 'Femi O.', welliId: 'WR-1187-22', hmo: 'Reliance HMO — Gold' },
   claims: [
     { id: 1, ref: 'INV-2049 — Blessing K.', hmo: 'Hygeia HMO', amount: 23000, status: 'Draft' },
@@ -501,7 +508,7 @@ function renderPatients() {
                 <td><strong>${p.name}</strong><br><small style="color:var(--muted)">${p.id} · ${p.phone}</small></td>
                 <td>${p.hmo} <small style="color:var(--muted)">(${p.plan})</small></td>
                 <td>${p.branch}</td>
-                <td><strong>${money(p.balance)}</strong></td>
+                <td><strong>${money(p.balance)}</strong>${p.live ? ' <small style="color:var(--muted)">(Live)</small>' : ''}</td>
                 <td>${p.sponsors.length ? p.sponsors.join(', ') : '—'}</td>
                 <td>${tag(p.status, p.balance > 0 ? 'accent' : 'neutral')}</td>
                 <td>
@@ -1250,6 +1257,9 @@ function render() {
   modalRoot.innerHTML = renderModal();
   content.focus({ preventScroll: true });
 
+  if (state.active === 'patients' && !state.patientsSynced) syncPatientsFromApi();
+  if (state.active === 'payments' && !state.paymentsSynced) syncPaymentsFromApi();
+
   if (state.active === 'dashboard' || state.active === 'reports') {
     setTimeout(() => initializeCharts(), 0);
   }
@@ -1644,6 +1654,71 @@ function updateClaim(id, status) {
  * for collecting payment against an invoice or for per-sponsor settlement,
  * only for creating the funding request itself.
  * ------------------------------------------------------------------------- */
+
+// Patients/Payments pages: mock rows carry the display identity (name,
+// phone, HMO plan) this demo has never had real data for; the API has no
+// patient PII by design (see prisma/schema.prisma). So these merge real
+// financial numbers onto the existing mock identity — matched via
+// patientRef === the mock patient's WelliID — rather than replacing the
+// list outright. Real payments (which have no mock equivalent) are
+// prepended, tagged `live: true` so a re-sync can replace them without
+// touching the original mock rows.
+
+const FACILITY_BRANCH = { 'facility-wuse': 'Wuse', 'facility-maitama': 'Maitama', 'facility-garki': 'Garki', 'facility-kaduna': 'Kaduna', 'facility-lagos': 'Lagos' };
+const PAYMENT_CHANNEL_LABEL = { card: 'Card (Live)', bank_transfer: 'Bank Transfer (Live)', ussd: 'USSD (Live)', cash: 'Cash (Live)', hmo_direct: 'HMO Direct (Live)', wellipass: 'WelliPass (Live)' };
+const PAYMENT_STATUS_LABEL = { SUCCESS: 'Success', PENDING: 'Pending', FAILED: 'Failed' };
+
+async function syncPatientsFromApi() {
+  if (state.patientsSyncing) return;
+  state.patientsSyncing = true;
+  try {
+    const data = await wellipayApi.listPatients({ limit: 100 });
+    const byPatientRef = new Map(data.items.map(item => [item.patientRef, item]));
+    state.patientList.forEach(p => {
+      const real = byPatientRef.get(p.id);
+      if (!real) return;
+      p.balance = fromMinor(real.balanceMinor);
+      p.totalBilled = fromMinor(real.totalBilledMinor);
+      p.totalPaid = fromMinor(real.totalPaidMinor);
+      p.invoiceCount = real.invoiceCount;
+      p.live = true;
+    });
+    state.patientsSynced = true;
+  } catch (err) {
+    showToast('API Sync Failed', `Live patient balances not loaded: ${err.message}`);
+  } finally {
+    state.patientsSyncing = false;
+    if (state.active === 'patients') render();
+  }
+}
+
+async function syncPaymentsFromApi() {
+  if (state.paymentsSyncing) return;
+  state.paymentsSyncing = true;
+  try {
+    const data = await wellipayApi.listPayments({ limit: 50 });
+    const patientNameByRef = new Map(state.patientList.map(p => [p.id, p.name]));
+    const liveRows = data.items.map(item => ({
+      id: `PMT-${item.paymentId.slice(-6).toUpperCase()}`,
+      ref: item.providerPaymentRef,
+      channel: PAYMENT_CHANNEL_LABEL[item.channel] || item.channel,
+      patient: patientNameByRef.get(item.patientRef) || item.patientRef,
+      inv: item.invoiceId,
+      amount: fromMinor(item.amountMinor),
+      time: new Date(item.occurredAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' }),
+      status: PAYMENT_STATUS_LABEL[item.status] || item.status,
+      branch: FACILITY_BRANCH[item.facilityRef] || item.facilityRef,
+      live: true,
+    }));
+    state.paymentList = [...liveRows, ...state.paymentList.filter(p => !p.live)];
+    state.paymentsSynced = true;
+  } catch (err) {
+    showToast('API Sync Failed', `Live payments not loaded: ${err.message}`);
+  } finally {
+    state.paymentsSyncing = false;
+    if (state.active === 'payments') render();
+  }
+}
 
 async function ensureDeskInvoice() {
   if (state.deskInvoiceId) return state.deskInvoiceId;

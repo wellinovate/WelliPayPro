@@ -49,14 +49,28 @@ async function apiRequest(path, { method = 'GET', body, idempotent } = {}) {
 // Amounts in `state` are Naira (display units). The API stores money as
 // minor units (kobo) per its money-as-integer design — never floats.
 export const toMinor = (nairaAmount) => Math.round(nairaAmount * 100);
+export const fromMinor = (minorAmount) => Math.round(minorAmount) / 100;
+
+function toQueryString(params) {
+  const query = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') query.set(key, value);
+  });
+  const str = query.toString();
+  return str ? `?${str}` : '';
+}
 
 export const wellipayApi = {
   createInvoice: (body) => apiRequest('/provider/invoices', { method: 'POST', body, idempotent: 'inv' }),
   getInvoice: (invoiceId) => apiRequest(`/provider/invoices/${encodeURIComponent(invoiceId)}`),
+  listInvoices: (query) => apiRequest(`/provider/invoices${toQueryString(query)}`),
   createFamilyFundingRequest: (body) =>
     apiRequest('/provider/family-funding-requests', { method: 'POST', body, idempotent: 'fund' }),
   createEligibilityCheck: (body) =>
     apiRequest('/provider/eligibility-checks', { method: 'POST', body, idempotent: 'elig' }),
   createFinancialConsent: (body) =>
     apiRequest('/provider/financial-consents', { method: 'POST', body, idempotent: 'consent' }),
+  listPatients: (query) => apiRequest(`/provider/patients${toQueryString(query)}`),
+  listPayments: (query) => apiRequest(`/provider/payments${toQueryString(query)}`),
+  createPayment: (body) => apiRequest('/provider/payments', { method: 'POST', body, idempotent: 'pmt' }),
 };

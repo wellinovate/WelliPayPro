@@ -243,8 +243,8 @@ function renderDashboard() {
     <div class="page-heading"><div><h1>Good afternoon, Adaeze</h1><p>Sunday, September 27, 2026 · ABC Healthcare, ${state.branch === 'All branches' ? 'consolidated (5 branches)' : state.branch + ' Branch'}</p></div><div class="seg" role="group" aria-label="Date range">${['Today','Week','Month','Quarter'].map(value=>`<label class="seg-opt"><input type="radio" name="filter" value="${value}" ${state.filter===value?'checked':''}><span>${value}</span></label>`).join('')}</div></div>
     ${metricGrid(tiles)}
     <div class="grid two-col">
-      ${card('Revenue trend · last 7 days',`<div class="chart-summary"><strong>₦2.45M</strong><span>+8.4% vs last week</span></div><div class="chart">${trend.map((value,i)=>`<div class="chart-column"><div class="chart-bar" style="height:${Math.round(value/trendMax*100)}%"></div><span>${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][i]}</span></div>`).join('')}</div>`,'trend-card')}
-      ${card('Payer mix · this month', `<div class="mix-bar"><span style="width:40%;background:var(--color-neutral-300)"></span><span style="width:45%;background:var(--color-accent-500)"></span><span style="width:10%;background:var(--color-accent-800)"></span><span style="width:5%;background:var(--color-neutral-600)"></span></div><div class="mix-legend"><span class="legend-item"><i class="swatch" style="background:var(--color-neutral-300)"></i>Patient 40%</span><span class="legend-item"><i class="swatch" style="background:var(--color-accent-500)"></i>HMO 45%</span><span class="legend-item"><i class="swatch" style="background:var(--color-accent-800)"></i>Insurance 10%</span><span class="legend-item"><i class="swatch" style="background:var(--color-neutral-600)"></i>Corporate 5%</span></div><div class="chart-summary"><strong>₦6.2M</strong><span>collected by payer</span></div>`, 'mix-card')}
+      ${card('Revenue trend · last 7 days',`<div class="chart-summary" style="margin-bottom:12px;"><strong>₦2.45M</strong><span>+8.4% vs last week</span></div><div style="height:160px;position:relative"><canvas id="revenueTrendChart"></canvas></div>`,'trend-card')}
+      ${card('Payer mix · this month', `<div class="chart-summary" style="margin-bottom:12px;"><strong>₦6.2M</strong><span>collected by payer</span></div><div style="height:160px;position:relative"><canvas id="payerMixChart"></canvas></div>`, 'mix-card')}
     </div>
     ${card('Branch revenue',`<div class="branch-list">${branches.map(([name,amount])=>`<div class="branch-row"><strong>${name}</strong><div class="branch-track"><div class="branch-fill" style="width:${Math.round(amount/branchMax*100)}%"></div></div><span class="branch-amount">${money(amount)}</span></div>`).join('')}</div>`)}
     <div class="grid two-col">
@@ -714,6 +714,7 @@ function renderReports() {
     ${metricGrid([['6','Scheduled Reports','Active'],['41','Generated This Month','Downloads'],['2 hrs ago','Last Data Refresh','Sync'],['CSV / PDF','Supported Formats','Standards']])}
     <div class="grid two-col">
       ${card('Monthly Revenue Statement', `
+        <div style="height:140px;position:relative;margin-bottom:12px;"><canvas id="reportRevenueChart"></canvas></div>
         <p>Comprehensive transaction journal detailing cash, card, HMO copays and sponsor funding across all branches for Sep 2026.</p>
         <div class="toolbar" style="margin-top:12px;">
           <button class="btn btn-primary" data-action="export-revenue-report-pdf">Download PDF</button>
@@ -721,6 +722,7 @@ function renderReports() {
         </div>
       `)}
       ${card('HMO Claims Ageing & Scrubbing Audit', `
+        <div style="height:140px;position:relative;margin-bottom:12px;"><canvas id="reportClaimsChart"></canvas></div>
         <p>Breakdown of outstanding claims by HMO, ageing bracket, and pre-submission error flags.</p>
         <div class="toolbar" style="margin-top:12px;">
           <button class="btn btn-primary" data-action="export-claims-report-pdf">Download PDF</button>
@@ -728,6 +730,7 @@ function renderReports() {
         </div>
       `)}
       ${card('Branch Reconciliation Ledger', `
+        <div style="height:140px;position:relative;margin-bottom:12px;"><canvas id="reportReconChart"></canvas></div>
         <p>Detailed breakdown of bank settlements, Paystack payouts and outstanding batch deposits by branch.</p>
         <div class="toolbar" style="margin-top:12px;">
           <button class="btn btn-primary" data-action="export-recon-report-pdf">Download PDF</button>
@@ -735,6 +738,7 @@ function renderReports() {
         </div>
       `)}
       ${card('Revenue Leakage Audit Report', `
+        <div style="height:140px;position:relative;margin-bottom:12px;"><canvas id="reportLeakageChart"></canvas></div>
         <p>Identifies diagnostic services rendered without matching invoices, duplicate discounts, and untariffed items.</p>
         <div class="toolbar" style="margin-top:12px;">
           <button class="btn btn-primary" data-action="export-leakage-report-pdf">Download PDF</button>
@@ -945,6 +949,86 @@ function renderStub() {
   return `<div class="page">${renderBranchBanner()}${pageHeading(kicker,labels[state.active]||'Workspace',blurb)}${metricGrid(stats.map(([value,label])=>[value,label,label]))}${card('Latest activity',rows.map(([title,detail,status],index)=>dataRow(title,detail,status,index===1?'outline':'neutral')).join(''))}</div>`;
 }
 
+let chartInstances = [];
+
+function initializeCharts() {
+  if (chartInstances.length) {
+    chartInstances.forEach(c => c.destroy());
+    chartInstances = [];
+  }
+
+  const revenueCanvas = document.getElementById('revenueTrendChart');
+  const mixCanvas = document.getElementById('payerMixChart');
+
+  if (revenueCanvas && window.Chart) {
+    chartInstances.push(new Chart(revenueCanvas, {
+      type: 'bar',
+      data: {
+        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        datasets: [{
+          label: 'Revenue (M)',
+          data: [1.8, 2.1, 1.6, 2.4, 2.0, 2.6, 2.45],
+          backgroundColor: '#ec3013',
+          borderRadius: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: { beginAtZero: true, display: false },
+          x: { grid: { display: false } }
+        },
+        plugins: {
+          legend: { display: false }
+        }
+      }
+    }));
+  }
+
+  if (mixCanvas && window.Chart) {
+    chartInstances.push(new Chart(mixCanvas, {
+      type: 'doughnut',
+      data: {
+        labels: ['Patient', 'HMO', 'Insurance', 'Corporate'],
+        datasets: [{
+          data: [40, 45, 10, 5],
+          backgroundColor: ['#d4d4d4', '#ec3013', '#7d190a', '#525252'],
+          borderWidth: 0,
+          hoverOffset: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '70%',
+        plugins: {
+          legend: { position: 'right', labels: { boxWidth: 12, font: { family: 'Archivo' } } }
+        }
+      }
+    }));
+  }
+
+  // Reports Charts
+  const repRev = document.getElementById('reportRevenueChart');
+  if (repRev && window.Chart) {
+    chartInstances.push(new Chart(repRev, {
+      type: 'line',
+      data: { labels: ['W1', 'W2', 'W3', 'W4'], datasets: [{ label: 'Revenue', data: [1.2, 1.8, 1.5, 2.4], borderColor: '#ec3013', tension: 0.3 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+    }));
+  }
+  
+  const repClaims = document.getElementById('reportClaimsChart');
+  if (repClaims && window.Chart) {
+    chartInstances.push(new Chart(repClaims, {
+      type: 'bar',
+      data: { labels: ['Reliance', 'Hygeia', 'AXA'], datasets: [{ label: 'Outstanding', data: [850, 420, 310], backgroundColor: '#525252' }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+    }));
+  }
+}
+
 function render() {
   if (!labels[state.active]) state.active = 'dashboard';
   renderNav();
@@ -982,6 +1066,43 @@ function render() {
   content.innerHTML = (views[state.active] || renderStub)();
   modalRoot.innerHTML = renderModal();
   content.focus({ preventScroll: true });
+
+  if (state.active === 'dashboard' || state.active === 'reports') {
+    setTimeout(() => initializeCharts(), 0);
+  }
+  
+  if (state.modal && state.modal.type === 'wellipass') {
+    setTimeout(() => initializeScanner(), 100);
+  } else {
+    stopScanner();
+  }
+}
+
+let html5QrcodeScanner = null;
+
+function initializeScanner() {
+  if (window.Html5QrcodeScanner && !html5QrcodeScanner) {
+    html5QrcodeScanner = new window.Html5QrcodeScanner(
+      "qr-reader",
+      { fps: 10, qrbox: { width: 250, height: 250 } },
+      /* verbose= */ false
+    );
+    html5QrcodeScanner.render(
+      (decodedText) => {
+        showToast('WelliPass Scanned', `Successfully read patient QR code: ${decodedText}`);
+        stopScanner();
+        document.querySelector('[data-action="scan-continue"]')?.click();
+      },
+      (error) => { /* ignore */ }
+    );
+  }
+}
+
+function stopScanner() {
+  if (html5QrcodeScanner) {
+    html5QrcodeScanner.clear().catch(err => console.error("Failed to clear scanner", err));
+    html5QrcodeScanner = null;
+  }
 }
 
 /* Modals */
@@ -995,8 +1116,20 @@ function renderModal() {
   }
 
   if (state.modal.type === 'wellipass') {
-    const pattern = [1,0,1,1,0,1,0,1,0,0,1,0,1,1,1,0,1,1,0,0,1,1,0,0,1,0,0,1,1,1,0,1,1,0,0,1];
-    return `<div class="modal-backdrop" data-action="dismiss-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="wellipass-head"><span class="eyebrow" style="color:white">WELLIPASS</span><strong id="modal-title">Ngozi Adeleke</strong><span>WR-2291-04 · Reliance HMO — Gold</span></div><div class="qr-grid" aria-label="Illustrative QR placeholder">${pattern.map(value=>`<span class="${value?'dark':''}"></span>`).join('')}</div><p style="text-align:center">Scanned at Wuse Front Desk</p><div class="modal-actions"><button class="btn btn-secondary" data-action="close-modal">Cancel</button><button class="btn btn-primary" data-action="scan-continue">Continue to Hospital Desk</button></div></section></div>`;
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="wellipass-head">
+          <span class="eyebrow" style="color:white">WELLIPASS SCANNER</span>
+          <strong id="modal-title">Patient Check-in</strong>
+          <span>Point camera at the patient's WelliPass QR code</span>
+        </div>
+        <div id="qr-reader" style="width:100%; border-radius: 8px; overflow: hidden; margin: 16px 0; background: #000;"></div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" data-action="close-modal">Cancel</button>
+          <button class="btn btn-primary" data-action="scan-continue">Simulate Scan (Demo)</button>
+        </div>
+      </section>
+    </div>`;
   }
 
   if (state.modal.type === 'new-patient') {

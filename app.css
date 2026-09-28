@@ -228,6 +228,9 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .menu-glyph::after { position: absolute; top: 5px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 
+.table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 12px; }
+.table-wrap .table { min-width: 600px; }
+
 @media (max-width: 1100px) {
   .content { padding: 22px; }
   .two-col { grid-template-columns: 1fr; }

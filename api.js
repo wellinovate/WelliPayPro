@@ -1,0 +1,74 @@
+// WelliPay API client — talks to the live wellipay-api backend (Fastify +
+// Postgres) instead of the mock arrays in app.js's `state` object.
+//
+// SECURITY NOTE: this issues an OAuth2 client-credentials token directly
+// from the browser using an embedded client secret (below). That is fine
+// for this prototype — the secret only grants access to the seeded demo
+// tenant — but it is NOT safe once real hospital data is involved: anyone
+// can view-source this file and read the secret. Before this goes further
+// than a demo, move token issuance behind a small server-side proxy that
+// holds the secret and hands the browser a short-lived session instead.
+//
+// Override any of these from index.html before app.js loads if needed:
+//   <script>window.WELLIPAY_API_BASE = 'https://your-env.onrender.com';</script>
+const API_BASE = window.WELLIPAY_API_BASE || 'https://wellipay-api.onrender.com';
+const CLIENT_ID = window.WELLIPAY_CLIENT_ID || 'client_abc_healthcare';
+const CLIENT_SECRET = window.WELLIPAY_CLIENT_SECRET || 'OjFerWxWdjf9VOr2YuwM0knxzdGkQqFB';
+
+let cachedToken = null; // { value: string, expiresAt: number }
+
+async function getToken() {
+  if (cachedToken && cachedToken.expiresAt - Date.now() > 15000) return cachedToken.value;
+  const res = await fetch(`${API_BASE}/oauth/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_id: CLIENT_ID,
+      client_secret: CLIENT_SECRET,
+    }),
+  });
+  if (!res.ok) throw new Error(`WelliPay API: token request failed (HTTP ${res.status})`);
+  const data = await res.json();
+  cachedToken = { value: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 };
+  return cachedToken.value;
+}
+
+function idempotencyKey(prefix) {
+  const random = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}-${random}`.slice(0, 128);
+}
+
+async function apiRequest(path, { method = 'GET', body, idempotent } = {}) {
+  const token = await getToken();
+  const headers = { Authorization: `Bearer ${token}` };
+  if (body) headers['Content-Type'] = 'application/json';
+  if (idempotent) headers['Idempotency-Key'] = idempotencyKey(idempotent);
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const payload = await res.json().catch(() => null);
+  if (!res.ok) {
+    const detail = (payload && (payload.detail || payload.title)) || `Request failed (HTTP ${res.status})`;
+    throw new Error(detail);
+  }
+  return payload;
+}
+
+// Amounts in `state` are Naira (display units). The API stores money as
+// minor units (kobo) per its money-as-integer design — never floats.
+export const toMinor = (nairaAmount) => Math.round(nairaAmount * 100);
+
+export const wellipayApi = {
+  createInvoice: (body) => apiRequest('/provider/invoices', { method: 'POST', body, idempotent: 'inv' }),
+  getInvoice: (invoiceId) => apiRequest(`/provider/invoices/${encodeURIComponent(invoiceId)}`),
+  createFamilyFundingRequest: (body) =>
+    apiRequest('/provider/family-funding-requests', { method: 'POST', body, idempotent: 'fund' }),
+  createEligibilityCheck: (body) =>
+    apiRequest('/provider/eligibility-checks', { method: 'POST', body, idempotent: 'elig' }),
+  createFinancialConsent: (body) =>
+    apiRequest('/provider/financial-consents', { method: 'POST', body, idempotent: 'consent' }),
+};

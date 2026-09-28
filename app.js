@@ -1,3 +1,178 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   AUTH — Login Screen, Role-Based Access Control, Dark Mode Toggle
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const ROLES = [
+  { id: 'finance-manager',  label: 'Finance Manager',   desc: 'Full dashboard, reports, claims & approvals', initials: 'FM', icon: '📊', perms: '*' },
+  { id: 'cashier',          label: 'Cashier',            desc: 'Hospital Desk, Payments, Receipts only',     initials: 'CA', icon: '💳', perms: ['hospital-desk','payments','invoices','patients','notifications','support'] },
+  { id: 'hmo-coordinator',  label: 'HMO Coordinator',   desc: 'Claims, Authorisations, HMO / Insurance',    initials: 'HC', icon: '🛡',  perms: ['claims','hmo-insurance','authorization','wellipass','receivables','settlements','notifications','support'] },
+  { id: 'branch-admin',     label: 'Branch Admin',       desc: 'Operations, Branches, Staff, Reports',       initials: 'BA', icon: '🏥', perms: ['dashboard','reports','branches','staff','integrations','audit-log','settings','notifications','support'] },
+  { id: 'super-admin',      label: 'Super Admin',        desc: 'Full unrestricted access across all modules', initials: 'SA', icon: '⚡', perms: '*' },
+];
+
+const DEMO_USERS = [
+  { email: 'adaeze@abchealthcare.ng',  password: 'demo1234', role: 'finance-manager',  name: 'Adaeze Okafor' },
+  { email: 'cashier@abchealthcare.ng', password: 'demo1234', role: 'cashier',          name: 'Emeka Cashier' },
+  { email: 'hmo@abchealthcare.ng',     password: 'demo1234', role: 'hmo-coordinator',  name: 'Ngozi HMO' },
+  { email: 'admin@abchealthcare.ng',   password: 'demo1234', role: 'super-admin',      name: 'Chidi Admin' },
+];
+
+const authState = {
+  user: null,
+  role: null,
+  isDark: localStorage.getItem('wp-theme') === 'dark',
+};
+
+function applyTheme() {
+  document.documentElement.setAttribute('data-theme', authState.isDark ? 'dark' : 'light');
+  localStorage.setItem('wp-theme', authState.isDark ? 'dark' : 'light');
+  const icon = document.getElementById('theme-icon');
+  if (icon) {
+    icon.innerHTML = authState.isDark
+      ? '<circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>'
+      : '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+  }
+}
+
+function canAccess(view) {
+  if (!authState.role) return false;
+  if (authState.role.perms === '*') return true;
+  return authState.role.perms.includes(view);
+}
+
+function showAuthScreen() {
+  const root = document.getElementById('auth-root');
+  let selectedRole = ROLES[0].id;
+
+  root.innerHTML = `
+    <div class="auth-screen" id="auth-screen">
+      <div class="auth-card">
+        <div class="auth-brand">
+          <span class="auth-brand-mark"></span>
+          <span><strong>WelliPay</strong><small>PROVIDER</small></span>
+        </div>
+        <h1 class="auth-heading">Welcome back</h1>
+        <p class="auth-sub">Sign in to ABC Healthcare · Multi-branch portal</p>
+        <div class="auth-error" id="auth-error">Invalid email or password. Please try again.</div>
+        <form class="auth-form" id="login-form" autocomplete="on">
+          <div class="form-group">
+            <label for="login-email">Email address</label>
+            <input class="input" id="login-email" name="email" type="email" autocomplete="email"
+              placeholder="you@abchealthcare.ng" required value="adaeze@abchealthcare.ng">
+          </div>
+          <div class="form-group">
+            <label for="login-password">Password</label>
+            <input class="input" id="login-password" name="password" type="password" autocomplete="current-password"
+              placeholder="••••••••" required value="demo1234">
+          </div>
+          <div class="auth-divider">Select your role</div>
+          <div class="auth-roles" id="auth-roles">
+            ${ROLES.map(r => `
+              <div class="role-option${r.id === selectedRole ? ' selected' : ''}" data-role-id="${r.id}">
+                <div class="role-option-icon">${r.icon}</div>
+                <div class="role-option-info">
+                  <strong>${r.label}</strong>
+                  <span>${r.desc}</span>
+                </div>
+              </div>`).join('')}
+          </div>
+          <button type="submit" class="btn btn-primary" style="width:100%;height:44px;font-size:15px;margin-top:4px;">
+            Sign in
+          </button>
+        </form>
+        <p style="margin-top:16px;font-size:11px;color:var(--muted);text-align:center;">
+          Demo: any role · password is <strong>demo1234</strong>
+        </p>
+      </div>
+    </div>`;
+
+  // Role selector
+  root.querySelectorAll('.role-option').forEach(el => {
+    el.addEventListener('click', () => {
+      selectedRole = el.dataset.roleId;
+      root.querySelectorAll('.role-option').forEach(r => r.classList.toggle('selected', r.dataset.roleId === selectedRole));
+    });
+  });
+
+  // Form submit
+  root.querySelector('#login-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const email    = root.querySelector('#login-email').value.trim().toLowerCase();
+    const password = root.querySelector('#login-password').value;
+    const matched  = DEMO_USERS.find(u => u.email === email && u.password === password);
+    const errEl    = root.querySelector('#auth-error');
+
+    if (!matched) {
+      errEl.style.display = 'block';
+      root.querySelector('#login-password').focus();
+      return;
+    }
+    errEl.style.display = 'none';
+
+    authState.user = matched;
+    authState.role = ROLES.find(r => r.id === selectedRole) || ROLES.find(r => r.id === matched.role);
+
+    // Update topbar with real user info
+    const roleTag = document.getElementById('topbar-role');
+    const avatar  = document.getElementById('topbar-avatar');
+    if (roleTag) roleTag.textContent = authState.role.label;
+    if (avatar)  {
+      const initials = matched.name.split(' ').map(n => n[0]).join('').slice(0,2);
+      avatar.textContent  = initials;
+      avatar.setAttribute('aria-label', matched.name + ' account');
+    }
+
+    // Dismiss login, show app
+    const screen = document.getElementById('auth-screen');
+    if (screen) {
+      screen.style.opacity    = '0';
+      screen.style.transition = 'opacity .3s ease';
+      setTimeout(() => { root.innerHTML = ''; }, 300);
+    }
+    document.getElementById('app-shell').style.display = '';
+    applyTheme();
+    render();
+  });
+}
+
+function openProfileDropdown() {
+  // Close if already open
+  const existing = document.getElementById('profile-dropdown');
+  if (existing) { existing.remove(); return; }
+
+  const user = authState.user || { name: 'Demo User', email: 'demo@abchealthcare.ng' };
+  const role = authState.role || ROLES[0];
+
+  const el = document.createElement('div');
+  el.className = 'profile-dropdown';
+  el.id = 'profile-dropdown';
+  el.innerHTML = `
+    <div class="profile-dropdown-header">
+      <strong>${user.name}</strong>
+      <span>${user.email}</span>
+      <span style="margin-top:3px;display:block;font-size:10px;color:var(--color-accent);font-weight:700;">${role.label}</span>
+    </div>
+    <div class="profile-dropdown-item" data-action="goto-settings">⚙️  Settings</div>
+    <div class="profile-dropdown-item" data-action="goto-audit">📋  Audit Log</div>
+    <div class="profile-dropdown-item" data-action="toggle-theme">
+      <span id="theme-label">${authState.isDark ? '☀️  Light mode' : '🌙  Dark mode'}</span>
+    </div>
+    <div class="profile-dropdown-item danger" data-action="sign-out">🚪  Sign out</div>`;
+
+  document.querySelector('.topbar').style.position = 'relative';
+  document.querySelector('.topbar').appendChild(el);
+
+  // Close on outside click
+  setTimeout(() => {
+    document.addEventListener('click', function onOuter(ev) {
+      if (!el.contains(ev.target) && !document.getElementById('topbar-avatar')?.contains(ev.target)) {
+        el.remove();
+        document.removeEventListener('click', onOuter);
+      }
+    });
+  }, 50);
+}
+
 const groups = [
   { name: 'Overview', items: [['dashboard', 'Dashboard', 'grid'], ['hospital-desk', 'Hospital Desk', 'wallet'], ['ai-insights', 'AI Insights', 'spark'], ['notifications', 'Notifications', 'bell']] },
   { name: 'Revenue Cycle', items: [['patients', 'Patients', 'users'], ['invoices', 'Invoices', 'file'], ['payments', 'Payments', 'credit'], ['services-pricing', 'Services & Pricing', 'list']] },
@@ -1467,6 +1642,34 @@ function dispatch(action, target, domEvent) {
     case 'close-menu': document.querySelector('#sidebar').classList.remove('is-open');document.querySelector('#scrim').classList.remove('is-open');break;
     case 'reset-branch': state.branch='All branches';render();break;
 
+    /* Auth & Theme */
+    case 'toggle-theme': {
+      authState.isDark = !authState.isDark;
+      applyTheme();
+      const dropdown = document.getElementById('profile-dropdown');
+      if (dropdown) {
+        const lbl = dropdown.querySelector('#theme-label');
+        if (lbl) lbl.textContent = authState.isDark ? '☀️  Light mode' : '🌙  Dark mode';
+      }
+      break;
+    }
+    case 'open-profile-menu': openProfileDropdown(); break;
+    case 'sign-out': {
+      document.getElementById('profile-dropdown')?.remove();
+      authState.user = null; authState.role = null;
+      document.getElementById('app-shell').style.display = 'none';
+      showAuthScreen();
+      break;
+    }
+    case 'goto-settings': {
+      document.getElementById('profile-dropdown')?.remove();
+      state.active = 'settings'; render(); break;
+    }
+    case 'goto-audit': {
+      document.getElementById('profile-dropdown')?.remove();
+      state.active = 'audit-log'; render(); break;
+    }
+
     /* Reconciliation */
     case 'open-match': state.modal={type:'match',id:Number(id)};render();break;
     case 'confirm-match': {
@@ -2015,4 +2218,6 @@ window.addEventListener('hashchange', () => {
   dispatch('close-menu', document.querySelector('#scrim'));
 });
 
-render();
+// Boot: apply saved theme, then show login screen
+applyTheme();
+showAuthScreen();

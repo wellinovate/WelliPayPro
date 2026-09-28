@@ -12,7 +12,8 @@
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   </head>
   <body>
-    <div class="app-shell">
+    <div id="auth-root"></div>
+    <div class="app-shell" id="app-shell" style="display:none">
       <aside class="sidebar" id="sidebar" aria-label="Main navigation">
         <a class="brand" href="#dashboard" aria-label="WelliPay Provider home">
           <span class="brand-mark"></span>
@@ -39,8 +40,13 @@
                 <option>All branches</option><option>Wuse</option><option>Garki</option><option>Maitama</option><option>Kaduna</option><option>Lagos</option>
               </select>
             </label>
-            <span class="role-tag">Finance Manager</span>
-            <button class="avatar" type="button" aria-label="Adaeze Okafor account">AO</button>
+            <span class="role-tag" id="topbar-role">Finance Manager</span>
+            <button class="icon-button" id="theme-toggle" type="button" aria-label="Toggle dark mode" data-action="toggle-theme" title="Toggle dark mode">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="theme-icon">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+              </svg>
+            </button>
+            <button class="avatar" type="button" id="topbar-avatar" aria-label="Account" data-action="open-profile-menu">AO</button>
           </div>
         </header>
         <main class="content" id="content" tabindex="-1"></main>

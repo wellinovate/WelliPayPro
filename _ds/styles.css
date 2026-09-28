@@ -63,6 +63,32 @@
   --shadow-lg: 0 12px 32px color-mix(in srgb, #2d2b2b 22%, transparent);
 }
 
+[data-theme="dark"] {
+  --color-bg: #101010;
+  --color-surface: #1c1c1c;
+  --color-text: #f0eeee;
+  --color-divider: color-mix(in srgb, #f0eeee 18%, transparent);
+
+  --color-neutral-100: #262626;
+  --color-neutral-200: #333333;
+  --color-neutral-300: #4a4a4a;
+  --color-neutral-400: #666666;
+  --color-neutral-500: #888888;
+  --color-neutral-600: #aaaaaa;
+  --color-neutral-700: #cccccc;
+  --color-neutral-800: #e0e0e0;
+  --color-neutral-900: #f5f5f5;
+
+  --color-accent-100: #3a0d06;
+  --color-accent-200: #57130a;
+  --color-accent-800: #ffaca0;
+  --color-accent-900: #ffcfc7;
+  
+  --shadow-sm: 0 1px 2px color-mix(in srgb, #000 60%, transparent);
+  --shadow-md: 0 3px 10px color-mix(in srgb, #000 70%, transparent);
+  --shadow-lg: 0 12px 32px color-mix(in srgb, #000 85%, transparent);
+}
+
 body {
   background: var(--color-bg);
   color: var(--color-text);

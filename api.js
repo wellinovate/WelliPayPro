@@ -1,33 +1,21 @@
 // WelliPay API client — talks to the live wellipay-api backend (Fastify +
 // Postgres) instead of the mock arrays in app.js's `state` object.
 //
-// SECURITY NOTE: this issues an OAuth2 client-credentials token directly
-// from the browser using an embedded client secret (below). That is fine
-// for this prototype — the secret only grants access to the seeded demo
-// tenant — but it is NOT safe once real hospital data is involved: anyone
-// can view-source this file and read the secret. Before this goes further
-// than a demo, move token issuance behind a small server-side proxy that
-// holds the secret and hands the browser a short-lived session instead.
+// Token issuance goes through the backend's own proxy endpoint
+// (POST /public/frontend-token) instead of the browser holding a
+// client_secret: the backend reads its own FRONTEND_CLIENT_ID /
+// FRONTEND_CLIENT_SECRET env vars and hands back a short-lived token, so
+// nothing secret ever ships in this file or shows up in view-source.
 //
-// Override any of these from index.html before app.js loads if needed:
+// Override this from index.html before app.js loads if needed:
 //   <script>window.WELLIPAY_API_BASE = 'https://your-env.onrender.com';</script>
 const API_BASE = window.WELLIPAY_API_BASE || 'https://wellipay-api.onrender.com';
-const CLIENT_ID = window.WELLIPAY_CLIENT_ID || 'client_abc_healthcare';
-const CLIENT_SECRET = window.WELLIPAY_CLIENT_SECRET || 'OjFerWxWdjf9VOr2YuwM0knxzdGkQqFB';
 
 let cachedToken = null; // { value: string, expiresAt: number }
 
 async function getToken() {
   if (cachedToken && cachedToken.expiresAt - Date.now() > 15000) return cachedToken.value;
-  const res = await fetch(`${API_BASE}/oauth/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET,
-    }),
-  });
+  const res = await fetch(`${API_BASE}/public/frontend-token`, { method: 'POST' });
   if (!res.ok) throw new Error(`WelliPay API: token request failed (HTTP ${res.status})`);
   const data = await res.json();
   cachedToken = { value: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 };

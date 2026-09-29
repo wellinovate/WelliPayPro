@@ -256,6 +256,9 @@ const state = {
   reconciliationSynced: false,
   reconciliationSyncing: false,
   liveReconciliationSummary: null,
+  staffSynced: false,
+  staffSyncing: false,
+  liveStaff: [],
   patient: { name: 'Femi O.', welliId: 'WR-1187-22', hmo: 'Reliance HMO — Gold' },
   claims: [
     { id: 1, ref: 'INV-2049 — Blessing K.', hmo: 'Hygeia HMO', amount: 23000, status: 'Draft' },
@@ -1050,26 +1053,45 @@ function renderBranches() {
 }
 
 /* 20. Staff & Roles */
+function renderStaffRow(item, isLive) {
+  const name = item.name;
+  const email = item.email;
+  const role = item.role;
+  const branch = isLive ? (item.branch || '—') : item.branch;
+  const statusLabel = isLive ? (item.status === 'ACTIVE' ? 'Active' : 'Deactivated') : item.status;
+  // Live rows have no per-staff login yet, so there's no real "last active"
+  // signal to show — showing the invite date instead of inventing an
+  // activity timestamp.
+  const lastCol = isLive
+    ? `<small style="color:var(--muted)">Invited ${new Date(item.invitedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}</small>`
+    : `<small>${item.lastActive}</small>`;
+  const action = isLive
+    ? (item.status === 'ACTIVE'
+        ? `<button class="btn btn-secondary" data-action="deactivate-staff" data-id="${item.staffId}">Deactivate</button>`
+        : `<button class="btn btn-secondary" data-action="reactivate-staff" data-id="${item.staffId}">Reactivate</button>`)
+    : '';
+  return `<tr>
+    <td><strong>${name}</strong>${isLive ? ' <small style="color:var(--muted)">(Live)</small>' : ''}<br><small style="color:var(--muted)">${email}</small></td>
+    <td>${tag(role, 'outline')}</td>
+    <td>${branch}</td>
+    <td>${tag(statusLabel, statusLabel === 'Deactivated' ? 'accent' : 'neutral')}</td>
+    <td>${lastCol}</td>
+    <td>${action}</td>
+  </tr>`;
+}
+
 function renderStaff() {
+  const rows = [...state.liveStaff.map(s => renderStaffRow(s, true)), ...state.staffList.map(s => renderStaffRow(s, false))];
   return `<div class="page">
     ${renderBranchBanner()}
     ${pageHeading('Operations', 'Staff & Role-Based Access', 'Configure permissions, cashier shift limits and audit roles for clinical & billing personnel.')}
     ${metricGrid([['46','Active Staff Members','Roster'],['5','Role Levels Configured','Security'],['2','Pending Invitations','Onboarding'],['100%','Audit Logging Active','Compliance']])}
+    <p style="color:var(--muted);font-size:0.85em;margin:-8px 0 12px;">Roster tiles above are illustrative. Invite/deactivate below write to a real staff directory in wellipay-api — there's no per-staff login yet, so roles aren't enforced against any endpoint.</p>
     ${card('<div class="section-heading"><span>Staff Directory</span><button class="btn btn-primary" data-action="open-invite-staff">Invite Staff Member</button></div>', `
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>Name & Email</th><th>Role</th><th>Branch Scoping</th><th>Status</th><th>Last Active</th></tr></thead>
-          <tbody>
-            ${state.staffList.map(s => `
-              <tr>
-                <td><strong>${s.name}</strong><br><small style="color:var(--muted)">${s.email}</small></td>
-                <td>${tag(s.role, 'outline')}</td>
-                <td>${s.branch}</td>
-                <td>${tag(s.status, 'neutral')}</td>
-                <td><small>${s.lastActive}</small></td>
-              </tr>
-            `).join('')}
-          </tbody>
+          <thead><tr><th>Name & Email</th><th>Role</th><th>Branch Scoping</th><th>Status</th><th>Last Active</th><th></th></tr></thead>
+          <tbody>${rows.join('')}</tbody>
         </table>
       </div>
     `)}
@@ -1337,6 +1359,7 @@ function render() {
   if ((state.active === 'receivables' || state.active === 'dashboard') && !state.receivablesSynced) syncReceivablesFromApi();
   if ((state.active === 'refunds' || state.active === 'dashboard') && !state.refundsSynced) syncRefundsFromApi();
   if (state.active === 'reconciliation' && !state.reconciliationSynced) syncReconciliationFromApi();
+  if (state.active === 'staff' && !state.staffSynced) syncStaffFromApi();
 
   if (state.active === 'dashboard' || state.active === 'reports') {
     setTimeout(() => initializeCharts(), 0);
@@ -1681,7 +1704,7 @@ function renderModal() {
     return `<div class="modal-backdrop" data-action="dismiss-modal">
       <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="inv-staff-title">
         <h2 id="inv-staff-title">Invite New Staff Member</h2>
-        <p>Create credentials and grant role-based financial permissions.</p>
+        <p>Adds a real staff directory record in wellipay-api. There's no login system yet, so this records who's invited under which role rather than issuing credentials.</p>
         <form id="invite-staff-form" class="form-grid">
           <div class="form-grid two-col">
             <div class="form-group"><label>Full Name *</label><input class="input" name="name" required placeholder="e.g. Samuel Okafor"></div>
@@ -2090,6 +2113,48 @@ async function flagLiveTransactionException(transactionId) {
     const item = state.unmatched.find(entry => entry.id === transactionId);
     if (item) item.deciding = false;
     showToast('Exception Flag Failed', err.message);
+  } finally {
+    render();
+  }
+}
+
+async function syncStaffFromApi() {
+  if (state.staffSyncing) return;
+  state.staffSyncing = true;
+  try {
+    const data = await wellipayApi.listStaff({ limit: 100 });
+    state.liveStaff = data.items;
+    state.staffSynced = true;
+  } catch (err) {
+    showToast('API Sync Failed', `Live staff directory not loaded: ${err.message}`);
+  } finally {
+    state.staffSyncing = false;
+    if (state.active === 'staff') render();
+  }
+}
+
+async function inviteLiveStaff(name, email, role, branch) {
+  try {
+    const created = await wellipayApi.createStaff({ name, email, role, branch: branch || undefined });
+    state.liveStaff.unshift(created);
+    logAudit('Staff Invited', `${created.name} invited as ${created.role}`);
+    showToast('Staff Invited', `Recorded in wellipay-api. Credentials link emailed to ${created.email}.`);
+  } catch (err) {
+    showToast('Invite Failed', err.message);
+  } finally {
+    render();
+  }
+}
+
+async function toggleLiveStaffStatus(staffId, nextStatus) {
+  try {
+    const updated = await wellipayApi.updateStaffStatus(staffId, { status: nextStatus });
+    const idx = state.liveStaff.findIndex(row => row.staffId === staffId);
+    if (idx !== -1) state.liveStaff[idx] = updated;
+    logAudit(nextStatus === 'DEACTIVATED' ? 'Staff Deactivated' : 'Staff Reactivated', `${updated.name} (${updated.role})`);
+    showToast(nextStatus === 'DEACTIVATED' ? 'Staff Deactivated' : 'Staff Reactivated', `${updated.name} updated in wellipay-api.`);
+  } catch (err) {
+    showToast('Update Failed', err.message);
   } finally {
     render();
   }
@@ -2686,6 +2751,8 @@ function dispatch(action, target, domEvent) {
 
     /* Staff */
     case 'open-invite-staff': state.modal={type:'invite-staff'};render();break;
+    case 'deactivate-staff': toggleLiveStaffStatus(id, 'DEACTIVATED');break;
+    case 'reactivate-staff': toggleLiveStaffStatus(id, 'ACTIVE');break;
 
     /* Notifications */
     case 'mark-all-read': {
@@ -3036,19 +3103,13 @@ document.addEventListener('submit', async event => {
   if (event.target.id === 'invite-staff-form') {
     event.preventDefault();
     const fd = new FormData(event.target);
-    const newMember = {
-      name: fd.get('name').toString(),
-      role: fd.get('role').toString(),
-      branch: fd.get('branch').toString(),
-      email: fd.get('email').toString(),
-      status: 'Active',
-      lastActive: 'Just invited'
-    };
-    state.staffList.unshift(newMember);
+    const name = fd.get('name').toString();
+    const email = fd.get('email').toString();
+    const role = fd.get('role').toString();
+    const branch = fd.get('branch').toString();
     state.modal = null;
-    logAudit('Staff Invited', `${newMember.name} invited as ${newMember.role}`);
-    showToast('Staff Invited', `Credentials link emailed to ${newMember.email}`);
     render();
+    inviteLiveStaff(name, email, role, branch);
   }
 });
 

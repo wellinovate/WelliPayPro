@@ -86,4 +86,8 @@ export const wellipayApi = {
     apiRequest(`/provider/unmatched-transactions/${encodeURIComponent(transactionId)}/match`, { method: 'POST', body }),
   flagUnmatchedTransactionException: (transactionId, body) =>
     apiRequest(`/provider/unmatched-transactions/${encodeURIComponent(transactionId)}/exception`, { method: 'POST', body }),
+  createStaff: (body) => apiRequest('/provider/staff', { method: 'POST', body, idempotent: 'staff' }),
+  listStaff: (query) => apiRequest(`/provider/staff${toQueryString(query)}`),
+  updateStaffStatus: (staffId, body) =>
+    apiRequest(`/provider/staff/${encodeURIComponent(staffId)}/status`, { method: 'PATCH', body }),
 };

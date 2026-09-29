@@ -251,6 +251,8 @@ const state = {
   liveReceivables: null,
   invoicesSynced: false,
   invoicesSyncing: false,
+  refundsSynced: false,
+  refundsSyncing: false,
   patient: { name: 'Femi O.', welliId: 'WR-1187-22', hmo: 'Reliance HMO — Gold' },
   claims: [
     { id: 1, ref: 'INV-2049 — Blessing K.', hmo: 'Hygeia HMO', amount: 23000, status: 'Draft' },
@@ -435,7 +437,7 @@ function renderDashboard() {
   const trend = [1.8,2.1,1.6,2.4,2.0,2.6,2.45];
   const trendMax = Math.max(...trend);
   const unmatchedMarkup = state.unmatched.length ? state.unmatched.slice(0,3).map(item=>`<div class="data-row"><div class="data-primary"><strong>${money(item.amount)} · ${item.source}</strong><span>${item.suggestion}</span></div><button class="btn btn-secondary" data-action="open-match" data-id="${item.id}">Match</button></div>`).join('') : '<p class="empty-state">Nothing unmatched right now.</p>';
-  const approvalRows = `${state.approvals.length ? `<div class="table-wrap"><table class="table approval-table"><thead><tr><th>Type</th><th>Amount</th><th>Requester</th><th>Reason</th><th>Decision</th></tr></thead><tbody>${state.approvals.map(item=>`<tr><td>${item.type}</td><td>${money(item.amount)}</td><td>${item.requester}</td><td>${item.reason}</td><td><button class="btn btn-secondary" data-action="approval" data-decision="Rejected" data-id="${item.id}">Reject</button> <button class="btn btn-primary" data-action="approval" data-decision="Approved" data-id="${item.id}">Approve</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-state">Queue is clear — nothing pending approval.</p>'}${state.approvalHistory.length ? `<div class="approval-history"><span class="card-kicker">Recent decisions</span>${state.approvalHistory.slice(0,5).map(item=>`<div class="data-row"><div class="data-primary"><strong>${item.decision} ${item.type.toLowerCase()} · ${money(item.amount)}</strong><span>${item.requester} · ${item.reason} · ${item.actor} · ${item.time}</span></div>${tag(item.decision,item.decision==='Approved'?'neutral':'accent')}</div>`).join('')}</div>` : ''}`;
+  const approvalRows = `${state.approvals.length ? `<div class="table-wrap"><table class="table approval-table"><thead><tr><th>Type</th><th>Amount</th><th>Requester</th><th>Reason</th><th>Decision</th></tr></thead><tbody>${state.approvals.map(item=>`<tr><td>${item.type}</td><td>${money(item.amount)}</td><td>${item.requester}</td><td>${item.reason}</td><td>${item.deciding ? tag('Processing…','outline') : `<button class="btn btn-secondary" data-action="approval" data-decision="Rejected" data-id="${item.id}">Reject</button> <button class="btn btn-primary" data-action="approval" data-decision="Approved" data-id="${item.id}">Approve</button>`}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-state">Queue is clear — nothing pending approval.</p>'}${state.approvalHistory.length ? `<div class="approval-history"><span class="card-kicker">Recent decisions</span>${state.approvalHistory.slice(0,5).map(item=>`<div class="data-row"><div class="data-primary"><strong>${item.decision} ${item.type.toLowerCase()} · ${money(item.amount)}</strong><span>${item.requester} · ${item.reason} · ${item.actor} · ${item.time}</span></div>${tag(item.decision,item.decision==='Approved'?'neutral':'accent')}</div>`).join('')}</div>` : ''}`;
   const messages = state.messages.map(item=>`<div class="chat-line ${item.role}"><div class="chat-bubble">${escapeHtml(item.text)}</div></div>`).join('');
   const snapshot = state.liveSnapshot;
   const snapshotCard = snapshot ? card('<div class="section-heading"><span>Live snapshot</span><span style="color:var(--muted);font-weight:400;font-size:13px">from wellipay-api</span></div>', `<div class="mini-metrics"><div class="mini-metric"><strong>${money(snapshot.collected)}</strong><span>Collected · ${snapshot.paymentCount} payments</span></div><div class="mini-metric"><strong>${money(snapshot.pendingClaims)}</strong><span>Pending claims</span></div><div class="mini-metric"><strong>${money(snapshot.approvedClaims)}</strong><span>Approved claims</span></div><div class="mini-metric"><strong>${money(snapshot.patientBalance)}</strong><span>Patient balance · ${snapshot.patientCount} patients</span></div></div>`) : (state.dashboardSyncing ? card('Live snapshot', '<p class="empty-state">Loading live figures…</p>') : '');
@@ -867,7 +869,7 @@ function renderRefunds() {
                 <td>${r.reason}</td>
                 <td>${tag(r.status, r.status === 'Approved' || r.status === 'Settled' ? 'neutral' : 'accent')}</td>
                 <td>
-                  ${r.status.includes('Pending') ? `
+                  ${r.deciding ? tag('Processing…', 'outline') : r.status.includes('Pending') ? `
                     <button class="btn btn-secondary" data-action="approve-refund-item" data-id="${r.id}" style="font-size:11px;padding:4px 8px;">Approve</button>
                     <button class="btn btn-ghost" data-action="reject-refund-item" data-id="${r.id}" style="font-size:11px;padding:4px 8px;">Reject</button>
                   ` : tag('Recorded', 'outline')}
@@ -1311,6 +1313,7 @@ function render() {
   if (state.active === 'claims' && !state.claimsSynced) syncClaimsFromApi();
   if (state.active === 'dashboard' && !state.dashboardSynced) syncDashboardFromApi();
   if ((state.active === 'receivables' || state.active === 'dashboard') && !state.receivablesSynced) syncReceivablesFromApi();
+  if ((state.active === 'refunds' || state.active === 'dashboard') && !state.refundsSynced) syncRefundsFromApi();
 
   if (state.active === 'dashboard' || state.active === 'reports') {
     setTimeout(() => initializeCharts(), 0);
@@ -1593,14 +1596,18 @@ function renderModal() {
   }
 
   if (state.modal.type === 'request-refund') {
+    const livePayments = state.paymentList.filter(p => p.live && p.status === 'Success');
     return `<div class="modal-backdrop" data-action="dismiss-modal">
       <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="req-ref-title">
         <h2 id="req-ref-title">Initiate Payment Refund</h2>
         <p>Refunds above ${money(state.settings.threshold)} will automatically trigger a dual-approval rule.</p>
         <form id="request-refund-form" class="form-grid">
-          <div class="form-group"><label>Select Invoice / Patient *</label>
-            <select name="inv" required>
-              ${state.invoiceList.filter(i=>i.paid>0).map(i => `<option value="${i.id}">${i.id} — ${i.patient} (Paid ${money(i.paid)})</option>`).join('')}
+          <div class="form-group"><label>Select Payment *</label>
+            <select name="payment" required>
+              ${livePayments.length ? `<optgroup label="Live payments (wellipay-api)">${livePayments.map(p => `<option value="live:${p.apiPaymentId}">${p.ref} — ${p.patient} (${money(p.amount)}, ${p.channel})</option>`).join('')}</optgroup>` : ''}
+              <optgroup label="Demo invoices">
+                ${state.invoiceList.filter(i=>i.paid>0 && !i.live).map(i => `<option value="mock:${i.id}">${i.id} — ${i.patient} (Paid ${money(i.paid)})</option>`).join('')}
+              </optgroup>
             </select>
           </div>
           <div class="form-grid two-col">
@@ -1726,6 +1733,7 @@ const CLAIM_STATUS_LABEL = { DRAFT: 'Draft', SUBMITTED: 'Submitted', APPROVED: '
 // created), so CANCELLED is labelled plainly rather than forced into one
 // of those four buckets; it just won't highlight under any filter chip.
 const INVOICE_STATUS_LABEL = { OPEN: 'Unpaid', PARTIALLY_PAID: 'Part-paid', PAID: 'Paid', CANCELLED: 'Cancelled' };
+const REFUND_STATUS_LABEL = { PENDING: 'Pending Approval', APPROVED: 'Approved', REJECTED: 'Rejected' };
 
 async function syncPatientsFromApi() {
   if (state.patientsSyncing) return;
@@ -1759,6 +1767,7 @@ async function syncPaymentsFromApi() {
     const patientNameByRef = new Map(state.patientList.map(p => [p.id, p.name]));
     const liveRows = data.items.map(item => ({
       id: `PMT-${item.paymentId.slice(-6).toUpperCase()}`,
+      apiPaymentId: item.paymentId,
       ref: item.providerPaymentRef,
       channel: PAYMENT_CHANNEL_LABEL[item.channel] || item.channel,
       patient: patientNameByRef.get(item.patientRef) || item.patientRef,
@@ -1807,6 +1816,129 @@ async function syncInvoicesFromApi() {
   } finally {
     state.invoicesSyncing = false;
     if (state.active === 'invoices') render();
+  }
+}
+
+// Pulls real refund records and rolls the still-PENDING ones into the
+// Dashboard's generic approval queue too, tagged `live: true` so the click
+// handlers know to call the real decision endpoint instead of the local
+// mock toggle. Payments and invoices are fetched alongside (rather than
+// reused from state) so this works even landing on Refunds directly,
+// before those other pages have synced.
+async function syncRefundsFromApi() {
+  if (state.refundsSyncing) return;
+  state.refundsSyncing = true;
+  try {
+    const [refundsData, paymentsData, invoicesData] = await Promise.all([
+      wellipayApi.listRefunds({ limit: 100 }),
+      wellipayApi.listPayments({ limit: 100 }),
+      wellipayApi.listInvoices({ limit: 100 }),
+    ]);
+    const paymentById = new Map(paymentsData.items.map(p => [p.paymentId, p]));
+    const invoiceRefById = new Map(invoicesData.items.map(inv => [inv.invoiceId, inv.providerInvoiceRef]));
+    const patientNameByRef = new Map(state.patientList.map(p => [p.id, p.name]));
+
+    const liveRows = refundsData.items.map(item => {
+      const payment = paymentById.get(item.paymentId);
+      return {
+        id: item.refundId,
+        inv: invoiceRefById.get(item.invoiceId) || item.invoiceId,
+        patient: (payment && patientNameByRef.get(payment.patientRef)) || item.requestedBy,
+        amount: fromMinor(item.amountMinor),
+        requester: item.requestedBy,
+        reason: item.reason,
+        date: new Date(item.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }),
+        status: REFUND_STATUS_LABEL[item.status] || item.status,
+        dualApproval: item.amountMinor >= toMinor(state.settings.threshold),
+        live: true,
+      };
+    });
+    state.refundList = [...liveRows, ...state.refundList.filter(r => !r.live)];
+
+    const liveApprovalItems = liveRows
+      .filter(r => r.status === 'Pending Approval')
+      .map(r => ({ id: r.id, type: 'Refund', amount: r.amount, requester: r.requester, reason: r.reason, live: true }));
+    state.approvals = [...liveApprovalItems, ...state.approvals.filter(a => !a.live)];
+
+    state.refundsSynced = true;
+  } catch (err) {
+    showToast('API Sync Failed', `Live refunds not loaded: ${err.message}`);
+  } finally {
+    state.refundsSyncing = false;
+    if (state.active === 'refunds' || state.active === 'dashboard') render();
+  }
+}
+
+// Shared by the Refunds page's Approve/Reject buttons and the Dashboard's
+// approval-queue buttons for any refund tagged `live: true` — both act on
+// the same underlying record, so both are reconciled from one API call.
+async function decideLiveRefund(refundId, apiDecision, decisionLabel) {
+  try {
+    const result = await wellipayApi.decideRefund(refundId, {
+      decision: apiDecision,
+      actor: 'Adaeze O. (Finance Manager)',
+    });
+    const row = state.refundList.find(r => r.id === refundId);
+    if (row) {
+      row.status = REFUND_STATUS_LABEL[result.status] || result.status;
+      row.deciding = false;
+    }
+    const queuedIndex = state.approvals.findIndex(a => a.id === refundId);
+    if (queuedIndex !== -1) {
+      const [queued] = state.approvals.splice(queuedIndex, 1);
+      state.approvalHistory.unshift({
+        ...queued,
+        decision: decisionLabel,
+        actor: 'Adaeze O.',
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      });
+    }
+    const invoiceNote = result.invoice
+      ? ` · invoice now ${money(fromMinor(result.invoice.paidAmountMinor))} paid (${INVOICE_STATUS_LABEL[result.invoice.status] || result.invoice.status})`
+      : '';
+    logAudit(`Refund ${decisionLabel}`, `${result.providerRefundRef} for ${money(fromMinor(result.amountMinor))}${invoiceNote}`);
+    showToast(`Refund ${decisionLabel}`, apiDecision === 'APPROVED' ? 'Reversed against the invoice.' : 'Removed from the payout queue.');
+  } catch (err) {
+    const row = state.refundList.find(r => r.id === refundId);
+    if (row) row.deciding = false;
+    showToast('Refund Decision Failed', err.message);
+  } finally {
+    render();
+  }
+}
+
+// Requests a refund against a real payment via wellipay-api. Called after
+// the modal closes so the UI doesn't sit waiting on the network with the
+// form still open.
+async function createLiveRefundRequest(paymentId, amountNaira, reason, paymentRow) {
+  try {
+    const created = await wellipayApi.createRefund({
+      providerRefundRef: `refund-${Date.now()}`,
+      paymentId,
+      amountMinor: toMinor(amountNaira),
+      reason,
+      requestedBy: 'front-desk-wuse',
+    });
+    const row = {
+      id: created.refundId,
+      inv: paymentRow ? paymentRow.inv : created.invoiceId,
+      patient: paymentRow ? paymentRow.patient : created.requestedBy,
+      amount: fromMinor(created.amountMinor),
+      requester: created.requestedBy,
+      reason: created.reason,
+      date: new Date(created.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }),
+      status: REFUND_STATUS_LABEL[created.status] || created.status,
+      dualApproval: created.amountMinor >= toMinor(state.settings.threshold),
+      live: true,
+    };
+    state.refundList.unshift(row);
+    state.approvals.unshift({ id: row.id, type: 'Refund', amount: row.amount, requester: row.requester, reason: row.reason, live: true });
+    logAudit('Refund Requested', `${created.providerRefundRef} for ${money(row.amount)} (${row.reason})`);
+    showToast('Refund Queued', 'Submitted to wellipay-api — pending approval.');
+  } catch (err) {
+    showToast('Refund Request Failed', err.message);
+  } finally {
+    render();
   }
 }
 
@@ -2146,14 +2278,21 @@ function dispatch(action, target, domEvent) {
 
     /* Dashboard Approvals */
     case 'approval': {
+      const decision = target.dataset.decision;
+      const item = state.approvals.find(entry => String(entry.id) === String(id));
+      if (item && item.live) {
+        item.deciding = true;
+        render();
+        decideLiveRefund(item.id, decision === 'Approved' ? 'APPROVED' : 'REJECTED', decision);
+        break;
+      }
       const numId = Number(id);
-      const index=state.approvals.findIndex(item=>item.id===numId);
+      const index=state.approvals.findIndex(entry=>entry.id===numId);
       if(index!==-1){
-        const [item]=state.approvals.splice(index,1);
-        const decision = target.dataset.decision;
-        state.approvalHistory.unshift({...item,decision,actor:'Adaeze O.',time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})});
-        logAudit(`Approval: ${decision}`, `${item.type} of ${money(item.amount)} for ${item.requester}`);
-        showToast(`${item.type} ${decision}`, `${money(item.amount)} decision recorded.`);
+        const [old]=state.approvals.splice(index,1);
+        state.approvalHistory.unshift({...old,decision,actor:'Adaeze O.',time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})});
+        logAudit(`Approval: ${decision}`, `${old.type} of ${money(old.amount)} for ${old.requester}`);
+        showToast(`${old.type} ${decision}`, `${money(old.amount)} decision recorded.`);
       }
       render();
       break;
@@ -2313,6 +2452,7 @@ function dispatch(action, target, domEvent) {
     case 'open-request-refund': state.modal={type:'request-refund'};render();break;
     case 'approve-refund-item': {
       const r = state.refundList.find(rf => rf.id === id);
+      if (r && r.live) { r.deciding = true; render(); decideLiveRefund(r.id, 'APPROVED', 'Approved'); break; }
       if (r) {
         r.status = 'Approved';
         logAudit('Refund Approved', `${r.id} for ${r.patient} (${money(r.amount)})`);
@@ -2323,6 +2463,7 @@ function dispatch(action, target, domEvent) {
     }
     case 'reject-refund-item': {
       const r = state.refundList.find(rf => rf.id === id);
+      if (r && r.live) { r.deciding = true; render(); decideLiveRefund(r.id, 'REJECTED', 'Rejected'); break; }
       if (r) {
         r.status = 'Rejected';
         logAudit('Refund Rejected', `${r.id} rejected by Finance Manager`);
@@ -2647,9 +2788,21 @@ document.addEventListener('submit', async event => {
   if (event.target.id === 'request-refund-form') {
     event.preventDefault();
     const fd = new FormData(event.target);
-    const invId = fd.get('inv').toString();
-    const inv = state.invoiceList.find(i => i.id === invId) || state.invoiceList[0];
+    const selection = fd.get('payment').toString();
     const amt = Number(fd.get('amount')) || 10000;
+    const reason = fd.get('reason').toString();
+
+    if (selection.startsWith('live:')) {
+      const paymentId = selection.slice(5);
+      const paymentRow = state.paymentList.find(p => p.apiPaymentId === paymentId);
+      state.modal = null;
+      render();
+      createLiveRefundRequest(paymentId, amt, reason, paymentRow);
+      return;
+    }
+
+    const invId = selection.startsWith('mock:') ? selection.slice(5) : selection;
+    const inv = state.invoiceList.find(i => i.id === invId) || state.invoiceList[0];
     const isDual = amt > state.settings.threshold;
     const newRef = {
       id: 'REF-' + Math.floor(890 + Math.random() * 99),
@@ -2657,7 +2810,7 @@ document.addEventListener('submit', async event => {
       patient: inv.patient,
       amount: amt,
       requester: 'Adaeze O. (Finance Manager)',
-      reason: fd.get('reason').toString(),
+      reason,
       date: 'Today, Just now',
       status: isDual ? 'Pending Director Approval' : 'Pending FM Approval',
       dualApproval: isDual

@@ -77,4 +77,8 @@ export const wellipayApi = {
   createClaim: (body) => apiRequest('/provider/claims', { method: 'POST', body, idempotent: 'claim' }),
   updateClaimStatus: (claimId, body) =>
     apiRequest(`/provider/claims/${encodeURIComponent(claimId)}/status`, { method: 'PATCH', body }),
+  createRefund: (body) => apiRequest('/provider/refunds', { method: 'POST', body, idempotent: 'ref' }),
+  listRefunds: (query) => apiRequest(`/provider/refunds${toQueryString(query)}`),
+  decideRefund: (refundId, body) =>
+    apiRequest(`/provider/refunds/${encodeURIComponent(refundId)}/decision`, { method: 'PATCH', body }),
 };

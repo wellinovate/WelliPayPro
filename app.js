@@ -2019,11 +2019,22 @@ async function syncReconciliationFromApi() {
   }
 }
 
+// Bumps the live summary card in place after a decision, without touching
+// state.matched/state.exceptions — those are the page's fixed mock tiles
+// (1,248 matched etc.), and crediting a real decision to a fake baseline
+// would fabricate exactly the kind of number this card exists to avoid.
+function bumpLiveReconciliationSummary(delta) {
+  if (!state.liveReconciliationSummary) return;
+  state.liveReconciliationSummary.unmatched += delta.unmatched || 0;
+  state.liveReconciliationSummary.matched += delta.matched || 0;
+  state.liveReconciliationSummary.exception += delta.exception || 0;
+}
+
 async function matchLiveTransaction(transactionId, invoiceId, invoiceLabel) {
   try {
     const result = await wellipayApi.matchUnmatchedTransaction(transactionId, { invoiceId });
     state.unmatched = state.unmatched.filter(item => item.id !== transactionId);
-    state.matched++;
+    bumpLiveReconciliationSummary({ unmatched: -1, matched: 1 });
     const invoiceNote = ` · ${invoiceLabel || invoiceId} now ${money(fromMinor(result.invoice.paidAmountMinor))} paid (${INVOICE_STATUS_LABEL[result.invoice.status] || result.invoice.status})`;
     logAudit('Reconciliation Match', `${result.source} ${money(fromMinor(result.amountMinor))} matched${invoiceNote}`);
     showToast('Payment Matched', 'Reconciled against wellipay-api — a real payment was recorded.');
@@ -2038,7 +2049,7 @@ async function flagLiveTransactionException(transactionId) {
   try {
     const result = await wellipayApi.flagUnmatchedTransactionException(transactionId, {});
     state.unmatched = state.unmatched.filter(item => item.id !== transactionId);
-    state.exceptions++;
+    bumpLiveReconciliationSummary({ unmatched: -1, exception: 1 });
     logAudit('Reconciliation Exception', `${result.source} ${money(fromMinor(result.amountMinor))} flagged for manual chase`);
     showToast('Exception Flagged', 'Recorded in wellipay-api — needs manual chase.');
   } catch (err) {

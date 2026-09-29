@@ -246,6 +246,9 @@ const state = {
   dashboardSynced: false,
   dashboardSyncing: false,
   liveSnapshot: null,
+  receivablesSynced: false,
+  receivablesSyncing: false,
+  liveReceivables: null,
   patient: { name: 'Femi O.', welliId: 'WR-1187-22', hmo: 'Reliance HMO — Gold' },
   claims: [
     { id: 1, ref: 'INV-2049 — Blessing K.', hmo: 'Hygeia HMO', amount: 23000, status: 'Draft' },
@@ -436,6 +439,10 @@ function renderDashboard() {
   const messages = state.messages.map(item=>`<div class="chat-line ${item.role}"><div class="chat-bubble">${escapeHtml(item.text)}</div></div>`).join('');
   const snapshot = state.liveSnapshot;
   const snapshotCard = snapshot ? card('<div class="section-heading"><span>Live snapshot</span><span style="color:var(--muted);font-weight:400;font-size:13px">from wellipay-api</span></div>', `<div class="mini-metrics"><div class="mini-metric"><strong>${money(snapshot.collected)}</strong><span>Collected · ${snapshot.paymentCount} payments</span></div><div class="mini-metric"><strong>${money(snapshot.pendingClaims)}</strong><span>Pending claims</span></div><div class="mini-metric"><strong>${money(snapshot.approvedClaims)}</strong><span>Approved claims</span></div><div class="mini-metric"><strong>${money(snapshot.patientBalance)}</strong><span>Patient balance · ${snapshot.patientCount} patients</span></div></div>`) : (state.dashboardSyncing ? card('Live snapshot', '<p class="empty-state">Loading live figures…</p>') : '');
+  const receivables = state.liveReceivables;
+  const receivablesCardBody = receivables
+    ? `<div class="mini-metrics">${AGEING_BUCKETS.map(b => `<div class="mini-metric"><strong>${money(receivables.totals[b.key])}</strong><span>${b.label}</span></div>`).join('')}</div>`
+    : (state.receivablesSyncing ? '<p class="empty-state">Loading live figures…</p>' : '<p class="empty-state">No live data yet.</p>');
   return `<div class="page">
     ${renderBranchBanner()}
     <div class="page-heading"><div><h1>Good afternoon, Adaeze</h1><p>Sunday, September 27, 2026 · ABC Healthcare, ${state.branch === 'All branches' ? 'consolidated (5 branches)' : state.branch + ' Branch'}</p></div><div class="seg" role="group" aria-label="Date range">${['Today','Week','Month','Quarter'].map(value=>`<label class="seg-opt"><input type="radio" name="filter" value="${value}" ${state.filter===value?'checked':''}><span>${value}</span></label>`).join('')}</div></div>
@@ -447,7 +454,7 @@ function renderDashboard() {
     </div>
     ${card('Branch revenue',`<div class="branch-list">${branches.map(([name,amount])=>`<div class="branch-row"><strong>${name}</strong><div class="branch-track"><div class="branch-fill" style="width:${Math.round(amount/branchMax*100)}%"></div></div><span class="branch-amount">${money(amount)}</span></div>`).join('')}</div>`)}
     <div class="grid two-col">
-      ${card('<div class="section-heading"><span>Receivables & ageing</span><a href="#receivables">View all →</a></div>','<div class="mini-metrics"><div class="mini-metric"><strong>₦450K</strong><span>Patient</span></div><div class="mini-metric"><strong>₦3.2M</strong><span>HMO</span></div><div class="mini-metric"><strong>₦800K</strong><span>Insurance</span></div><div class="mini-metric"><strong>₦400K</strong><span>Financing</span></div></div>')}
+      ${card('<div class="section-heading"><span>Receivables & ageing</span><a href="#receivables">View all →</a></div>', receivablesCardBody)}
       ${card('<div class="section-heading"><span>Smart Reconciliation Centre</span><a href="#reconciliation">Open workspace →</a></div>',`<div class="mini-metrics"><div class="mini-metric"><strong>${state.matched.toLocaleString()}</strong><span>Matched</span></div><div class="mini-metric"><strong style="color:var(--color-accent-700)">${state.unmatched.length}</strong><span>Unmatched</span></div><div class="mini-metric"><strong>${state.exceptions}</strong><span>Exceptions</span></div><div class="mini-metric"><strong>${state.duplicates}</strong><span>Duplicate</span></div></div><div class="row-list">${unmatchedMarkup}</div>`)}
     </div>
     <div class="grid two-col">
@@ -792,12 +799,18 @@ function renderWelliPass() {
 
 /* 12. Receivables */
 function renderReceivables() {
-  const rows=[['Patient',200000,120000,80000,50000],['HMO',1200000,900000,700000,400000],['Insurance',350000,250000,150000,50000],['Corporate',120000,80000,30000,20000],['Financing',200000,120000,60000,20000]];
-  const cols=[1,2,3,4], totals=cols.map(index=>rows.reduce((sum,row)=>sum+row[index],0));
+  const receivables = state.liveReceivables;
+  const ageingTable = receivables
+    ? `<div class="table-wrap"><table class="table"><thead><tr><th>${AGEING_BUCKETS.map(b => `<th>${b.label}</th>`).join('')}<th>Total</th></tr></thead><tbody><tr>${AGEING_BUCKETS.map(b => `<td>${money(receivables.totals[b.key])}</td>`).join('')}<td><strong>${money(receivables.total)}</strong></td></tr></tbody></table></div>`
+    : (state.receivablesSyncing ? '<p class="empty-state">Loading live figures…</p>' : '<p class="empty-state">No live data yet.</p>');
+  const invoiceRows = receivables && receivables.rows.length
+    ? `<div class="table-wrap"><table class="table"><thead><tr><th>Invoice</th><th>Facility</th><th>Balance</th><th>Days outstanding</th><th>Bucket</th></tr></thead><tbody>${receivables.rows.map(row => `<tr><td>${row.providerInvoiceRef}</td><td>${FACILITY_BRANCH[row.facilityRef] || row.facilityRef}</td><td>${money(row.balance)}</td><td>${row.days}</td><td>${AGEING_BUCKETS.find(b => b.key === row.bucket).label}</td></tr>`).join('')}</tbody></table></div>`
+    : '<p class="empty-state">No open invoices — everything is paid up.</p>';
   return `<div class="page">
     ${renderBranchBanner()}
-    ${pageHeading('Accounts Receivable','Receivables & ageing','Outstanding balances by payer and days since invoice.')}
-    ${card('<div class="section-heading"><span>Ageing by Payer</span><button class="btn btn-secondary" data-action="export-receivables">Export Ageing CSV</button></div>',`<div class="table-wrap"><table class="table"><thead><tr><th>Payer</th><th>0–30 days</th><th>31–60 days</th><th>61–90 days</th><th>90+ days</th><th>Total</th></tr></thead><tbody>${rows.map(row=>`<tr><td><strong>${row[0]}</strong></td>${row.slice(1).map(value=>`<td>${money(value)}</td>`).join('')}<td><strong>${money(row.slice(1).reduce((sum,val)=>sum+val,0))}</strong></td></tr>`).join('')}<tr><td><strong>Total</strong></td>${totals.map(value=>`<td><strong>${money(value)}</strong></td>`).join('')}<td><strong>${money(totals.reduce((sum,val)=>sum+val,0))}</strong></td></tr></tbody></table></div>`)}
+    ${pageHeading('Accounts Receivable','Receivables & ageing','Outstanding invoice balances from wellipay-api, bucketed by days outstanding.')}
+    ${card('<div class="section-heading"><span>Ageing summary</span><button class="btn btn-secondary" data-action="export-receivables">Export Ageing CSV</button></div>', ageingTable)}
+    ${card('Open invoices, oldest first', invoiceRows)}
   </div>`;
 }
 
@@ -1291,6 +1304,7 @@ function render() {
   if (state.active === 'payments' && !state.paymentsSynced) syncPaymentsFromApi();
   if (state.active === 'claims' && !state.claimsSynced) syncClaimsFromApi();
   if (state.active === 'dashboard' && !state.dashboardSynced) syncDashboardFromApi();
+  if ((state.active === 'receivables' || state.active === 'dashboard') && !state.receivablesSynced) syncReceivablesFromApi();
 
   if (state.active === 'dashboard' || state.active === 'reports') {
     setTimeout(() => initializeCharts(), 0);
@@ -1801,6 +1815,51 @@ async function syncDashboardFromApi() {
   }
 }
 
+// Buckets a list of open/partially-paid invoices by days outstanding. Ages
+// off dueAt when the invoice has one, else createdAt — every invoice this
+// demo has created so far omits dueAt, so createdAt is the real-world
+// fallback, not a placeholder. There's no payer-type field anywhere in the
+// API (Invoice has no HMO/insurance/corporate dimension), so unlike the old
+// mock table this can only bucket by age, not by payer — that dimension
+// doesn't exist server-side yet.
+const AGEING_BUCKETS = [
+  { key: 'd0_30', label: '0–30 days', max: 30 },
+  { key: 'd31_60', label: '31–60 days', max: 60 },
+  { key: 'd61_90', label: '61–90 days', max: 90 },
+  { key: 'd90_plus', label: '90+ days', max: Infinity },
+];
+
+function ageInvoices(items) {
+  const now = Date.now();
+  const open = items.filter(item => item.status !== 'PAID' && item.status !== 'CANCELLED');
+  const rows = open.map(item => {
+    const balanceMinor = item.amountMinor - item.paidAmountMinor;
+    const ageFrom = item.dueAt || item.createdAt;
+    const days = Math.max(0, Math.floor((now - new Date(ageFrom).getTime()) / 86400000));
+    const bucket = AGEING_BUCKETS.find(b => days <= b.max).key;
+    return { ...item, balance: fromMinor(balanceMinor), days, bucket };
+  }).filter(row => row.balance > 0);
+  const totals = Object.fromEntries(AGEING_BUCKETS.map(b => [b.key, 0]));
+  rows.forEach(row => { totals[row.bucket] += row.balance; });
+  const total = rows.reduce((sum, row) => sum + row.balance, 0);
+  return { rows: rows.sort((a, b) => b.days - a.days), totals, total };
+}
+
+async function syncReceivablesFromApi() {
+  if (state.receivablesSyncing) return;
+  state.receivablesSyncing = true;
+  try {
+    const data = await wellipayApi.listInvoices({ limit: 100 });
+    state.liveReceivables = ageInvoices(data.items);
+    state.receivablesSynced = true;
+  } catch (err) {
+    showToast('API Sync Failed', `Live receivables not loaded: ${err.message}`);
+  } finally {
+    state.receivablesSyncing = false;
+    if (state.active === 'receivables' || state.active === 'dashboard') render();
+  }
+}
+
 async function syncClaimsFromApi() {
   if (state.claimsSyncing) return;
   state.claimsSyncing = true;
@@ -2270,13 +2329,14 @@ function dispatch(action, target, domEvent) {
       break;
     }
     case 'export-receivables': {
+      const receivables = state.liveReceivables;
+      if (!receivables) {
+        showToast('Export Failed', 'Live receivables have not loaded yet — open the Receivables page first.');
+        break;
+      }
       downloadCsv('receivables_ageing_report.csv', [
-        ['Payer', '0-30 Days', '31-60 Days', '61-90 Days', '90+ Days'],
-        ['Patient', 200000, 120000, 80000, 50000],
-        ['HMO', 1200000, 900000, 700000, 400000],
-        ['Insurance', 350000, 250000, 150000, 50000],
-        ['Corporate', 120000, 80000, 30000, 20000],
-        ['Financing', 200000, 120000, 60000, 20000]
+        ['Invoice', 'Facility', 'Balance', 'Days Outstanding', 'Bucket'],
+        ...receivables.rows.map(row => [row.providerInvoiceRef, FACILITY_BRANCH[row.facilityRef] || row.facilityRef, row.balance, row.days, AGEING_BUCKETS.find(b => b.key === row.bucket).label]),
       ]);
       break;
     }

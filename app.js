@@ -249,6 +249,8 @@ const state = {
   receivablesSynced: false,
   receivablesSyncing: false,
   liveReceivables: null,
+  invoicesSynced: false,
+  invoicesSyncing: false,
   patient: { name: 'Femi O.', welliId: 'WR-1187-22', hmo: 'Reliance HMO — Gold' },
   claims: [
     { id: 1, ref: 'INV-2049 — Blessing K.', hmo: 'Hygeia HMO', amount: 23000, status: 'Draft' },
@@ -1305,6 +1307,7 @@ function render() {
 
   if (state.active === 'patients' && !state.patientsSynced) syncPatientsFromApi();
   if (state.active === 'payments' && !state.paymentsSynced) syncPaymentsFromApi();
+  if (state.active === 'invoices' && !state.invoicesSynced) syncInvoicesFromApi();
   if (state.active === 'claims' && !state.claimsSynced) syncClaimsFromApi();
   if (state.active === 'dashboard' && !state.dashboardSynced) syncDashboardFromApi();
   if ((state.active === 'receivables' || state.active === 'dashboard') && !state.receivablesSynced) syncReceivablesFromApi();
@@ -1717,6 +1720,12 @@ const FACILITY_BRANCH = { 'facility-wuse': 'Wuse', 'facility-maitama': 'Maitama'
 const PAYMENT_CHANNEL_LABEL = { card: 'Card (Live)', bank_transfer: 'Bank Transfer (Live)', ussd: 'USSD (Live)', cash: 'Cash (Live)', hmo_direct: 'HMO Direct (Live)', wellipass: 'WelliPass (Live)' };
 const PAYMENT_STATUS_LABEL = { SUCCESS: 'Success', PENDING: 'Pending', FAILED: 'Failed' };
 const CLAIM_STATUS_LABEL = { DRAFT: 'Draft', SUBMITTED: 'Submitted', APPROVED: 'Approved', PARTIALLY_APPROVED: 'Partially Approved', REJECTED: 'Rejected' };
+// The Invoice Ledger's filter buttons are 'Unpaid'/'Part-paid'/'Paid'/'Draft'
+// (matched case-insensitively against inv.status) — there's no API status
+// that means "draft" (an invoice always exists as a real record once
+// created), so CANCELLED is labelled plainly rather than forced into one
+// of those four buckets; it just won't highlight under any filter chip.
+const INVOICE_STATUS_LABEL = { OPEN: 'Unpaid', PARTIALLY_PAID: 'Part-paid', PAID: 'Paid', CANCELLED: 'Cancelled' };
 
 async function syncPatientsFromApi() {
   if (state.patientsSyncing) return;
@@ -1767,6 +1776,37 @@ async function syncPaymentsFromApi() {
   } finally {
     state.paymentsSyncing = false;
     if (state.active === 'payments') render();
+  }
+}
+
+async function syncInvoicesFromApi() {
+  if (state.invoicesSyncing) return;
+  state.invoicesSyncing = true;
+  try {
+    const data = await wellipayApi.listInvoices({ limit: 100 });
+    const patientNameByRef = new Map(state.patientList.map(p => [p.id, p.name]));
+    const liveRows = data.items.map(item => ({
+      id: item.providerInvoiceRef,
+      patient: patientNameByRef.get(item.patientRef) || item.patientRef,
+      patientId: item.patientRef,
+      date: new Date(item.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }),
+      amount: fromMinor(item.amountMinor),
+      paid: fromMinor(item.paidAmountMinor),
+      branch: FACILITY_BRANCH[item.facilityRef] || item.facilityRef,
+      // No payer-type field exists on Invoice (see receivables ageing) —
+      // this column shows the invoice's real description instead of a
+      // fabricated payer name.
+      payer: item.description,
+      status: INVOICE_STATUS_LABEL[item.status] || item.status,
+      live: true,
+    }));
+    state.invoiceList = [...liveRows, ...state.invoiceList.filter(i => !i.live)];
+    state.invoicesSynced = true;
+  } catch (err) {
+    showToast('API Sync Failed', `Live invoices not loaded: ${err.message}`);
+  } finally {
+    state.invoicesSyncing = false;
+    if (state.active === 'invoices') render();
   }
 }
 

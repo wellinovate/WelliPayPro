@@ -94,4 +94,8 @@ export const wellipayApi = {
   listPaymentPlans: (query) => apiRequest(`/provider/payment-plans${toQueryString(query)}`),
   payPlanInstallment: (planId, seq, body) =>
     apiRequest(`/provider/payment-plans/${encodeURIComponent(planId)}/installments/${seq}/pay`, { method: 'POST', body }),
+  createSettlement: (body) => apiRequest('/provider/settlements', { method: 'POST', body, idempotent: 'settle' }),
+  listSettlements: (query) => apiRequest(`/provider/settlements${toQueryString(query)}`),
+  confirmSettlement: (settlementId) =>
+    apiRequest(`/provider/settlements/${encodeURIComponent(settlementId)}/confirm`, { method: 'PATCH' }),
 };

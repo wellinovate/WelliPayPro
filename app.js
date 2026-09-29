@@ -262,6 +262,9 @@ const state = {
   paymentPlansSynced: false,
   paymentPlansSyncing: false,
   livePaymentPlans: [],
+  settlementsSynced: false,
+  settlementsSyncing: false,
+  liveSettlements: [],
   patient: { name: 'Femi O.', welliId: 'WR-1187-22', hmo: 'Reliance HMO — Gold' },
   claims: [
     { id: 1, ref: 'INV-2049 — Blessing K.', hmo: 'Hygeia HMO', amount: 23000, status: 'Draft' },
@@ -862,11 +865,29 @@ function renderReconciliation() {
 function renderSettlements() {
   const events=[['08:30','SET-1187 — ₦2,100,000 — Flutterwave payout initiated'],['08:34','SET-1187 — Completed to GTBank ••4471'],['09:02','SET-1188 — ₦1,950,000 — Paystack payout initiated'],['09:10','SET-1188 — Completed to GTBank ••4471'],['—','SET-1189 — ₦450,000 — Pending (Paystack processing)']];
   const rows=[['Wuse',1240000,120000],['Garki',780000,0],['Maitama',1650000,210000],['Kaduna',310000,60000],['Lagos',420000,60000]];
+  const liveRows = state.liveSettlements.map(s => `
+    <tr>
+      <td><strong>${FACILITY_BRANCH[s.facilityRef] || s.facilityRef}</strong> <small style="color:var(--muted)">(Live)</small><br><small style="color:var(--muted)">${s.settlementId}</small></td>
+      <td>${money(fromMinor(s.amountMinor))}</td>
+      <td>${s.paymentCount ?? '—'}</td>
+      <td>${tag(s.status === 'SETTLED' ? 'Settled' : 'Pending', s.status === 'SETTLED' ? 'neutral' : 'outline')}</td>
+      <td>${s.status === 'PENDING' ? `<button class="btn btn-secondary" data-action="confirm-settlement" data-id="${s.settlementId}" style="font-size:11px;padding:4px 8px;">Confirm Settled</button>` : ''}</td>
+    </tr>
+  `).join('');
   return `<div class="page">
     ${renderBranchBanner()}
     ${pageHeading('Settlements','Gateway payouts & branch settlement','Follow gateway payout status and branch-level settlement totals.')}
-    ${card('Payout timeline',events.map(([time,text])=>`<div class="timeline-line"><time>${time}</time><span>${text}</span></div>`).join(''))}
-    ${card('<div class="section-heading"><span>Per-branch settlement</span><button class="btn btn-secondary" data-action="export-settlements">Export CSV</button></div>',`<div class="table-wrap"><table class="table"><thead><tr><th>Branch</th><th>Settled</th><th>Pending</th></tr></thead><tbody>${rows.map(([branch,settled,pending])=>`<tr><td><strong>${branch}</strong></td><td>${money(settled)}</td><td>${money(pending)}</td></tr>`).join('')}</tbody></table></div>`)}
+    ${card('Payout timeline (illustrative)',events.map(([time,text])=>`<div class="timeline-line"><time>${time}</time><span>${text}</span></div>`).join(''))}
+    ${card('<div class="section-heading"><span>Live settlement batches</span><span></span></div>', `
+      <p style="margin:0 0 12px;font-size:12px;color:var(--muted);">There's no real payment gateway behind this service — payments are recorded directly, not via a Paystack/Flutterwave webhook — so "Create settlement" batches a branch's unsettled successful payments in wellipay-api, and "Confirm Settled" records that a human verified the funds landed. Neither is a real bank payout.</p>
+      <div class="toolbar" style="margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        ${Object.entries(FACILITY_BRANCH).map(([ref, label]) => `<button class="btn btn-secondary" data-action="create-settlement" data-facility="${ref}" data-label="${label}" style="font-size:11px;padding:6px 10px;">Settle ${label}</button>`).join('')}
+      </div>
+      ${liveRows
+        ? `<div class="table-wrap"><table class="table"><thead><tr><th>Branch</th><th>Amount</th><th>Payments</th><th>Status</th><th></th></tr></thead><tbody>${liveRows}</tbody></table></div>`
+        : `<p style="color:var(--muted);font-size:12px;">${state.settlementsSynced ? 'No settlement batches created yet.' : 'Loading live settlements…'}</p>`}
+    `)}
+    ${card('<div class="section-heading"><span>Per-branch settlement (illustrative)</span><button class="btn btn-secondary" data-action="export-settlements">Export CSV</button></div>',`<div class="table-wrap"><table class="table"><thead><tr><th>Branch</th><th>Settled</th><th>Pending</th></tr></thead><tbody>${rows.map(([branch,settled,pending])=>`<tr><td><strong>${branch}</strong></td><td>${money(settled)}</td><td>${money(pending)}</td></tr>`).join('')}</tbody></table></div>`)}
   </div>`;
 }
 
@@ -1392,6 +1413,7 @@ function render() {
   if (state.active === 'staff' && !state.staffSynced) syncStaffFromApi();
   if (state.active === 'payment-plans' && !state.paymentPlansSynced) syncPaymentPlansFromApi();
   if (state.active === 'payment-plans' && !state.invoicesSynced) syncInvoicesFromApi();
+  if (state.active === 'settlements' && !state.settlementsSynced) syncSettlementsFromApi();
 
   if (state.active === 'dashboard' || state.active === 'reports') {
     setTimeout(() => initializeCharts(), 0);
@@ -2267,6 +2289,48 @@ async function payLivePlanInstallment(planId, seq, invoiceLabel) {
   }
 }
 
+async function syncSettlementsFromApi() {
+  if (state.settlementsSyncing) return;
+  state.settlementsSyncing = true;
+  try {
+    const data = await wellipayApi.listSettlements({ limit: 100 });
+    state.liveSettlements = data.items;
+    state.settlementsSynced = true;
+  } catch (err) {
+    showToast('API Sync Failed', `Live settlements not loaded: ${err.message}`);
+  } finally {
+    state.settlementsSyncing = false;
+    if (state.active === 'settlements') render();
+  }
+}
+
+async function createLiveSettlement(facilityRef, branchLabel) {
+  try {
+    const created = await wellipayApi.createSettlement({ facilityRef });
+    state.liveSettlements.unshift(created);
+    logAudit('Settlement Created', `${branchLabel} · ${created.paymentCount} payment(s) · ${money(fromMinor(created.amountMinor))}`);
+    showToast('Settlement Batch Created', 'Recorded in wellipay-api.');
+  } catch (err) {
+    showToast('Settlement Failed', err.message === 'No unsettled successful payments for this facility.' ? `No unsettled payments for ${branchLabel} yet.` : err.message);
+  } finally {
+    render();
+  }
+}
+
+async function confirmLiveSettlement(settlementId) {
+  try {
+    const updated = await wellipayApi.confirmSettlement(settlementId);
+    const idx = state.liveSettlements.findIndex(row => row.settlementId === settlementId);
+    if (idx !== -1) state.liveSettlements[idx] = { ...state.liveSettlements[idx], ...updated };
+    logAudit('Settlement Confirmed', `${money(fromMinor(updated.amountMinor))} confirmed settled`);
+    showToast('Settlement Confirmed', 'Marked settled in wellipay-api.');
+  } catch (err) {
+    showToast('Confirm Failed', err.message);
+  } finally {
+    render();
+  }
+}
+
 // Pulls real payments/claims/patients and rolls them into a small set of
 // aggregate numbers for the Dashboard's "Live snapshot" card. This does not
 // touch the mock tiles, charts or branch/reconciliation/leakage sections
@@ -2875,6 +2939,13 @@ function dispatch(action, target, domEvent) {
       payLivePlanInstallment(id, seq, invoice ? `${invoice.patient} · ${invoice.id}` : id);
       break;
     }
+
+    /* Settlements */
+    case 'create-settlement': {
+      createLiveSettlement(target.dataset.facility, target.dataset.label);
+      break;
+    }
+    case 'confirm-settlement': confirmLiveSettlement(id);break;
 
     /* Notifications */
     case 'mark-all-read': {

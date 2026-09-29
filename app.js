@@ -720,12 +720,20 @@ function renderClaims() {
 
 /* 8. HMO / Insurance Directory */
 function renderHmoInsurance() {
+  const byPayer = liveClaimsByPayer();
+  const knownNames = new Set(state.hmoList.map(hmo => hmo.name));
   return `<div class="page">
     ${renderBranchBanner()}
     ${pageHeading('Claims & Payers', 'HMO / Insurance Directory', 'Contracted HMO profiles, eligibility verification criteria, benefit caps and SLA performance.')}
     ${metricGrid([['9','Contracted HMOs','Active'],['27','Active Insurance Plans','Policies'],['4.2 hrs','Avg Pre-Auth SLA','Turnaround'],['₦3.52M','Outstanding HMO Debts','Receivables']])}
+    ${card('Live claims by payer <small style="font-weight:400;color:var(--muted)">from wellipay-api</small>', byPayer.size
+      ? `<div class="row-list">${[...byPayer.entries()].map(([name, stats]) => `<div class="data-row"><span>${name}${knownNames.has(name) ? '' : ' <small style="color:var(--muted)">(not a contracted payer above)</small>'}</span><strong>${stats.count} claim${stats.count === 1 ? '' : 's'} · ${money(fromMinor(stats.submittedMinor))} submitted${stats.approvedMinor ? ` · ${money(fromMinor(stats.approvedMinor))} approved` : ''}</strong></div>`).join('')}</div>`
+      : `<p style="color:var(--muted)">${state.claimsSynced ? 'No live claims recorded yet.' : 'Loading live claims…'}</p>`
+    )}
     <div class="grid two-col">
-      ${state.hmoList.map(hmo => card(`<strong>${hmo.name}</strong> · ${hmo.tier}`, `
+      ${state.hmoList.map(hmo => {
+        const live = byPayer.get(hmo.name);
+        return card(`<strong>${hmo.name}</strong> · ${hmo.tier}`, `
         <div class="row-list">
           <div class="data-row"><span>Supported Plans</span><strong>${hmo.plans.join(', ')}</strong></div>
           <div class="data-row"><span>Pre-Auth Threshold</span><strong>${money(hmo.preAuthMin)}+</strong></div>
@@ -733,12 +741,14 @@ function renderHmoInsurance() {
           <div class="data-row"><span>Average Response SLA</span><strong>${hmo.sla}</strong></div>
           <div class="data-row"><span>Claims Receivable</span><strong style="color:var(--color-accent-700)">${money(hmo.claimsDue)}</strong></div>
           <div class="data-row"><span>Integration Endpoint</span>${tag(hmo.portal, 'neutral')}</div>
+          ${live ? `<div class="data-row"><span>Live Claim Volume</span><strong>${live.count} · ${money(fromMinor(live.submittedMinor))} <small style="color:var(--muted)">(wellipay-api)</small></strong></div>` : ''}
         </div>
         <div class="toolbar" style="margin-top:12px;">
           <button class="btn btn-secondary" data-action="verify-hmo-eligibility" data-hmo="${hmo.name}">Verify Eligibility</button>
           <a class="btn btn-ghost" href="#claims">View Claims (${hmo.name.split(' ')[0]})</a>
         </div>
-      `)).join('')}
+      `);
+      }).join('')}
     </div>
   </div>`;
 }
@@ -1318,7 +1328,7 @@ function render() {
   if (state.active === 'patients' && !state.patientsSynced) syncPatientsFromApi();
   if (state.active === 'payments' && !state.paymentsSynced) syncPaymentsFromApi();
   if (state.active === 'invoices' && !state.invoicesSynced) syncInvoicesFromApi();
-  if (state.active === 'claims' && !state.claimsSynced) syncClaimsFromApi();
+  if ((state.active === 'claims' || state.active === 'hmo-insurance') && !state.claimsSynced) syncClaimsFromApi();
   if (state.active === 'dashboard' && !state.dashboardSynced) syncDashboardFromApi();
   if ((state.active === 'receivables' || state.active === 'dashboard') && !state.receivablesSynced) syncReceivablesFromApi();
   if ((state.active === 'refunds' || state.active === 'dashboard') && !state.refundsSynced) syncRefundsFromApi();
@@ -2181,8 +2191,29 @@ async function syncClaimsFromApi() {
     showToast('API Sync Failed', `Live claims not loaded: ${err.message}`);
   } finally {
     state.claimsSyncing = false;
-    if (state.active === 'claims') render();
+    if (state.active === 'claims' || state.active === 'hmo-insurance') render();
   }
+}
+
+// Groups live claims (from wellipay-api) by payerRef for the HMO directory
+// page. payerRef is free text the client supplies at claim-creation time —
+// there's no backend payer directory — but this app's own claim-creation
+// paths already send the mock HMO's display name as payerRef, so a live
+// claim's payerRef lines up with one of state.hmoList's names whenever it
+// was created against a contracted payer shown on this page. Anything else
+// (a typo'd or genuinely new payer name) is surfaced separately rather than
+// silently dropped or force-matched.
+function liveClaimsByPayer() {
+  const byPayer = new Map();
+  for (const item of state.liveClaims) {
+    const key = item.payerRef || 'Unknown payer';
+    if (!byPayer.has(key)) byPayer.set(key, { count: 0, submittedMinor: 0, approvedMinor: 0 });
+    const bucket = byPayer.get(key);
+    bucket.count += 1;
+    bucket.submittedMinor += item.amountMinor;
+    if (item.approvedAmountMinor != null) bucket.approvedMinor += item.approvedAmountMinor;
+  }
+  return byPayer;
 }
 
 // Backs the mock claim list's "Submit claim" / "Resubmit claim" buttons: the

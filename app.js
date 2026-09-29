@@ -243,6 +243,9 @@ const state = {
   claimsSynced: false,
   claimsSyncing: false,
   liveClaims: [],
+  dashboardSynced: false,
+  dashboardSyncing: false,
+  liveSnapshot: null,
   patient: { name: 'Femi O.', welliId: 'WR-1187-22', hmo: 'Reliance HMO — Gold' },
   claims: [
     { id: 1, ref: 'INV-2049 — Blessing K.', hmo: 'Hygeia HMO', amount: 23000, status: 'Draft' },
@@ -431,9 +434,12 @@ function renderDashboard() {
   const unmatchedMarkup = state.unmatched.length ? state.unmatched.slice(0,3).map(item=>`<div class="data-row"><div class="data-primary"><strong>${money(item.amount)} · ${item.source}</strong><span>${item.suggestion}</span></div><button class="btn btn-secondary" data-action="open-match" data-id="${item.id}">Match</button></div>`).join('') : '<p class="empty-state">Nothing unmatched right now.</p>';
   const approvalRows = `${state.approvals.length ? `<div class="table-wrap"><table class="table approval-table"><thead><tr><th>Type</th><th>Amount</th><th>Requester</th><th>Reason</th><th>Decision</th></tr></thead><tbody>${state.approvals.map(item=>`<tr><td>${item.type}</td><td>${money(item.amount)}</td><td>${item.requester}</td><td>${item.reason}</td><td><button class="btn btn-secondary" data-action="approval" data-decision="Rejected" data-id="${item.id}">Reject</button> <button class="btn btn-primary" data-action="approval" data-decision="Approved" data-id="${item.id}">Approve</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-state">Queue is clear — nothing pending approval.</p>'}${state.approvalHistory.length ? `<div class="approval-history"><span class="card-kicker">Recent decisions</span>${state.approvalHistory.slice(0,5).map(item=>`<div class="data-row"><div class="data-primary"><strong>${item.decision} ${item.type.toLowerCase()} · ${money(item.amount)}</strong><span>${item.requester} · ${item.reason} · ${item.actor} · ${item.time}</span></div>${tag(item.decision,item.decision==='Approved'?'neutral':'accent')}</div>`).join('')}</div>` : ''}`;
   const messages = state.messages.map(item=>`<div class="chat-line ${item.role}"><div class="chat-bubble">${escapeHtml(item.text)}</div></div>`).join('');
+  const snapshot = state.liveSnapshot;
+  const snapshotCard = snapshot ? card('<div class="section-heading"><span>Live snapshot</span><span style="color:var(--muted);font-weight:400;font-size:13px">from wellipay-api</span></div>', `<div class="mini-metrics"><div class="mini-metric"><strong>${money(snapshot.collected)}</strong><span>Collected · ${snapshot.paymentCount} payments</span></div><div class="mini-metric"><strong>${money(snapshot.pendingClaims)}</strong><span>Pending claims</span></div><div class="mini-metric"><strong>${money(snapshot.approvedClaims)}</strong><span>Approved claims</span></div><div class="mini-metric"><strong>${money(snapshot.patientBalance)}</strong><span>Patient balance · ${snapshot.patientCount} patients</span></div></div>`) : (state.dashboardSyncing ? card('Live snapshot', '<p class="empty-state">Loading live figures…</p>') : '');
   return `<div class="page">
     ${renderBranchBanner()}
     <div class="page-heading"><div><h1>Good afternoon, Adaeze</h1><p>Sunday, September 27, 2026 · ABC Healthcare, ${state.branch === 'All branches' ? 'consolidated (5 branches)' : state.branch + ' Branch'}</p></div><div class="seg" role="group" aria-label="Date range">${['Today','Week','Month','Quarter'].map(value=>`<label class="seg-opt"><input type="radio" name="filter" value="${value}" ${state.filter===value?'checked':''}><span>${value}</span></label>`).join('')}</div></div>
+    ${snapshotCard}
     ${metricGrid(tiles)}
     <div class="grid two-col">
       ${card('Revenue trend · last 7 days',`<div class="chart-summary" style="margin-bottom:12px;"><strong>₦2.45M</strong><span>+8.4% vs last week</span></div><div style="height:160px;position:relative"><canvas id="revenueTrendChart"></canvas></div>`,'trend-card')}
@@ -1284,6 +1290,7 @@ function render() {
   if (state.active === 'patients' && !state.patientsSynced) syncPatientsFromApi();
   if (state.active === 'payments' && !state.paymentsSynced) syncPaymentsFromApi();
   if (state.active === 'claims' && !state.claimsSynced) syncClaimsFromApi();
+  if (state.active === 'dashboard' && !state.dashboardSynced) syncDashboardFromApi();
 
   if (state.active === 'dashboard' || state.active === 'reports') {
     setTimeout(() => initializeCharts(), 0);
@@ -1743,6 +1750,54 @@ async function syncPaymentsFromApi() {
   } finally {
     state.paymentsSyncing = false;
     if (state.active === 'payments') render();
+  }
+}
+
+// Pulls real payments/claims/patients and rolls them into a small set of
+// aggregate numbers for the Dashboard's "Live snapshot" card. This does not
+// touch the mock tiles, charts or branch/reconciliation/leakage sections
+// below it — those have no backing endpoint yet — it only adds a real,
+// verifiable summary alongside them.
+async function syncDashboardFromApi() {
+  if (state.dashboardSyncing) return;
+  state.dashboardSyncing = true;
+  try {
+    const [payments, claims, patients] = await Promise.all([
+      wellipayApi.listPayments({ limit: 100 }),
+      wellipayApi.listClaims({ limit: 100 }),
+      wellipayApi.listPatients({ limit: 100 }),
+    ]);
+
+    const collected = payments.items
+      .filter(item => item.status === 'SUCCESS')
+      .reduce((sum, item) => sum + fromMinor(item.amountMinor), 0);
+
+    const pendingClaims = claims.items
+      .filter(item => item.status === 'SUBMITTED')
+      .reduce((sum, item) => sum + fromMinor(item.amountMinor), 0);
+
+    const approvedClaims = claims.items
+      .filter(item => item.status === 'APPROVED' || item.status === 'PARTIALLY_APPROVED')
+      .reduce((sum, item) => sum + fromMinor(item.approvedAmountMinor ?? item.amountMinor), 0);
+
+    const patientBalance = patients.items
+      .reduce((sum, item) => sum + fromMinor(item.balanceMinor), 0);
+
+    state.liveSnapshot = {
+      collected,
+      pendingClaims,
+      approvedClaims,
+      patientBalance,
+      paymentCount: payments.items.length,
+      claimCount: claims.items.length,
+      patientCount: patients.items.length,
+    };
+    state.dashboardSynced = true;
+  } catch (err) {
+    showToast('API Sync Failed', `Live dashboard snapshot not loaded: ${err.message}`);
+  } finally {
+    state.dashboardSyncing = false;
+    if (state.active === 'dashboard') render();
   }
 }
 

@@ -1601,6 +1601,7 @@ function renderModal() {
       <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="req-ref-title">
         <h2 id="req-ref-title">Initiate Payment Refund</h2>
         <p>Refunds above ${money(state.settings.threshold)} will automatically trigger a dual-approval rule.</p>
+        ${!livePayments.length && state.paymentsSyncing ? '<p style="margin:0 0 8px;font-size:12px;color:var(--muted);">Loading live payments…</p>' : ''}
         <form id="request-refund-form" class="form-grid">
           <div class="form-group"><label>Select Payment *</label>
             <select name="payment" required>
@@ -1784,7 +1785,10 @@ async function syncPaymentsFromApi() {
     showToast('API Sync Failed', `Live payments not loaded: ${err.message}`);
   } finally {
     state.paymentsSyncing = false;
-    if (state.active === 'payments') render();
+    // Also re-render while the Request Refund modal is open (on any page)
+    // so its "Select Payment" list picks up live payments as soon as this
+    // finishes, not only when the Payments page itself is on screen.
+    if (state.active === 'payments' || (state.modal && state.modal.type === 'request-refund')) render();
   }
 }
 
@@ -2449,7 +2453,11 @@ function dispatch(action, target, domEvent) {
     case 'open-add-service': state.modal={type:'add-service'};render();break;
 
     /* Refunds */
-    case 'open-request-refund': state.modal={type:'request-refund'};render();break;
+    case 'open-request-refund':
+      state.modal={type:'request-refund'};
+      render();
+      if (!state.paymentsSynced) syncPaymentsFromApi();
+      break;
     case 'approve-refund-item': {
       const r = state.refundList.find(rf => rf.id === id);
       if (r && r.live) { r.deciding = true; render(); decideLiveRefund(r.id, 'APPROVED', 'Approved'); break; }

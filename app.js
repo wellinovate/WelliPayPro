@@ -432,8 +432,6 @@ function renderDashboard() {
   const tiles = [['₦2,450,000','This period','Revenue'],['₦1,950,000','This period','Collected'],['₦500,000','This period','Outstanding'],['₦1,200,000','Owed to facility','HMO receivables'],['₦750,000','Awaiting HMO decision','Pending claims'],['₦450,000','In gateway pipeline','Pending settlements'],['124','This period','Patients served'],['₦35,000','This period','Refunds']];
   const trend = [1.8,2.1,1.6,2.4,2.0,2.6,2.45];
   const trendMax = Math.max(...trend);
-  const branches = [['Wuse',5200000],['Garki',3400000],['Maitama',7100000],['Kaduna',1450000],['Lagos',2100000]];
-  const branchMax = Math.max(...branches.map(row=>row[1]));
   const unmatchedMarkup = state.unmatched.length ? state.unmatched.slice(0,3).map(item=>`<div class="data-row"><div class="data-primary"><strong>${money(item.amount)} · ${item.source}</strong><span>${item.suggestion}</span></div><button class="btn btn-secondary" data-action="open-match" data-id="${item.id}">Match</button></div>`).join('') : '<p class="empty-state">Nothing unmatched right now.</p>';
   const approvalRows = `${state.approvals.length ? `<div class="table-wrap"><table class="table approval-table"><thead><tr><th>Type</th><th>Amount</th><th>Requester</th><th>Reason</th><th>Decision</th></tr></thead><tbody>${state.approvals.map(item=>`<tr><td>${item.type}</td><td>${money(item.amount)}</td><td>${item.requester}</td><td>${item.reason}</td><td><button class="btn btn-secondary" data-action="approval" data-decision="Rejected" data-id="${item.id}">Reject</button> <button class="btn btn-primary" data-action="approval" data-decision="Approved" data-id="${item.id}">Approve</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-state">Queue is clear — nothing pending approval.</p>'}${state.approvalHistory.length ? `<div class="approval-history"><span class="card-kicker">Recent decisions</span>${state.approvalHistory.slice(0,5).map(item=>`<div class="data-row"><div class="data-primary"><strong>${item.decision} ${item.type.toLowerCase()} · ${money(item.amount)}</strong><span>${item.requester} · ${item.reason} · ${item.actor} · ${item.time}</span></div>${tag(item.decision,item.decision==='Approved'?'neutral':'accent')}</div>`).join('')}</div>` : ''}`;
   const messages = state.messages.map(item=>`<div class="chat-line ${item.role}"><div class="chat-bubble">${escapeHtml(item.text)}</div></div>`).join('');
@@ -443,6 +441,11 @@ function renderDashboard() {
   const receivablesCardBody = receivables
     ? `<div class="mini-metrics">${AGEING_BUCKETS.map(b => `<div class="mini-metric"><strong>${money(receivables.totals[b.key])}</strong><span>${b.label}</span></div>`).join('')}</div>`
     : (state.receivablesSyncing ? '<p class="empty-state">Loading live figures…</p>' : '<p class="empty-state">No live data yet.</p>');
+  const branchRevenue = snapshot && snapshot.branchRevenue.length ? snapshot.branchRevenue : null;
+  const branchMax = branchRevenue ? Math.max(...branchRevenue.map(row => row[1])) : 0;
+  const branchRevenueBody = branchRevenue
+    ? `<div class="branch-list">${branchRevenue.map(([name,amount])=>`<div class="branch-row"><strong>${name}</strong><div class="branch-track"><div class="branch-fill" style="width:${Math.round(amount/branchMax*100)}%"></div></div><span class="branch-amount">${money(amount)}</span></div>`).join('')}</div>`
+    : (state.dashboardSyncing ? '<p class="empty-state">Loading live figures…</p>' : '<p class="empty-state">No successful payments recorded yet.</p>');
   return `<div class="page">
     ${renderBranchBanner()}
     <div class="page-heading"><div><h1>Good afternoon, Adaeze</h1><p>Sunday, September 27, 2026 · ABC Healthcare, ${state.branch === 'All branches' ? 'consolidated (5 branches)' : state.branch + ' Branch'}</p></div><div class="seg" role="group" aria-label="Date range">${['Today','Week','Month','Quarter'].map(value=>`<label class="seg-opt"><input type="radio" name="filter" value="${value}" ${state.filter===value?'checked':''}><span>${value}</span></label>`).join('')}</div></div>
@@ -452,7 +455,7 @@ function renderDashboard() {
       ${card('Revenue trend · last 7 days',`<div class="chart-summary" style="margin-bottom:12px;"><strong>₦2.45M</strong><span>+8.4% vs last week</span></div><div style="height:160px;position:relative"><canvas id="revenueTrendChart"></canvas></div>`,'trend-card')}
       ${card('Payer mix · this month', `<div class="chart-summary" style="margin-bottom:12px;"><strong>₦6.2M</strong><span>collected by payer</span></div><div style="height:160px;position:relative"><canvas id="payerMixChart"></canvas></div>`, 'mix-card')}
     </div>
-    ${card('Branch revenue',`<div class="branch-list">${branches.map(([name,amount])=>`<div class="branch-row"><strong>${name}</strong><div class="branch-track"><div class="branch-fill" style="width:${Math.round(amount/branchMax*100)}%"></div></div><span class="branch-amount">${money(amount)}</span></div>`).join('')}</div>`)}
+    ${card('Branch revenue', branchRevenueBody)}
     <div class="grid two-col">
       ${card('<div class="section-heading"><span>Receivables & ageing</span><a href="#receivables">View all →</a></div>', receivablesCardBody)}
       ${card('<div class="section-heading"><span>Smart Reconciliation Centre</span><a href="#reconciliation">Open workspace →</a></div>',`<div class="mini-metrics"><div class="mini-metric"><strong>${state.matched.toLocaleString()}</strong><span>Matched</span></div><div class="mini-metric"><strong style="color:var(--color-accent-700)">${state.unmatched.length}</strong><span>Unmatched</span></div><div class="mini-metric"><strong>${state.exceptions}</strong><span>Exceptions</span></div><div class="mini-metric"><strong>${state.duplicates}</strong><span>Duplicate</span></div></div><div class="row-list">${unmatchedMarkup}</div>`)}
@@ -1797,6 +1800,21 @@ async function syncDashboardFromApi() {
     const patientBalance = patients.items
       .reduce((sum, item) => sum + fromMinor(item.balanceMinor), 0);
 
+    // Branch revenue: real facilityRef totals from successful payments,
+    // replacing the old fixed Wuse/Garki/Maitama/Kaduna/Lagos mock numbers.
+    // Branches with zero live payments so far are omitted rather than shown
+    // as ₦0 — the mock had all five with invented amounts; showing an
+    // empty branch as a real zero would be its own kind of inaccuracy this
+    // early in the demo data.
+    const branchTotals = {};
+    payments.items
+      .filter(item => item.status === 'SUCCESS')
+      .forEach(item => {
+        const name = FACILITY_BRANCH[item.facilityRef] || item.facilityRef;
+        branchTotals[name] = (branchTotals[name] || 0) + fromMinor(item.amountMinor);
+      });
+    const branchRevenue = Object.entries(branchTotals).sort((a, b) => b[1] - a[1]);
+
     state.liveSnapshot = {
       collected,
       pendingClaims,
@@ -1805,6 +1823,7 @@ async function syncDashboardFromApi() {
       paymentCount: payments.items.length,
       claimCount: claims.items.length,
       patientCount: patients.items.length,
+      branchRevenue,
     };
     state.dashboardSynced = true;
   } catch (err) {

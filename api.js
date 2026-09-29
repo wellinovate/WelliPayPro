@@ -90,4 +90,8 @@ export const wellipayApi = {
   listStaff: (query) => apiRequest(`/provider/staff${toQueryString(query)}`),
   updateStaffStatus: (staffId, body) =>
     apiRequest(`/provider/staff/${encodeURIComponent(staffId)}/status`, { method: 'PATCH', body }),
+  createPaymentPlan: (body) => apiRequest('/provider/payment-plans', { method: 'POST', body, idempotent: 'plan' }),
+  listPaymentPlans: (query) => apiRequest(`/provider/payment-plans${toQueryString(query)}`),
+  payPlanInstallment: (planId, seq, body) =>
+    apiRequest(`/provider/payment-plans/${encodeURIComponent(planId)}/installments/${seq}/pay`, { method: 'POST', body }),
 };

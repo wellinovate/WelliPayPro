@@ -259,6 +259,9 @@ const state = {
   staffSynced: false,
   staffSyncing: false,
   liveStaff: [],
+  paymentPlansSynced: false,
+  paymentPlansSyncing: false,
+  livePaymentPlans: [],
   patient: { name: 'Femi O.', welliId: 'WR-1187-22', hmo: 'Reliance HMO — Gold' },
   claims: [
     { id: 1, ref: 'INV-2049 — Blessing K.', hmo: 'Hygeia HMO', amount: 23000, status: 'Draft' },
@@ -928,39 +931,66 @@ function renderFinancing() {
 }
 
 /* 17. Payment Plans */
+function renderLivePlanRow(plan) {
+  const invoice = state.invoiceList.find(i => i.live && i.invoiceId === plan.invoiceId);
+  const label = invoice ? `${invoice.patient} · ${invoice.id}` : plan.invoiceId;
+  const branch = invoice ? invoice.branch : '';
+  const paidMinor = plan.installments.filter(i => i.status === 'PAID').reduce((sum, i) => sum + i.amountMinor, 0);
+  const paidCount = plan.installments.filter(i => i.status === 'PAID').length;
+  const pct = Math.round((paidCount / plan.installmentCount) * 100);
+  const next = plan.installments.find(i => i.status === 'PENDING');
+  const avgInstallment = plan.totalMinor / plan.installmentCount;
+  return `<tr>
+    <td><strong>${label}</strong> <small style="color:var(--muted)">(Live)</small><br><small style="color:var(--muted)">${plan.planId}${branch ? ' · ' + branch : ''}</small></td>
+    <td>${money(fromMinor(plan.totalMinor))}</td>
+    <td><strong>${money(fromMinor(paidMinor))}</strong></td>
+    <td>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div class="progress-track" style="width:60px;"><div class="progress-fill" style="width:${pct}%"></div></div>
+        <small>${paidCount} of ${plan.installmentCount} (${pct}%)</small>
+      </div>
+    </td>
+    <td>~${money(fromMinor(avgInstallment))}</td>
+    <td>${next ? new Date(next.dueAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</td>
+    <td>${tag(plan.status === 'COMPLETED' ? 'Completed' : 'Active', plan.status === 'COMPLETED' ? 'neutral' : 'outline')}</td>
+    <td>${next ? `<button class="btn btn-secondary" data-action="pay-plan-installment" data-id="${plan.planId}" data-seq="${next.seq}" style="font-size:11px;padding:4px 8px;">Record Payment (#${next.seq})</button>` : ''}</td>
+  </tr>`;
+}
+
 function renderPaymentPlans() {
+  const liveRows = state.livePaymentPlans.map(renderLivePlanRow).join('');
+  const mockRows = state.paymentPlanList.map(plan => {
+    const pct = Math.round((plan.paid / plan.total) * 100);
+    return `
+      <tr>
+        <td><strong>${plan.patient}</strong><br><small style="color:var(--muted)">${plan.id} · ${plan.branch}</small></td>
+        <td>${money(plan.total)}</td>
+        <td><strong>${money(plan.paid)}</strong></td>
+        <td>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <div class="progress-track" style="width:60px;"><div class="progress-fill" style="width:${pct}%"></div></div>
+            <small>${plan.installments} (${pct}%)</small>
+          </div>
+        </td>
+        <td>${money(plan.monthly)}</td>
+        <td>${plan.nextDue}</td>
+        <td>${tag(plan.status, plan.status === 'On track' ? 'neutral' : 'accent')}</td>
+        <td>
+          <button class="btn btn-secondary" data-action="remind-plan-sms" data-id="${plan.id}" style="font-size:11px;padding:4px 8px;">Send SMS</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
   return `<div class="page">
     ${renderBranchBanner()}
     ${pageHeading('Growth', 'Patient Installment Plans', 'Manage internal hospital payment arrangements and track upcoming collection dates.')}
     ${metricGrid([['57','Active Installment Plans','Active'],['₦2.3M','Collected This Month','Revenue'],['4','Missed Installments','Follow-Up'],['₦850K','Pipeline Remaining','Receivable']])}
-    ${card('Installment Schedule Tracker', `
+    <p style="color:var(--muted);font-size:0.85em;margin:-8px 0 12px;">Tiles above are illustrative. "New Payment Plan" below schedules a real invoice's remaining balance in wellipay-api — even split across months, no interest, no automatic missed-installment penalty.</p>
+    ${card('<div class="section-heading"><span>Installment Schedule Tracker</span><button class="btn btn-primary" data-action="open-new-payment-plan">New Payment Plan</button></div>', `
       <div class="table-wrap">
         <table class="table">
           <thead><tr><th>Plan ID & Patient</th><th>Total Cost</th><th>Paid to Date</th><th>Progress</th><th>Monthly Installment</th><th>Next Due Date</th><th>Status</th><th>Actions</th></tr></thead>
-          <tbody>
-            ${state.paymentPlanList.map(plan => {
-              const pct = Math.round((plan.paid / plan.total) * 100);
-              return `
-                <tr>
-                  <td><strong>${plan.patient}</strong><br><small style="color:var(--muted)">${plan.id} · ${plan.branch}</small></td>
-                  <td>${money(plan.total)}</td>
-                  <td><strong>${money(plan.paid)}</strong></td>
-                  <td>
-                    <div style="display:flex;align-items:center;gap:6px;">
-                      <div class="progress-track" style="width:60px;"><div class="progress-fill" style="width:${pct}%"></div></div>
-                      <small>${plan.installments} (${pct}%)</small>
-                    </div>
-                  </td>
-                  <td>${money(plan.monthly)}</td>
-                  <td>${plan.nextDue}</td>
-                  <td>${tag(plan.status, plan.status === 'On track' ? 'neutral' : 'accent')}</td>
-                  <td>
-                    <button class="btn btn-secondary" data-action="remind-plan-sms" data-id="${plan.id}" style="font-size:11px;padding:4px 8px;">Send SMS</button>
-                  </td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
+          <tbody>${liveRows}${mockRows}</tbody>
         </table>
       </div>
     `)}
@@ -1360,6 +1390,8 @@ function render() {
   if ((state.active === 'refunds' || state.active === 'dashboard') && !state.refundsSynced) syncRefundsFromApi();
   if (state.active === 'reconciliation' && !state.reconciliationSynced) syncReconciliationFromApi();
   if (state.active === 'staff' && !state.staffSynced) syncStaffFromApi();
+  if (state.active === 'payment-plans' && !state.paymentPlansSynced) syncPaymentPlansFromApi();
+  if (state.active === 'payment-plans' && !state.invoicesSynced) syncInvoicesFromApi();
 
   if (state.active === 'dashboard' || state.active === 'reports') {
     setTimeout(() => initializeCharts(), 0);
@@ -1430,6 +1462,34 @@ function renderModal() {
       </div>`;
     }
     return `<div class="modal-backdrop" data-action="dismiss-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><h2 id="modal-title">Confirm match</h2><p>An unmatched payment of <strong>${money(item.amount)}</strong> via ${item.source} looks like it belongs to:</p><p class="patient-summary"><strong>${item.suggestion}</strong></p><div class="modal-actions"><button class="btn btn-secondary" data-action="reject-match">Not a match</button><button class="btn btn-primary" data-action="confirm-match">Confirm match</button></div></section></div>`;
+  }
+
+  if (state.modal.type === 'new-payment-plan') {
+    const liveInvoices = state.invoiceList.filter(i => i.live && i.invoiceId && i.status !== 'Paid');
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="new-plan-title">
+        <h2 id="new-plan-title">New Payment Plan</h2>
+        <p>Splits the invoice's remaining balance into equal monthly installments in wellipay-api — no interest, no automatic missed-installment penalty.</p>
+        ${!liveInvoices.length && state.invoicesSyncing ? '<p style="margin:0 0 8px;font-size:12px;color:var(--muted);">Loading live invoices…</p>' : ''}
+        <form id="new-payment-plan-form" class="form-grid">
+          <div class="form-group"><label>Invoice *</label>
+            <select name="invoiceId" required>
+              <option value="">Select an invoice…</option>
+              ${liveInvoices.map(i => `<option value="${i.invoiceId}" data-label="${escapeHtml(i.patient)} · ${escapeHtml(i.id)}">${i.id} — ${i.patient} (${money(i.amount - i.paid)} outstanding)</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group"><label>Number of Installments *</label>
+            <select name="installmentCount">
+              ${[2,3,4,6,12].map(n => `<option value="${n}">${n} months</option>`).join('')}
+            </select>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
+            <button class="btn btn-primary" type="submit">Create Plan</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
   }
 
   if (state.modal.type === 'wellipass') {
@@ -1891,7 +1951,7 @@ async function syncInvoicesFromApi() {
     state.invoicesSyncing = false;
     // Also re-render while the reconciliation "match" modal is open, so its
     // invoice picker picks up live invoices as soon as this finishes.
-    if (state.active === 'invoices' || (state.modal && state.modal.type === 'match')) render();
+    if (state.active === 'invoices' || state.active === 'payment-plans' || (state.modal && (state.modal.type === 'match' || state.modal.type === 'new-payment-plan'))) render();
   }
 }
 
@@ -2155,6 +2215,53 @@ async function toggleLiveStaffStatus(staffId, nextStatus) {
     showToast(nextStatus === 'DEACTIVATED' ? 'Staff Deactivated' : 'Staff Reactivated', `${updated.name} updated in wellipay-api.`);
   } catch (err) {
     showToast('Update Failed', err.message);
+  } finally {
+    render();
+  }
+}
+
+async function syncPaymentPlansFromApi() {
+  if (state.paymentPlansSyncing) return;
+  state.paymentPlansSyncing = true;
+  try {
+    const data = await wellipayApi.listPaymentPlans({ limit: 100 });
+    state.livePaymentPlans = data.items;
+    state.paymentPlansSynced = true;
+  } catch (err) {
+    showToast('API Sync Failed', `Live payment plans not loaded: ${err.message}`);
+  } finally {
+    state.paymentPlansSyncing = false;
+    if (state.active === 'payment-plans') render();
+  }
+}
+
+async function createLivePaymentPlan(invoiceId, installmentCount, invoiceLabel) {
+  try {
+    const created = await wellipayApi.createPaymentPlan({ invoiceId, installmentCount });
+    state.livePaymentPlans.unshift(created);
+    logAudit('Payment Plan Created', `${invoiceLabel || invoiceId} split into ${installmentCount} monthly installments`);
+    showToast('Payment Plan Created', 'Recorded in wellipay-api.');
+  } catch (err) {
+    showToast('Create Failed', err.message);
+  } finally {
+    render();
+  }
+}
+
+async function payLivePlanInstallment(planId, seq, invoiceLabel) {
+  try {
+    const result = await wellipayApi.payPlanInstallment(planId, seq, {});
+    const idx = state.livePaymentPlans.findIndex(row => row.planId === planId);
+    if (idx !== -1) {
+      const plan = state.livePaymentPlans[idx];
+      const installmentIdx = plan.installments.findIndex(row => row.seq === seq);
+      if (installmentIdx !== -1) plan.installments[installmentIdx] = result.installment;
+      plan.status = result.plan.status;
+    }
+    logAudit('Installment Paid', `${invoiceLabel || planId} · installment #${seq} · ${money(fromMinor(result.installment.amountMinor))}`);
+    showToast('Installment Recorded', `Payment recorded in wellipay-api${result.plan.status === 'COMPLETED' ? ' — plan completed.' : '.'}`);
+  } catch (err) {
+    showToast('Payment Failed', err.message);
   } finally {
     render();
   }
@@ -2754,6 +2861,21 @@ function dispatch(action, target, domEvent) {
     case 'deactivate-staff': toggleLiveStaffStatus(id, 'DEACTIVATED');break;
     case 'reactivate-staff': toggleLiveStaffStatus(id, 'ACTIVE');break;
 
+    /* Payment Plans */
+    case 'open-new-payment-plan': {
+      state.modal={type:'new-payment-plan'};
+      render();
+      if (!state.invoicesSynced) syncInvoicesFromApi();
+      break;
+    }
+    case 'pay-plan-installment': {
+      const seq = Number(target.dataset.seq);
+      const plan = state.livePaymentPlans.find(p => p.planId === id);
+      const invoice = plan ? state.invoiceList.find(i => i.live && i.invoiceId === plan.invoiceId) : null;
+      payLivePlanInstallment(id, seq, invoice ? `${invoice.patient} · ${invoice.id}` : id);
+      break;
+    }
+
     /* Notifications */
     case 'mark-all-read': {
       state.notificationsList.forEach(n => n.read = true);
@@ -3110,6 +3232,18 @@ document.addEventListener('submit', async event => {
     state.modal = null;
     render();
     inviteLiveStaff(name, email, role, branch);
+  }
+  if (event.target.id === 'new-payment-plan-form') {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    const invoiceId = fd.get('invoiceId').toString();
+    const installmentCount = Number(fd.get('installmentCount'));
+    const select = event.target.querySelector('select[name="invoiceId"]');
+    const invoiceLabel = select?.selectedOptions[0]?.dataset.label;
+    if (!invoiceId) return;
+    state.modal = null;
+    render();
+    createLivePaymentPlan(invoiceId, installmentCount, invoiceLabel);
   }
 });
 

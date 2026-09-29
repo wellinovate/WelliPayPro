@@ -81,4 +81,9 @@ export const wellipayApi = {
   listRefunds: (query) => apiRequest(`/provider/refunds${toQueryString(query)}`),
   decideRefund: (refundId, body) =>
     apiRequest(`/provider/refunds/${encodeURIComponent(refundId)}/decision`, { method: 'PATCH', body }),
+  listUnmatchedTransactions: (query) => apiRequest(`/provider/unmatched-transactions${toQueryString(query)}`),
+  matchUnmatchedTransaction: (transactionId, body) =>
+    apiRequest(`/provider/unmatched-transactions/${encodeURIComponent(transactionId)}/match`, { method: 'POST', body }),
+  flagUnmatchedTransactionException: (transactionId, body) =>
+    apiRequest(`/provider/unmatched-transactions/${encodeURIComponent(transactionId)}/exception`, { method: 'POST', body }),
 };

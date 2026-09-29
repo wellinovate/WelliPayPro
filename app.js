@@ -253,6 +253,9 @@ const state = {
   invoicesSyncing: false,
   refundsSynced: false,
   refundsSyncing: false,
+  reconciliationSynced: false,
+  reconciliationSyncing: false,
+  liveReconciliationSummary: null,
   patient: { name: 'Femi O.', welliId: 'WR-1187-22', hmo: 'Reliance HMO — Gold' },
   claims: [
     { id: 1, ref: 'INV-2049 — Blessing K.', hmo: 'Hygeia HMO', amount: 23000, status: 'Draft' },
@@ -824,11 +827,16 @@ function renderReceivables() {
 /* 13. Reconciliation */
 function renderReconciliation() {
   const summaries=[[state.matched.toLocaleString(),'Matched'],[state.unmatched.length,'Unmatched'],[state.exceptions,'Exceptions'],[state.duplicates,'Duplicate']];
-  const unmatched=state.unmatched.length?state.unmatched.map(item=>`<div class="data-row"><div class="data-primary"><strong>${money(item.amount)} · ${item.source} · ${item.date}</strong><span>Suggested: ${item.suggestion}</span></div><button class="btn btn-secondary" data-action="open-match" data-id="${item.id}">Review match</button></div>`).join(''):'<p class="empty-state">Nothing unmatched right now.</p>';
+  const unmatched=state.unmatched.length?state.unmatched.map(item=>`<div class="data-row"><div class="data-primary"><strong>${money(item.amount)} · ${item.source} · ${item.date}</strong><span>${item.live ? `Ref: ${item.reference || '—'}` : `Suggested: ${item.suggestion}`}</span></div>${item.deciding ? tag('Processing…','outline') : `<button class="btn btn-secondary" data-action="open-match" data-id="${item.id}">Review match</button>`}</div>`).join(''):'<p class="empty-state">Nothing unmatched right now.</p>';
+  const liveSummary = state.liveReconciliationSummary;
+  const liveCard = liveSummary
+    ? card('<div class="section-heading"><span>Live reconciliation</span><span style="color:var(--muted);font-weight:400;font-size:13px">from wellipay-api</span></div>', `<div class="mini-metrics"><div class="mini-metric"><strong>${liveSummary.unmatched}</strong><span>Unmatched</span></div><div class="mini-metric"><strong>${liveSummary.matched}</strong><span>Matched</span></div><div class="mini-metric"><strong>${liveSummary.exception}</strong><span>Exceptions</span></div></div>`)
+    : (state.reconciliationSyncing ? card('Live reconciliation', '<p class="empty-state">Loading live figures…</p>') : '');
   return `<div class="page">
     ${renderBranchBanner()}
     ${pageHeading('Smart Reconciliation Centre','Reconciliation workspace','Review gateway transfers, resolve exceptions and confirm invoice matches.')}
     ${metricGrid(summaries.map(([value,label])=>[value,label,label]),'grid activity-grid')}
+    ${liveCard}
     ${card('Unmatched payments',unmatched)}
     ${card('Recently matched',`<div class="table-wrap"><table class="table"><thead><tr><th>Invoice</th><th>Amount</th><th>Matched via</th><th>When</th></tr></thead><tbody><tr><td>INV-2040</td><td>₦45,000</td><td>Auto — reference match</td><td>09:02</td></tr><tr><td>INV-2041</td><td>₦18,000</td><td>Manual — Adaeze O.</td><td>08:47</td></tr><tr><td>INV-2039</td><td>₦120,000</td><td>Auto — reference match</td><td>08:30</td></tr></tbody></table></div>`)}
   </div>`;
@@ -1314,6 +1322,7 @@ function render() {
   if (state.active === 'dashboard' && !state.dashboardSynced) syncDashboardFromApi();
   if ((state.active === 'receivables' || state.active === 'dashboard') && !state.receivablesSynced) syncReceivablesFromApi();
   if ((state.active === 'refunds' || state.active === 'dashboard') && !state.refundsSynced) syncRefundsFromApi();
+  if (state.active === 'reconciliation' && !state.reconciliationSynced) syncReconciliationFromApi();
 
   if (state.active === 'dashboard' || state.active === 'reports') {
     setTimeout(() => initializeCharts(), 0);
@@ -1360,6 +1369,29 @@ function renderModal() {
   if (state.modal.type === 'match') {
     const item = state.unmatched.find(entry => entry.id === state.modal.id);
     if (!item) return '';
+    if (item.live) {
+      const liveInvoices = state.invoiceList.filter(i => i.live && i.invoiceId && i.status !== 'Paid');
+      return `<div class="modal-backdrop" data-action="dismiss-modal">
+        <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+          <h2 id="modal-title">Reconcile transaction</h2>
+          <p>An unattributed <strong>${item.source}</strong> of <strong>${money(item.amount)}</strong> arrived ${item.date}${item.reference ? ` — ref "${escapeHtml(item.reference)}"` : ''}. There's no automatic suggestion for this one — pick the invoice it belongs to, or flag it if nobody can identify it.</p>
+          ${!liveInvoices.length && state.invoicesSyncing ? '<p style="margin:0 0 8px;font-size:12px;color:var(--muted);">Loading live invoices…</p>' : ''}
+          <form id="match-transaction-form" class="form-grid" data-transaction-id="${item.id}">
+            <div class="form-group"><label>Match to invoice *</label>
+              <select name="invoiceId" required>
+                <option value="">Select an invoice…</option>
+                ${liveInvoices.map(i => `<option value="${i.invoiceId}" data-label="${escapeHtml(i.id)}">${i.id} — ${i.patient} (${money(i.amount - i.paid)} outstanding)</option>`).join('')}
+              </select>
+            </div>
+            <div class="modal-actions">
+              <button class="btn btn-ghost" type="button" data-action="reject-match" data-id="${item.id}">Flag as exception</button>
+              <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
+              <button class="btn btn-primary" type="submit">Confirm match</button>
+            </div>
+          </form>
+        </section>
+      </div>`;
+    }
     return `<div class="modal-backdrop" data-action="dismiss-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><h2 id="modal-title">Confirm match</h2><p>An unmatched payment of <strong>${money(item.amount)}</strong> via ${item.source} looks like it belongs to:</p><p class="patient-summary"><strong>${item.suggestion}</strong></p><div class="modal-actions"><button class="btn btn-secondary" data-action="reject-match">Not a match</button><button class="btn btn-primary" data-action="confirm-match">Confirm match</button></div></section></div>`;
   }
 
@@ -1800,6 +1832,7 @@ async function syncInvoicesFromApi() {
     const patientNameByRef = new Map(state.patientList.map(p => [p.id, p.name]));
     const liveRows = data.items.map(item => ({
       id: item.providerInvoiceRef,
+      invoiceId: item.invoiceId,
       patient: patientNameByRef.get(item.patientRef) || item.patientRef,
       patientId: item.patientRef,
       date: new Date(item.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }),
@@ -1819,7 +1852,9 @@ async function syncInvoicesFromApi() {
     showToast('API Sync Failed', `Live invoices not loaded: ${err.message}`);
   } finally {
     state.invoicesSyncing = false;
-    if (state.active === 'invoices') render();
+    // Also re-render while the reconciliation "match" modal is open, so its
+    // invoice picker picks up live invoices as soon as this finishes.
+    if (state.active === 'invoices' || (state.modal && state.modal.type === 'match')) render();
   }
 }
 
@@ -1941,6 +1976,75 @@ async function createLiveRefundRequest(paymentId, amountNaira, reason, paymentRo
     showToast('Refund Queued', 'Submitted to wellipay-api — pending approval.');
   } catch (err) {
     showToast('Refund Request Failed', err.message);
+  } finally {
+    render();
+  }
+}
+
+// Pulls real unmatched-transaction records into the Reconciliation page.
+// Only UNMATCHED ones become interactive rows in the "Unmatched payments"
+// list (prepended ahead of the mock rows, same pattern as elsewhere);
+// MATCHED/EXCEPTION counts from the same fetch feed a small "Live
+// reconciliation" card kept separate from the page's existing mock summary
+// tiles, rather than mixed into them — those tiles are a fixed demo
+// baseline (1,248 matched etc.) with no live counterpart, so combining them
+// would fabricate a number nobody actually reported.
+async function syncReconciliationFromApi() {
+  if (state.reconciliationSyncing) return;
+  state.reconciliationSyncing = true;
+  try {
+    const data = await wellipayApi.listUnmatchedTransactions({ limit: 100 });
+    const liveRows = data.items
+      .filter(item => item.status === 'UNMATCHED')
+      .map(item => ({
+        id: item.transactionId,
+        amount: fromMinor(item.amountMinor),
+        source: `${item.source} (Live)`,
+        reference: item.reference,
+        date: new Date(item.receivedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' }),
+        live: true,
+      }));
+    state.unmatched = [...liveRows, ...state.unmatched.filter(item => !item.live)];
+    state.liveReconciliationSummary = {
+      unmatched: liveRows.length,
+      matched: data.items.filter(item => item.status === 'MATCHED').length,
+      exception: data.items.filter(item => item.status === 'EXCEPTION').length,
+    };
+    state.reconciliationSynced = true;
+  } catch (err) {
+    showToast('API Sync Failed', `Live reconciliation not loaded: ${err.message}`);
+  } finally {
+    state.reconciliationSyncing = false;
+    if (state.active === 'reconciliation') render();
+  }
+}
+
+async function matchLiveTransaction(transactionId, invoiceId, invoiceLabel) {
+  try {
+    const result = await wellipayApi.matchUnmatchedTransaction(transactionId, { invoiceId });
+    state.unmatched = state.unmatched.filter(item => item.id !== transactionId);
+    state.matched++;
+    const invoiceNote = ` · ${invoiceLabel || invoiceId} now ${money(fromMinor(result.invoice.paidAmountMinor))} paid (${INVOICE_STATUS_LABEL[result.invoice.status] || result.invoice.status})`;
+    logAudit('Reconciliation Match', `${result.source} ${money(fromMinor(result.amountMinor))} matched${invoiceNote}`);
+    showToast('Payment Matched', 'Reconciled against wellipay-api — a real payment was recorded.');
+  } catch (err) {
+    showToast('Match Failed', err.message);
+  } finally {
+    render();
+  }
+}
+
+async function flagLiveTransactionException(transactionId) {
+  try {
+    const result = await wellipayApi.flagUnmatchedTransactionException(transactionId, {});
+    state.unmatched = state.unmatched.filter(item => item.id !== transactionId);
+    state.exceptions++;
+    logAudit('Reconciliation Exception', `${result.source} ${money(fromMinor(result.amountMinor))} flagged for manual chase`);
+    showToast('Exception Flagged', 'Recorded in wellipay-api — needs manual chase.');
+  } catch (err) {
+    const item = state.unmatched.find(entry => entry.id === transactionId);
+    if (item) item.deciding = false;
+    showToast('Exception Flag Failed', err.message);
   } finally {
     render();
   }
@@ -2259,8 +2363,17 @@ function dispatch(action, target, domEvent) {
     }
 
     /* Reconciliation */
-    case 'open-match': state.modal={type:'match',id:Number(id)};render();break;
+    case 'open-match': {
+      const item = state.unmatched.find(entry => entry.id === id);
+      state.modal={type:'match',id};
+      render();
+      if (item && item.live && !state.invoicesSynced) syncInvoicesFromApi();
+      break;
+    }
     case 'confirm-match': {
+      // Mock-only path — a live transaction is matched via the
+      // match-transaction-form submit handler instead, since it needs a
+      // real invoice picked from a dropdown, not a canned suggestion.
       state.unmatched=state.unmatched.filter(item=>item.id!==state.modal.id);
       state.matched++;
       state.modal=null;
@@ -2270,6 +2383,14 @@ function dispatch(action, target, domEvent) {
       break;
     }
     case 'reject-match': {
+      const item = state.unmatched.find(entry => entry.id === id);
+      if (item && item.live) {
+        state.modal=null;
+        item.deciding = true;
+        render();
+        flagLiveTransactionException(item.id);
+        break;
+      }
       state.exceptions++;
       state.modal=null;
       logAudit('Reconciliation Exception', `Item #${id} flagged as non-matching`);
@@ -2829,6 +2950,18 @@ document.addEventListener('submit', async event => {
     logAudit('Refund Requested', `${newRef.id} for ${money(amt)} (${newRef.reason})`);
     showToast('Refund Queued', `${newRef.id} submitted for approval.`);
     render();
+  }
+  if (event.target.id === 'match-transaction-form') {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    const invoiceId = fd.get('invoiceId').toString();
+    const transactionId = event.target.dataset.transactionId;
+    const select = event.target.querySelector('select[name="invoiceId"]');
+    const invoiceLabel = select?.selectedOptions[0]?.dataset.label;
+    if (!invoiceId || !transactionId) return;
+    state.modal = null;
+    render();
+    matchLiveTransaction(transactionId, invoiceId, invoiceLabel);
   }
   if (event.target.id === 'invite-staff-form') {
     event.preventDefault();

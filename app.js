@@ -974,30 +974,34 @@ function renderReports() {
       ${card('Monthly Revenue Statement', `
         <div style="height:140px;position:relative;margin-bottom:12px;"><canvas id="reportRevenueChart"></canvas></div>
         <p>Comprehensive transaction journal detailing cash, card, HMO copays and sponsor funding across all branches for Sep 2026.</p>
+        <p style="color:var(--muted);font-size:0.85em;">CSV export pulls real revenue by branch from wellipay-api — the self-pay/HMO/financing split above is illustrative; the API has no payer-type field to break it down by.</p>
         <div class="toolbar" style="margin-top:12px;">
           <button class="btn btn-primary" data-action="export-revenue-report-pdf">Download PDF</button>
-          <button class="btn btn-secondary" data-action="export-revenue-report">Download CSV (Revenue)</button>
+          <button class="btn btn-secondary" data-action="export-revenue-report">Download CSV (Live Revenue by Branch)</button>
         </div>
       `)}
       ${card('HMO Claims Ageing & Scrubbing Audit', `
         <div style="height:140px;position:relative;margin-bottom:12px;"><canvas id="reportClaimsChart"></canvas></div>
         <p>Breakdown of outstanding claims by HMO, ageing bracket, and pre-submission error flags.</p>
+        <p style="color:var(--muted);font-size:0.85em;">CSV export lists real claims from wellipay-api (payer, amount, status) — readiness scoring and error flags aren't computed by the API, so they're left out rather than invented.</p>
         <div class="toolbar" style="margin-top:12px;">
           <button class="btn btn-primary" data-action="export-claims-report-pdf">Download PDF</button>
-          <button class="btn btn-secondary" data-action="export-claims-report">Download CSV (Claims)</button>
+          <button class="btn btn-secondary" data-action="export-claims-report">Download CSV (Live Claims)</button>
         </div>
       `)}
       ${card('Branch Reconciliation Ledger', `
         <div style="height:140px;position:relative;margin-bottom:12px;"><canvas id="reportReconChart"></canvas></div>
         <p>Detailed breakdown of bank settlements, Paystack payouts and outstanding batch deposits by branch.</p>
+        <p style="color:var(--muted);font-size:0.85em;">CSV export lists real matched transactions from wellipay-api's reconciliation desk.</p>
         <div class="toolbar" style="margin-top:12px;">
           <button class="btn btn-primary" data-action="export-recon-report-pdf">Download PDF</button>
-          <button class="btn btn-secondary" data-action="export-recon-report">Download CSV (Reconciliation)</button>
+          <button class="btn btn-secondary" data-action="export-recon-report">Download CSV (Live Matches)</button>
         </div>
       `)}
       ${card('Revenue Leakage Audit Report', `
         <div style="height:140px;position:relative;margin-bottom:12px;"><canvas id="reportLeakageChart"></canvas></div>
         <p>Identifies diagnostic services rendered without matching invoices, duplicate discounts, and untariffed items.</p>
+        <p style="color:var(--muted);font-size:0.85em;">Sample data — wellipay-api has no clinical-order or discount-audit model yet, so this report isn't backed by live data.</p>
         <div class="toolbar" style="margin-top:12px;">
           <button class="btn btn-primary" data-action="export-leakage-report-pdf">Download PDF</button>
           <button class="btn btn-secondary" data-action="export-leakage-report">Download CSV (Leakage)</button>
@@ -1328,8 +1332,8 @@ function render() {
   if (state.active === 'patients' && !state.patientsSynced) syncPatientsFromApi();
   if (state.active === 'payments' && !state.paymentsSynced) syncPaymentsFromApi();
   if (state.active === 'invoices' && !state.invoicesSynced) syncInvoicesFromApi();
-  if ((state.active === 'claims' || state.active === 'hmo-insurance') && !state.claimsSynced) syncClaimsFromApi();
-  if (state.active === 'dashboard' && !state.dashboardSynced) syncDashboardFromApi();
+  if ((state.active === 'claims' || state.active === 'hmo-insurance' || state.active === 'reports') && !state.claimsSynced) syncClaimsFromApi();
+  if ((state.active === 'dashboard' || state.active === 'reports') && !state.dashboardSynced) syncDashboardFromApi();
   if ((state.active === 'receivables' || state.active === 'dashboard') && !state.receivablesSynced) syncReceivablesFromApi();
   if ((state.active === 'refunds' || state.active === 'dashboard') && !state.refundsSynced) syncRefundsFromApi();
   if (state.active === 'reconciliation' && !state.reconciliationSynced) syncReconciliationFromApi();
@@ -2040,6 +2044,26 @@ function bumpLiveReconciliationSummary(delta) {
   state.liveReconciliationSummary.exception += delta.exception || 0;
 }
 
+// Fetches a fresh page of MATCHED transactions for the Reports page's
+// reconciliation CSV, rather than reusing state.unmatched (which only holds
+// UNMATCHED rows — matched ones are dropped from it as soon as they're
+// decided, per bumpLiveReconciliationSummary's comment above).
+async function exportLiveReconciliationReport() {
+  try {
+    const data = await wellipayApi.listUnmatchedTransactions({ status: 'MATCHED', limit: 100 });
+    if (!data.items.length) {
+      showToast('Nothing to Export', 'No matched transactions recorded yet in wellipay-api.');
+      return;
+    }
+    downloadCsv('live_reconciliation_matches.csv', [
+      ['Source', 'Reference', 'Amount', 'Matched Payment Ref', 'Received At'],
+      ...data.items.map(item => [item.source, item.reference || '', fromMinor(item.amountMinor), item.matchedPaymentId, item.receivedAt]),
+    ]);
+  } catch (err) {
+    showToast('Export Failed', `Live reconciliation data not loaded: ${err.message}`);
+  }
+}
+
 async function matchLiveTransaction(transactionId, invoiceId, invoiceLabel) {
   try {
     const result = await wellipayApi.matchUnmatchedTransaction(transactionId, { invoiceId });
@@ -2131,7 +2155,7 @@ async function syncDashboardFromApi() {
     showToast('API Sync Failed', `Live dashboard snapshot not loaded: ${err.message}`);
   } finally {
     state.dashboardSyncing = false;
-    if (state.active === 'dashboard') render();
+    if (state.active === 'dashboard' || state.active === 'reports') render();
   }
 }
 
@@ -2191,7 +2215,7 @@ async function syncClaimsFromApi() {
     showToast('API Sync Failed', `Live claims not loaded: ${err.message}`);
   } finally {
     state.claimsSyncing = false;
-    if (state.active === 'claims' || state.active === 'hmo-insurance') render();
+    if (state.active === 'claims' || state.active === 'hmo-insurance' || state.active === 'reports') render();
   }
 }
 
@@ -2723,32 +2747,36 @@ function dispatch(action, target, domEvent) {
       break;
     }
     case 'export-revenue-report': {
-      downloadCsv('monthly_revenue_report_sep2026.csv', [
-        ['Branch', 'Self-Pay Revenue', 'HMO Revenue', 'Financing', 'Total Collected'],
-        ['Wuse', 2100000, 2800000, 300000, 5200000],
-        ['Garki', 1200000, 1800000, 400000, 3400000],
-        ['Maitama', 2900000, 3700000, 500000, 7100000],
-        ['Kaduna', 600000, 750000, 100000, 1450000],
-        ['Lagos', 900000, 1050000, 150000, 2100000]
+      if (!state.liveSnapshot) {
+        showToast('Export Failed', 'Live revenue has not loaded yet — open the Dashboard or Reports page and wait a moment.');
+        break;
+      }
+      downloadCsv('live_revenue_by_branch.csv', [
+        ['Branch', 'Revenue Collected (Live, from wellipay-api)'],
+        ...state.liveSnapshot.branchRevenue.map(([branch, total]) => [branch, total]),
+        ['Total', state.liveSnapshot.collected],
       ]);
       break;
     }
     case 'export-claims-report': {
-      downloadCsv('hmo_claims_scrubbing_report.csv', [
-        ['Claim ID', 'HMO', 'Amount', 'Status', 'Readiness %', 'Issues Flagged'],
-        ['CLM-5544', 'Reliance HMO', 180000, 'Draft', '87%', 'Missing pre-auth ref'],
-        ['CLM-5545', 'Hygeia HMO', 500000, 'Submitted', '62%', 'Tariff mismatch; Expired eligibility'],
-        ['CLM-5546', 'AXA Mansard', 120000, 'Submitted', '95%', 'None — Ready to settle']
+      if (!state.claimsSynced) {
+        showToast('Export Failed', 'Live claims have not loaded yet — open the Claims or Reports page and wait a moment.');
+        break;
+      }
+      downloadCsv('live_claims_report.csv', [
+        ['Claim Ref', 'Payer', 'Amount', 'Approved Amount', 'Status'],
+        ...state.liveClaims.map(item => [
+          item.providerClaimRef,
+          item.payerRef,
+          fromMinor(item.amountMinor),
+          item.approvedAmountMinor != null ? fromMinor(item.approvedAmountMinor) : '',
+          CLAIM_STATUS_LABEL[item.status] || item.status,
+        ]),
       ]);
       break;
     }
     case 'export-recon-report': {
-      downloadCsv('branch_reconciliation_statement.csv', [
-        ['Invoice Ref', 'Amount', 'Reconciliation Mode', 'Status', 'Timestamp'],
-        ['INV-2040', 45000, 'Auto reference match', 'Matched', '09:02'],
-        ['INV-2041', 18000, 'Manual match by Adaeze O.', 'Matched', '08:47'],
-        ['INV-2039', 120000, 'Auto reference match', 'Matched', '08:30']
-      ]);
+      exportLiveReconciliationReport();
       break;
     }
     case 'export-leakage-report': {

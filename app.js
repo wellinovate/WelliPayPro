@@ -1,25 +1,16 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   AUTH — Login Screen, Role-Based Access Control, Dark Mode Toggle
+   AUTH — Login Screen, Dark Mode Toggle
    ═══════════════════════════════════════════════════════════════════════ */
 
-const ROLES = [
-  { id: 'finance-manager',  label: 'Finance Manager',   desc: 'Full dashboard, reports, claims & approvals', initials: 'FM', icon: '📊', perms: '*' },
-  { id: 'cashier',          label: 'Cashier',            desc: 'Hospital Desk, Payments, Receipts only',     initials: 'CA', icon: '💳', perms: ['hospital-desk','payments','invoices','patients','notifications','support'] },
-  { id: 'hmo-coordinator',  label: 'HMO Coordinator',   desc: 'Claims, Authorisations, HMO / Insurance',    initials: 'HC', icon: '🛡',  perms: ['claims','hmo-insurance','authorization','wellipass','receivables','settlements','notifications','support'] },
-  { id: 'branch-admin',     label: 'Branch Admin',       desc: 'Operations, Branches, Staff, Reports',       initials: 'BA', icon: '🏥', perms: ['dashboard','reports','branches','staff','integrations','audit-log','settings','notifications','support'] },
-  { id: 'super-admin',      label: 'Super Admin',        desc: 'Full unrestricted access across all modules', initials: 'SA', icon: '⚡', perms: '*' },
-];
-
-const DEMO_USERS = [
-  { email: 'adaeze@abchealthcare.ng',  password: 'demo1234', role: 'finance-manager',  name: 'Adaeze Okafor' },
-  { email: 'cashier@abchealthcare.ng', password: 'demo1234', role: 'cashier',          name: 'Emeka Cashier' },
-  { email: 'hmo@abchealthcare.ng',     password: 'demo1234', role: 'hmo-coordinator',  name: 'Ngozi HMO' },
-  { email: 'admin@abchealthcare.ng',   password: 'demo1234', role: 'super-admin',      name: 'Chidi Admin' },
-];
-
+// Real per-staff login against wellipay-api (POST /staff/login), replacing
+// the earlier hardcoded DEMO_USERS list. A logged-in staff member's own
+// role is a free-text label set when they were invited (see the Staff
+// page) — there's no per-role permission model behind it yet, only
+// per-person identity, so every signed-in staff member sees the full nav.
+// That's a real, documented gap (see the Staff page banner), not an
+// oversight here.
 const authState = {
   user: null,
-  role: null,
   isDark: localStorage.getItem('wp-theme') === 'dark',
 };
 
@@ -34,15 +25,29 @@ function applyTheme() {
   }
 }
 
-function canAccess(view) {
-  if (!authState.role) return false;
-  if (authState.role.perms === '*') return true;
-  return authState.role.perms.includes(view);
+function applyStaffToTopbar(staff) {
+  const roleTag = document.getElementById('topbar-role');
+  const avatar  = document.getElementById('topbar-avatar');
+  if (roleTag) roleTag.textContent = staff.role;
+  if (avatar) {
+    const initials = staff.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+    avatar.textContent = initials;
+    avatar.setAttribute('aria-label', staff.name + ' account');
+  }
 }
 
-function showAuthScreen() {
+function enterApp(staff) {
+  authState.user = staff;
+  applyStaffToTopbar(staff);
+  document.getElementById('auth-root').innerHTML = '';
+  document.getElementById('app-shell').style.display = '';
+  applyTheme();
+  render();
+}
+
+function showAuthScreen(noticeMessage) {
   const root = document.getElementById('auth-root');
-  let selectedRole = ROLES[0].id;
+  document.getElementById('app-shell').style.display = 'none';
 
   root.innerHTML = `
     <div class="auth-screen" id="auth-screen">
@@ -53,85 +58,63 @@ function showAuthScreen() {
         </div>
         <h1 class="auth-heading">Welcome back</h1>
         <p class="auth-sub">Sign in to ABC Healthcare · Multi-branch portal</p>
-        <div class="auth-error" id="auth-error">Invalid email or password. Please try again.</div>
+        <div class="auth-error" id="auth-error" style="display:${noticeMessage ? 'block' : 'none'}">${noticeMessage || ''}</div>
         <form class="auth-form" id="login-form" autocomplete="on">
           <div class="form-group">
             <label for="login-email">Email address</label>
             <input class="input" id="login-email" name="email" type="email" autocomplete="email"
-              placeholder="you@abchealthcare.ng" required value="adaeze@abchealthcare.ng">
+              placeholder="you@abchealthcare.ng" required>
           </div>
           <div class="form-group">
             <label for="login-password">Password</label>
             <input class="input" id="login-password" name="password" type="password" autocomplete="current-password"
-              placeholder="••••••••" required value="demo1234">
+              placeholder="••••••••" required>
           </div>
-          <div class="auth-divider">Select your role</div>
-          <div class="auth-roles" id="auth-roles">
-            ${ROLES.map(r => `
-              <div class="role-option${r.id === selectedRole ? ' selected' : ''}" data-role-id="${r.id}">
-                <div class="role-option-icon">${r.icon}</div>
-                <div class="role-option-info">
-                  <strong>${r.label}</strong>
-                  <span>${r.desc}</span>
-                </div>
-              </div>`).join('')}
-          </div>
-          <button type="submit" class="btn btn-primary" style="width:100%;height:44px;font-size:15px;margin-top:4px;">
+          <button type="submit" class="btn btn-primary" style="width:100%;height:44px;font-size:15px;margin-top:4px;" id="login-submit">
             Sign in
           </button>
         </form>
         <p style="margin-top:16px;font-size:11px;color:var(--muted);text-align:center;">
-          Demo: any role · password is <strong>demo1234</strong>
+          No account yet? Ask a manager to invite you and set a password on the Staff page.
+        </p>
+        <button type="button" class="btn btn-secondary" id="admin-bypass" style="width:100%;height:38px;font-size:13px;margin-top:10px;">
+          Continue with shared admin access
+        </button>
+        <p style="margin-top:8px;font-size:11px;color:var(--muted);text-align:center;">
+          For first-time setup only, before anyone has a personal login — go to Staff and set a password for yourself, then sign in above from then on.
         </p>
       </div>
     </div>`;
 
-  // Role selector
-  root.querySelectorAll('.role-option').forEach(el => {
-    el.addEventListener('click', () => {
-      selectedRole = el.dataset.roleId;
-      root.querySelectorAll('.role-option').forEach(r => r.classList.toggle('selected', r.dataset.roleId === selectedRole));
-    });
+  root.querySelector('#admin-bypass').addEventListener('click', () => {
+    // No staff login exists yet (or this staff member's password hasn't
+    // been set) — this falls back to the same shared frontend-proxy token
+    // the app used before per-staff login existed. It's not tied to a
+    // person, so it never gets stored as a session and won't survive a
+    // reload — it's a way in for initial setup, not a daily login.
+    enterApp({ name: 'Admin (shared access)', email: 'shared session — not a personal login', role: 'Set a password on Staff to switch to a real login' });
   });
 
-  // Form submit
-  root.querySelector('#login-form').addEventListener('submit', e => {
+  root.querySelector('#login-form').addEventListener('submit', async e => {
     e.preventDefault();
     const email    = root.querySelector('#login-email').value.trim().toLowerCase();
     const password = root.querySelector('#login-password').value;
-    const matched  = DEMO_USERS.find(u => u.email === email && u.password === password);
     const errEl    = root.querySelector('#auth-error');
+    const submitBtn = root.querySelector('#login-submit');
 
-    if (!matched) {
+    errEl.style.display = 'none';
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Signing in…';
+    try {
+      const staff = await loginStaff(email, password);
+      enterApp(staff);
+    } catch (err) {
+      errEl.textContent = err.message;
       errEl.style.display = 'block';
       root.querySelector('#login-password').focus();
-      return;
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Sign in';
     }
-    errEl.style.display = 'none';
-
-    authState.user = matched;
-    authState.role = ROLES.find(r => r.id === selectedRole) || ROLES.find(r => r.id === matched.role);
-
-    // Update topbar with real user info
-    const roleTag = document.getElementById('topbar-role');
-    const avatar  = document.getElementById('topbar-avatar');
-    if (roleTag) roleTag.textContent = authState.role.label;
-    if (avatar)  {
-      const initials = matched.name.split(' ').map(n => n[0]).join('').slice(0,2);
-      avatar.textContent  = initials;
-      avatar.setAttribute('aria-label', matched.name + ' account');
-    }
-
-    // Dismiss login, show app
-    const screen = document.getElementById('auth-screen');
-    if (screen) {
-      screen.style.opacity    = '0';
-      screen.style.transition = 'opacity .3s ease';
-      setTimeout(() => { root.innerHTML = ''; }, 300);
-    }
-    document.getElementById('app-shell').style.display = '';
-    applyTheme();
-    render();
   });
 }
 
@@ -140,8 +123,7 @@ function openProfileDropdown() {
   const existing = document.getElementById('profile-dropdown');
   if (existing) { existing.remove(); return; }
 
-  const user = authState.user || { name: 'Demo User', email: 'demo@abchealthcare.ng' };
-  const role = authState.role || ROLES[0];
+  const user = authState.user || { name: 'Demo User', email: 'demo@abchealthcare.ng', role: '—' };
 
   const el = document.createElement('div');
   el.className = 'profile-dropdown';
@@ -150,7 +132,7 @@ function openProfileDropdown() {
     <div class="profile-dropdown-header">
       <strong>${user.name}</strong>
       <span>${user.email}</span>
-      <span style="margin-top:3px;display:block;font-size:10px;color:var(--color-accent);font-weight:700;">${role.label}</span>
+      <span style="margin-top:3px;display:block;font-size:10px;color:var(--color-accent);font-weight:700;">${user.role}</span>
     </div>
     <div class="profile-dropdown-item" data-action="goto-settings">⚙️  Settings</div>
     <div class="profile-dropdown-item" data-action="goto-audit">📋  Audit Log</div>
@@ -173,7 +155,7 @@ function openProfileDropdown() {
   }, 50);
 }
 
-import { wellipayApi, toMinor, fromMinor } from './api.js';
+import { wellipayApi, toMinor, fromMinor, loginStaff, logoutStaff, getStaffSession, onSessionExpired } from './api.js';
 
 const groups = [
   { name: 'Overview', items: [['dashboard', 'Dashboard', 'grid'], ['hospital-desk', 'Hospital Desk', 'wallet'], ['ai-insights', 'AI Insights', 'spark'], ['notifications', 'Notifications', 'bell']] },
@@ -480,7 +462,7 @@ function renderDashboard() {
     : (state.dashboardSyncing ? '<p class="empty-state">Loading live figures…</p>' : '<p class="empty-state">No successful payments recorded yet.</p>');
   return `<div class="page">
     ${renderBranchBanner()}
-    <div class="page-heading"><div><h1>Good afternoon, Adaeze</h1><p>Sunday, September 27, 2026 · ABC Healthcare, ${state.branch === 'All branches' ? 'consolidated (5 branches)' : state.branch + ' Branch'}</p></div><div class="seg" role="group" aria-label="Date range">${['Today','Week','Month','Quarter'].map(value=>`<label class="seg-opt"><input type="radio" name="filter" value="${value}" ${state.filter===value?'checked':''}><span>${value}</span></label>`).join('')}</div></div>
+    <div class="page-heading"><div><h1>Good afternoon, ${(authState.user?.name || 'there').split(' ')[0]}</h1><p>Sunday, September 27, 2026 · ABC Healthcare, ${state.branch === 'All branches' ? 'consolidated (5 branches)' : state.branch + ' Branch'}</p></div><div class="seg" role="group" aria-label="Date range">${['Today','Week','Month','Quarter'].map(value=>`<label class="seg-opt"><input type="radio" name="filter" value="${value}" ${state.filter===value?'checked':''}><span>${value}</span></label>`).join('')}</div></div>
     ${snapshotCard}
     ${metricGrid(tiles)}
     <div class="grid two-col">
@@ -1157,7 +1139,8 @@ function renderStaffRow(item, isLive) {
     : `<small>${item.lastActive}</small>`;
   const action = isLive
     ? (item.status === 'ACTIVE'
-        ? `<button class="btn btn-secondary" data-action="deactivate-staff" data-id="${item.staffId}">Deactivate</button>`
+        ? `<button class="btn btn-secondary" data-action="open-set-password" data-id="${item.staffId}" data-name="${item.name}">Set Password</button>
+           <button class="btn btn-secondary" data-action="deactivate-staff" data-id="${item.staffId}">Deactivate</button>`
         : `<button class="btn btn-secondary" data-action="reactivate-staff" data-id="${item.staffId}">Reactivate</button>`)
     : '';
   return `<tr>
@@ -1176,7 +1159,7 @@ function renderStaff() {
     ${renderBranchBanner()}
     ${pageHeading('Operations', 'Staff & Role-Based Access', 'Configure permissions, cashier shift limits and audit roles for clinical & billing personnel.')}
     ${metricGrid([['46','Active Staff Members','Roster'],['5','Role Levels Configured','Security'],['2','Pending Invitations','Onboarding'],['100%','Audit Logging Active','Compliance']])}
-    <p style="color:var(--muted);font-size:0.85em;margin:-8px 0 12px;">Roster tiles above are illustrative. Invite/deactivate below write to a real staff directory in wellipay-api — there's no per-staff login yet, so roles aren't enforced against any endpoint.</p>
+    <p style="color:var(--muted);font-size:0.85em;margin:-8px 0 12px;">Roster tiles above are illustrative. Invite/deactivate/Set Password below write to a real staff directory in wellipay-api. Each staff member can sign in with their own email and password once one is set — that's real identity, but there's still no per-role permission enforcement, so every signed-in staff member sees the same app regardless of role.</p>
     ${card('<div class="section-heading"><span>Staff Directory</span><button class="btn btn-primary" data-action="open-invite-staff">Invite Staff Member</button></div>', `
       <div class="table-wrap">
         <table class="table">
@@ -2031,7 +2014,7 @@ function renderModal() {
     return `<div class="modal-backdrop" data-action="dismiss-modal">
       <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="inv-staff-title">
         <h2 id="inv-staff-title">Invite New Staff Member</h2>
-        <p>Adds a real staff directory record in wellipay-api. There's no login system yet, so this records who's invited under which role rather than issuing credentials.</p>
+        <p>Adds a real staff directory record in wellipay-api. This records who's invited under which role — no password is set yet, so they can't sign in until you use "Set Password" on their row.</p>
         <form id="invite-staff-form" class="form-grid">
           <div class="form-grid two-col">
             <div class="form-group"><label>Full Name *</label><input class="input" name="name" required placeholder="e.g. Samuel Okafor"></div>
@@ -2055,6 +2038,22 @@ function renderModal() {
           <div class="modal-actions">
             <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
             <button class="btn btn-primary" type="submit">Send Invitation Link</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+  }
+
+  if (state.modal.type === 'set-staff-password') {
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="set-pw-title">
+        <h2 id="set-pw-title">Set Password — ${state.modal.name}</h2>
+        <p>Sets or resets this person's login password in wellipay-api. Tell them the new password yourself — there's no reset email.</p>
+        <form id="set-staff-password-form" class="form-grid">
+          <div class="form-group"><label>New Password *</label><input class="input" type="password" name="password" required minlength="8" placeholder="At least 8 characters"></div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
+            <button class="btn btn-primary" type="submit">Set Password</button>
           </div>
         </form>
       </section>
@@ -2465,9 +2464,22 @@ async function inviteLiveStaff(name, email, role, branch) {
     const created = await wellipayApi.createStaff({ name, email, role, branch: branch || undefined });
     state.liveStaff.unshift(created);
     logAudit('Staff Invited', `${created.name} invited as ${created.role}`);
-    showToast('Staff Invited', `Recorded in wellipay-api. Credentials link emailed to ${created.email}.`);
+    showToast('Staff Invited', `Recorded in wellipay-api. Use "Set Password" on their row to activate their login.`);
   } catch (err) {
     showToast('Invite Failed', err.message);
+  } finally {
+    render();
+  }
+}
+
+async function setLiveStaffPassword(staffId, name, password) {
+  try {
+    await wellipayApi.setStaffPassword(staffId, { password });
+    logAudit('Staff Password Set', name);
+    showToast('Password Set', `${name} can now sign in with this password.`);
+    state.modal = null;
+  } catch (err) {
+    showToast('Set Password Failed', err.message);
   } finally {
     render();
   }
@@ -3047,8 +3059,8 @@ function dispatch(action, target, domEvent) {
     case 'open-profile-menu': openProfileDropdown(); break;
     case 'sign-out': {
       document.getElementById('profile-dropdown')?.remove();
-      authState.user = null; authState.role = null;
-      document.getElementById('app-shell').style.display = 'none';
+      authState.user = null;
+      logoutStaff();
       showAuthScreen();
       break;
     }
@@ -3321,6 +3333,7 @@ function dispatch(action, target, domEvent) {
     case 'open-invite-staff': state.modal={type:'invite-staff'};render();break;
     case 'deactivate-staff': toggleLiveStaffStatus(id, 'DEACTIVATED');break;
     case 'reactivate-staff': toggleLiveStaffStatus(id, 'ACTIVE');break;
+    case 'open-set-password': state.modal={type:'set-staff-password', staffId:id, name: target.dataset.name};render();break;
 
     /* Payment Plans */
     case 'open-new-payment-plan': {
@@ -3722,6 +3735,13 @@ document.addEventListener('submit', async event => {
     render();
     inviteLiveStaff(name, email, role, branch);
   }
+  if (event.target.id === 'set-staff-password-form') {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    const password = fd.get('password').toString();
+    const { staffId, name } = state.modal;
+    setLiveStaffPassword(staffId, name, password);
+  }
   if (event.target.id === 'new-payment-plan-form') {
     event.preventDefault();
     const fd = new FormData(event.target);
@@ -3783,6 +3803,24 @@ window.addEventListener('hashchange', () => {
   dispatch('close-menu', document.querySelector('#scrim'));
 });
 
-// Boot: apply saved theme, then show login screen
+// A session dies either because it timed out locally or because the API
+// rejected a request made with it (e.g. the account was deactivated
+// mid-session) — either way, drop back to the login screen with a plain
+// explanation rather than leaving the app showing stale data behind a
+// token that no longer works.
+onSessionExpired((message) => {
+  authState.user = null;
+  showAuthScreen(message);
+});
+
+// Boot: apply saved theme, then either restore an existing staff session
+// (sessionStorage survives a reload, not a closed tab) or show the login
+// screen.
 applyTheme();
+const existingSession = getStaffSession();
+if (existingSession) {
+  enterApp(existingSession.staff);
+} else {
+  showAuthScreen();
+}
 showAuthScreen();

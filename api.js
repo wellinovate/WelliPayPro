@@ -22,13 +22,100 @@ async function getToken() {
   return cachedToken.value;
 }
 
+// Per-staff login (POST /staff/login). Once a staff member is signed in,
+// every request below carries their own token instead of the shared
+// frontend-proxy token above — that's the real identity behind a write, not
+// just an app-level identity. The session lives in sessionStorage (not
+// localStorage) so it survives a reload but not a closed tab, and it's
+// never persisted anywhere else — nothing here stores the password itself.
+const STAFF_SESSION_KEY = 'wp-staff-session';
+
+function loadStaffSession() {
+  try {
+    const raw = sessionStorage.getItem(STAFF_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !parsed.token || !parsed.expiresAt || !parsed.staff) return null;
+    if (parsed.expiresAt - Date.now() <= 15000) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+let staffSession = loadStaffSession();
+let sessionExpiredHandler = null;
+
+function persistStaffSession() {
+  try {
+    if (staffSession) sessionStorage.setItem(STAFF_SESSION_KEY, JSON.stringify(staffSession));
+    else sessionStorage.removeItem(STAFF_SESSION_KEY);
+  } catch {
+    // sessionStorage unavailable (private browsing, etc.) — the session
+    // just won't survive a reload; login itself still works.
+  }
+}
+
+function clearExpiredSession(message) {
+  staffSession = null;
+  persistStaffSession();
+  if (sessionExpiredHandler) sessionExpiredHandler(message);
+}
+
+// app.js registers a callback here so it can drop back to the login screen
+// the moment a session dies, whether that's caught locally (expiresAt has
+// passed) or reported by the API itself (a 401 on a request that carried a
+// staff token — e.g. the account was deactivated mid-session).
+export function onSessionExpired(handler) {
+  sessionExpiredHandler = handler;
+}
+
+export function getStaffSession() {
+  return staffSession;
+}
+
+export async function loginStaff(email, password) {
+  const res = await fetch(`${API_BASE}/staff/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  const payload = await res.json().catch(() => null);
+  if (!res.ok) {
+    const detail = (payload && (payload.detail || payload.title)) || `Login failed (HTTP ${res.status})`;
+    throw new Error(detail);
+  }
+  staffSession = {
+    token: payload.access_token,
+    expiresAt: Date.now() + payload.expires_in * 1000,
+    staff: payload.staff,
+  };
+  persistStaffSession();
+  return staffSession.staff;
+}
+
+export function logoutStaff() {
+  staffSession = null;
+  persistStaffSession();
+}
+
+async function getActiveToken() {
+  if (staffSession) {
+    if (staffSession.expiresAt - Date.now() > 15000) return staffSession.token;
+    clearExpiredSession('Your session expired. Please sign in again.');
+    throw new Error('Your session expired. Please sign in again.');
+  }
+  return getToken();
+}
+
 function idempotencyKey(prefix) {
   const random = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return `${prefix}-${random}`.slice(0, 128);
 }
 
 async function apiRequest(path, { method = 'GET', body, idempotent } = {}) {
-  const token = await getToken();
+  const usingStaffSession = !!staffSession;
+  const token = await getActiveToken();
   const headers = { Authorization: `Bearer ${token}` };
   if (body) headers['Content-Type'] = 'application/json';
   if (idempotent) headers['Idempotency-Key'] = idempotencyKey(idempotent);
@@ -40,6 +127,9 @@ async function apiRequest(path, { method = 'GET', body, idempotent } = {}) {
   });
   const payload = await res.json().catch(() => null);
   if (!res.ok) {
+    if (res.status === 401 && usingStaffSession) {
+      clearExpiredSession('Your session expired. Please sign in again.');
+    }
     const detail = (payload && (payload.detail || payload.title)) || `Request failed (HTTP ${res.status})`;
     throw new Error(detail);
   }
@@ -90,6 +180,8 @@ export const wellipayApi = {
   listStaff: (query) => apiRequest(`/provider/staff${toQueryString(query)}`),
   updateStaffStatus: (staffId, body) =>
     apiRequest(`/provider/staff/${encodeURIComponent(staffId)}/status`, { method: 'PATCH', body }),
+  setStaffPassword: (staffId, body) =>
+    apiRequest(`/provider/staff/${encodeURIComponent(staffId)}/password`, { method: 'PATCH', body }),
   createPaymentPlan: (body) => apiRequest('/provider/payment-plans', { method: 'POST', body, idempotent: 'plan' }),
   listPaymentPlans: (query) => apiRequest(`/provider/payment-plans${toQueryString(query)}`),
   payPlanInstallment: (planId, seq, body) =>

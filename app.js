@@ -268,6 +268,19 @@ const state = {
   eventsSynced: false,
   eventsSyncing: false,
   liveEvents: [],
+  financingSynced: false,
+  financingSyncing: false,
+  liveFinancingRecords: [],
+  partnersSynced: false,
+  partnersSyncing: false,
+  livePartners: [],
+  referralsSynced: false,
+  referralsSyncing: false,
+  liveReferrals: [],
+  welliPassStatsSynced: false,
+  welliPassStatsSyncing: false,
+  liveEligibilityChecks: [],
+  liveConsents: [],
   patient: { name: 'Femi O.', welliId: 'WR-1187-22', hmo: 'Reliance HMO — Gold' },
   claims: [
     { id: 1, ref: 'INV-2049 — Blessing K.', hmo: 'Hygeia HMO', amount: 23000, status: 'Draft' },
@@ -793,12 +806,26 @@ function renderFamily() {
 
 /* 11. WelliPass */
 function renderWelliPass() {
+  const eligByBranch = {};
+  state.liveEligibilityChecks.forEach(e => {
+    const name = FACILITY_BRANCH[e.facilityRef] || e.facilityRef;
+    eligByBranch[name] = (eligByBranch[name] || 0) + 1;
+  });
+  const todayStr = new Date().toDateString();
+  const checksToday = state.liveEligibilityChecks.filter(e => new Date(e.requestedAt).toDateString() === todayStr).length;
+  const consentsRecorded = state.liveConsents.length;
+  const statsLoading = !state.welliPassStatsSynced;
   return `<div class="page">
     ${renderBranchBanner()}
     ${pageHeading('Claims & Payers', 'WelliPass Access Control', 'Patient identification, instant biometric/QR desk access and pre-authorized financial consent.')}
-    ${metricGrid([['62','Scans Today','Front Desk'],['2.1 min','Desk Time Saved','Efficiency'],['118','Linked Dependants','Family Access'],['90%','Patient Adoption','Coverage']])}
+    ${metricGrid([
+      [String(state.liveEligibilityChecks.length), 'Eligibility Checks (Live)', 'wellipay-api'],
+      [String(checksToday), 'Checks Today', 'Live'],
+      [String(consentsRecorded), 'Financial Consents Recorded', 'Live'],
+      ['wellipay-api', 'Source', 'Live'],
+    ])}
     <div class="grid two-col">
-      ${card('Active WelliPass Sample — Ngozi Adeleke', `
+      ${card('Active WelliPass Sample (illustrative) — Ngozi Adeleke', `
         <div class="wellipass-head">
           <span class="eyebrow" style="color:white">WELLIPASS · VERIFIED</span>
           <strong>Ngozi Adeleke</strong>
@@ -817,12 +844,12 @@ function renderWelliPass() {
         </div>
       `)}
       ${card('WelliPass Front-Desk Statistics', `
+        <p style="margin:0 0 12px;font-size:12px;color:var(--muted);">Counts real eligibility checks and financial consents recorded in wellipay-api per branch. There's no lookup-timing or override data anywhere server-side, so those figures are dropped rather than invented.</p>
         <div class="row-list">
-          <div class="data-row"><span>Wuse Branch Scans</span><strong>28 scans today</strong></div>
-          <div class="data-row"><span>Maitama Branch Scans</span><strong>22 scans today</strong></div>
-          <div class="data-row"><span>Garki Branch Scans</span><strong>12 scans today</strong></div>
-          <div class="data-row"><span>Average Lookup Latency</span><strong>1.2 seconds</strong></div>
-          <div class="data-row"><span>Emergency Overrides Triggered</span><strong>0 today</strong></div>
+          ${statsLoading ? '<p class="empty-state">Loading live figures…</p>' : (Object.keys(eligByBranch).length
+            ? Object.entries(eligByBranch).map(([branch, count]) => `<div class="data-row"><span>${branch} Branch</span><strong>${count} eligibility check${count === 1 ? '' : 's'}</strong></div>`).join('')
+            : '<p class="empty-state">No eligibility checks recorded yet.</p>')}
+          <div class="data-row"><span>Financial Consents Recorded</span><strong>${consentsRecorded}</strong></div>
         </div>
       `)}
     </div>
@@ -933,24 +960,30 @@ function renderRefunds() {
 
 /* 16. Financing */
 function renderFinancing() {
+  const liveRows = state.liveFinancingRecords;
+  const totalFinanced = liveRows.reduce((sum, r) => sum + fromMinor(r.amountMinor), 0);
+  const lenderCount = new Set(liveRows.map(r => r.lenderName)).size;
+  const rows = liveRows.map(r => `
+    <tr>
+      <td><strong>${r.invoiceId}</strong> <small style="color:var(--muted)">(Live)</small><br><small style="color:var(--muted)">${r.financingRecordId}</small></td>
+      <td>${r.lenderName}</td>
+      <td>${r.termMonths ? `${r.termMonths} months` : '—'}</td>
+      <td><strong>${money(fromMinor(r.amountMinor))}</strong></td>
+      <td><small>${new Date(r.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}</small></td>
+    </tr>
+  `).join('');
   return `<div class="page">
     ${renderBranchBanner()}
-    ${pageHeading('Growth', 'Healthcare Financing Marketplace', 'Patients access point-of-care credit from regulated lending partners at zero facility risk.')}
-    ${metricGrid([['41','Active Patient Plans','Financed'],['₦4.1M','Disbursed to Facility','Capital'],['68%','Patient Approval Rate','Underwriting'],['0%','Provider Bad Debt','Guaranteed']])}
-    ${card('Integrated Financing Partners', `
-      <div class="grid three-col">
-        <div class="stat-card" style="border:1px solid var(--color-divider);padding:14px;"><strong>CareCred Nigeria</strong><span>Terms: 3 - 12 Months<br>Max: ₦2,000,000<br>Status: Active</span></div>
-        <div class="stat-card" style="border:1px solid var(--color-divider);padding:14px;"><strong>HealthPay Africa</strong><span>Terms: 1 - 6 Months<br>Max: ₦500,000<br>Status: Active</span></div>
-        <div class="stat-card" style="border:1px solid var(--color-divider);padding:14px;"><strong>Sycamore Credit</strong><span>Terms: 3 - 24 Months<br>Max: ₦5,000,000<br>Status: Active</span></div>
-      </div>
-    `)}
-    ${card('Active Financed Treatments', `
-      <div class="row-list">
-        ${dataRow('Cataract surgery — Femi O.', '₦100,000 over 6 months via CareCred · Settled upfront to hospital', 'Active')}
-        ${dataRow('Dental implant — Ngozi A.', '₦180,000 over 12 months via Sycamore Credit · Settled upfront to hospital', 'Active')}
-        ${dataRow('Executive checkup — Chinwe E.', '₦60,000 over 3 months via HealthPay · Awaiting patient KYC', 'Pending KYC', 'outline')}
-      </div>
-    `)}
+    ${pageHeading('Growth', 'Healthcare Financing', 'No real lender integration exists — no CareCred/HealthPay/Sycamore API, no credit check. "Record Financing" logs that a named lender covered an invoice’s remaining balance upfront and settles the invoice in wellipay-api immediately; the patient repays that lender outside this system.')}
+    ${metricGrid([
+      [String(liveRows.length), 'Financing Records', 'Live'],
+      [money(totalFinanced), 'Total Financed', 'Live'],
+      [String(lenderCount), 'Distinct Lenders Recorded', 'Live'],
+      ['wellipay-api', 'Source', 'Live'],
+    ])}
+    ${card('<div class="section-heading"><span>Financing records</span><button class="btn btn-primary" data-action="open-new-financing-record">Record Financing</button></div>', rows
+      ? `<div class="table-wrap"><table class="table"><thead><tr><th>Invoice</th><th>Lender</th><th>Term</th><th>Amount</th><th>Recorded</th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : (state.financingSynced ? '<p class="empty-state">No financing recorded yet.</p>' : '<p class="empty-state">Loading live financing records…</p>'))}
   </div>`;
 }
 
@@ -1055,13 +1088,14 @@ function renderReports() {
           <button class="btn btn-secondary" data-action="export-recon-report">Download CSV (Live Matches)</button>
         </div>
       `)}
-      ${card('Revenue Leakage Audit Report', `
-        <div style="height:140px;position:relative;margin-bottom:12px;"><canvas id="reportLeakageChart"></canvas></div>
-        <p>Identifies diagnostic services rendered without matching invoices, duplicate discounts, and untariffed items.</p>
-        <p style="color:var(--muted);font-size:0.85em;">Sample data — wellipay-api has no clinical-order or discount-audit model yet, so this report isn't backed by live data.</p>
+      ${card('Stale Invoices — Revenue Leakage Proxy', `
+        <p>wellipay-api has no clinical-order or discount-audit model, so the original leakage concept (services rendered without an invoice, duplicate discounts) isn't computable. This uses a real proxy instead: invoices open 30+ days with zero payment ever applied.</p>
+        ${staleInvoiceRows().length
+          ? `<div class="mini-metrics"><div class="mini-metric"><strong>${staleInvoiceRows().length}</strong><span>Stale invoices</span></div><div class="mini-metric"><strong>${money(staleInvoiceRows().reduce((sum, r) => sum + r.balance, 0))}</strong><span>At risk</span></div></div>`
+          : `<p style="color:var(--muted);font-size:0.85em;">${state.receivablesSynced ? 'No invoices open 30+ days with zero payment.' : 'Loading live invoices…'}</p>`}
         <div class="toolbar" style="margin-top:12px;">
           <button class="btn btn-primary" data-action="export-leakage-report-pdf">Download PDF</button>
-          <button class="btn btn-secondary" data-action="export-leakage-report">Download CSV (Leakage)</button>
+          <button class="btn btn-secondary" data-action="export-leakage-report">Download CSV (Stale Invoices)</button>
         </div>
       `)}
     </div>
@@ -1336,11 +1370,66 @@ function renderMobileIntegration() {
   </div>`;
 }
 
+/* 25b. Partners */
+function renderPartners() {
+  const partners = state.livePartners;
+  const byType = {};
+  partners.forEach(p => { byType[p.type] = (byType[p.type] || 0) + 1; });
+  const rows = partners.map(p => `
+    <tr>
+      <td><strong>${p.name}</strong></td>
+      <td>${tag(p.type.charAt(0) + p.type.slice(1).toLowerCase(), 'outline')}</td>
+      <td>${tag(p.status === 'ACTIVE' ? 'Active' : 'Inactive', p.status === 'ACTIVE' ? 'neutral' : 'accent')}</td>
+      <td><small>${new Date(p.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}</small></td>
+    </tr>
+  `).join('');
+  return `<div class="page">
+    ${renderBranchBanner()}
+    ${pageHeading('Growth', 'Diagnostic & Specialist Partners', 'A real partner directory in wellipay-api — labs, pharmacies and diagnostic centres patients can be referred to. No routing or billing integration; referrals are logged separately on the Referrals page.')}
+    ${metricGrid([
+      [String(partners.length), 'Connected Partners', 'Live'],
+      [String(byType.LABORATORY || 0), 'Laboratories', 'Live'],
+      [String(byType.PHARMACY || 0), 'Pharmacies', 'Live'],
+      [String(byType.IMAGING || 0), 'Imaging Centres', 'Live'],
+    ])}
+    ${card('<div class="section-heading"><span>Partner directory</span><button class="btn btn-primary" data-action="open-new-partner">Add Partner</button></div>', rows
+      ? `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Added</th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : (state.partnersSynced ? '<p class="empty-state">No partners yet.</p>' : '<p class="empty-state">Loading live partners…</p>'))}
+  </div>`;
+}
+
+/* 25c. Referrals */
+function renderReferrals() {
+  const partnerName = id => (state.livePartners.find(p => p.partnerId === id) || {}).name || id;
+  const referrals = state.liveReferrals;
+  const completedCount = referrals.filter(r => r.status === 'COMPLETED').length;
+  const rows = referrals.map(r => `
+    <tr>
+      <td><strong>${r.patientRef}</strong> → ${partnerName(r.partnerId)}<br><small style="color:var(--muted)">${r.description}</small></td>
+      <td>${FACILITY_BRANCH[r.facilityRef] || r.facilityRef}</td>
+      <td>${tag(r.status === 'COMPLETED' ? 'Completed' : 'Sent', r.status === 'COMPLETED' ? 'neutral' : 'outline')}</td>
+      <td><small>${new Date(r.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}</small></td>
+      <td>${r.status === 'SENT' ? `<button class="btn btn-secondary" data-action="complete-referral" data-id="${r.referralId}" style="font-size:11px;padding:4px 8px;">Mark Completed</button>` : ''}</td>
+    </tr>
+  `).join('');
+  return `<div class="page">
+    ${renderBranchBanner()}
+    ${pageHeading('Growth', 'Referral Network', 'A real referral log in wellipay-api — which patient was sent to which partner, and why. No routing, tracking-number generation or billing happens automatically; "Mark Completed" is a manual status update.')}
+    ${metricGrid([
+      [String(referrals.length), 'Referrals Logged', 'Live'],
+      [String(completedCount), 'Completed', 'Live'],
+      [String(referrals.length - completedCount), 'Still Open', 'Live'],
+      [String(state.livePartners.length), 'Partners Available', 'Live'],
+    ])}
+    ${card('<div class="section-heading"><span>Referral log</span><button class="btn btn-primary" data-action="open-new-referral">Send Referral</button></div>', rows
+      ? `<div class="table-wrap"><table class="table"><thead><tr><th>Patient & Reason</th><th>Branch</th><th>Status</th><th>Sent</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : (state.referralsSynced ? '<p class="empty-state">No referrals sent yet.</p>' : '<p class="empty-state">Loading live referrals…</p>'))}
+  </div>`;
+}
+
 /* 26. Remaining Connected Screens */
 function renderStub() {
   const stubData = {
-    referrals: ['Referral Network','Track patients referred between providers and secondary diagnostic revenues.',[['23','Referrals This Month'],['17','Completed'],['3.4 days','Avg Turnaround']], [['ABC Clinic → ABC Laboratory','Full Blood Count','Completed'],['ABC Clinic → Radiant Imaging','MRI — Knee Scan','Awaiting Payment'],['ABC Clinic → CarePlus Pharmacy','Prescription Dispensary','Completed']]],
-    partners: ['Diagnostic & Specialist Partners','Partner laboratories, pharmacies and diagnostic centres connected to WelliPay.',[['9','Connected Partners'],['23','Referrals Sent'],['11','Referrals Received']], [['ABC Laboratory','Laboratory Services','Connected'],['Radiant Imaging','Radiology & Diagnostics','Connected'],['Synlab Nigeria','Pathology Services','Connected']]],
     integrations: ['Integrations & EHR Connectors','Synchronize patient charts, charge slips and payments with hospital systems.',[['3','Connected Gateways'],['12','EHR Connectors Available'],['4,204','Records Synced Today']], [['WelliRecord EHR','Patient Records & Vitals','Connected'],['Paystack Payment Gateway','Virtual Accounts & Cards','Live'],['Termii SMS Gateway','Billing SMS Alerts','Connected']]],
     'api-developers': ['API & Developer Sandbox','Manage OAuth2 client credentials, webhook subscriptions and API keys.',[['2','Active API Keys'],['18,204','API Requests This Month'],['99.6%','Webhook Delivery Rate']], [['payment.success','Webhook Listener','200 OK'],['claim.adjudicated','Webhook Listener','200 OK'],['Client Key: wp_live_...','Production API Key','Active']]],
     subscription: ['Subscription & SaaS Plan','Manage ABC Healthcare’s SaaS tier, branches and add-on subscriptions.',[['Business Tier','Current Plan'],['₦85,000','Monthly Platform Fee'],['1.4%','Capped Transaction Fee']], [['Multi-Branch Add-on (5 branches)','Included in Business','Active'],['AI Financial Copilot Add-on','₦15,000 / month','Active'],['HMO Electronic Claims Gateway','₦25,000 / month','Active']]],
@@ -1455,6 +1544,8 @@ function render() {
     settlements: renderSettlements,
     refunds: renderRefunds,
     financing: renderFinancing,
+    referrals: renderReferrals,
+    partners: renderPartners,
     'payment-plans': renderPaymentPlans,
     reports: renderReports,
     branches: renderBranches,
@@ -1474,13 +1565,18 @@ function render() {
   if (state.active === 'invoices' && !state.invoicesSynced) syncInvoicesFromApi();
   if ((state.active === 'claims' || state.active === 'hmo-insurance' || state.active === 'reports' || state.active === 'ai-insights') && !state.claimsSynced) syncClaimsFromApi();
   if ((state.active === 'dashboard' || state.active === 'reports' || state.active === 'branches') && !state.dashboardSynced) syncDashboardFromApi();
-  if ((state.active === 'receivables' || state.active === 'dashboard') && !state.receivablesSynced) syncReceivablesFromApi();
+  if ((state.active === 'receivables' || state.active === 'dashboard' || state.active === 'reports') && !state.receivablesSynced) syncReceivablesFromApi();
   if ((state.active === 'refunds' || state.active === 'dashboard') && !state.refundsSynced) syncRefundsFromApi();
   if (state.active === 'reconciliation' && !state.reconciliationSynced) syncReconciliationFromApi();
   if ((state.active === 'staff' || state.active === 'branches') && !state.staffSynced) syncStaffFromApi();
   if (state.active === 'payment-plans' && !state.paymentPlansSynced) syncPaymentPlansFromApi();
   if (state.active === 'payment-plans' && !state.invoicesSynced) syncInvoicesFromApi();
   if (state.active === 'notifications' && !state.eventsSynced) syncEventsFromApi();
+  if (state.active === 'financing' && !state.financingSynced) syncFinancingFromApi();
+  if (state.active === 'financing' && !state.invoicesSynced) syncInvoicesFromApi();
+  if ((state.active === 'partners' || state.active === 'referrals') && !state.partnersSynced) syncPartnersFromApi();
+  if (state.active === 'referrals' && !state.referralsSynced) syncReferralsFromApi();
+  if (state.active === 'wellipass' && !state.welliPassStatsSynced) syncWelliPassStatsFromApi();
   if (state.active === 'settlements' && !state.settlementsSynced) syncSettlementsFromApi();
 
   if (state.active === 'dashboard' || state.active === 'reports') {
@@ -1576,6 +1672,87 @@ function renderModal() {
           <div class="modal-actions">
             <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
             <button class="btn btn-primary" type="submit">Create Plan</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+  }
+
+  if (state.modal.type === 'new-financing-record') {
+    const liveInvoices = state.invoiceList.filter(i => i.live && i.invoiceId && i.status !== 'Paid');
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="new-fin-title">
+        <h2 id="new-fin-title">Record Financing</h2>
+        <p>There's no real lender integration behind this — no credit check, no disbursement API. This records that a named lender covered the invoice's remaining balance upfront; wellipay-api settles the invoice immediately via a real payment on the "financing" channel. Patient repayment to the lender happens outside this system.</p>
+        ${!liveInvoices.length && state.invoicesSyncing ? '<p style="margin:0 0 8px;font-size:12px;color:var(--muted);">Loading live invoices…</p>' : ''}
+        <form id="new-financing-record-form" class="form-grid">
+          <div class="form-group"><label>Invoice *</label>
+            <select name="invoiceId" required>
+              <option value="">Select an invoice…</option>
+              ${liveInvoices.map(i => `<option value="${i.invoiceId}" data-label="${escapeHtml(i.patient)} · ${escapeHtml(i.id)}">${i.id} — ${i.patient} (${money(i.amount - i.paid)} outstanding)</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-grid two-col">
+            <div class="form-group"><label>Lender Name *</label><input class="input" name="lenderName" required placeholder="e.g. CareCred Nigeria"></div>
+            <div class="form-group"><label>Term (months)</label><input class="input" type="number" name="termMonths" min="1" max="60" placeholder="e.g. 6"></div>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
+            <button class="btn btn-primary" type="submit">Record Financing</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+  }
+
+  if (state.modal.type === 'new-partner') {
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="new-partner-title">
+        <h2 id="new-partner-title">Add Partner</h2>
+        <p>Adds a real partner directory record in wellipay-api. No routing or billing logic — this just names who patients can be referred to.</p>
+        <form id="new-partner-form" class="form-grid">
+          <div class="form-grid two-col">
+            <div class="form-group"><label>Partner Name *</label><input class="input" name="name" required placeholder="e.g. Synlab Nigeria"></div>
+            <div class="form-group"><label>Type *</label>
+              <select name="type">
+                <option value="LABORATORY">Laboratory</option>
+                <option value="PHARMACY">Pharmacy</option>
+                <option value="IMAGING">Imaging</option>
+                <option value="SPECIALIST">Specialist</option>
+                <option value="OTHER">Other</option>
+              </select>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
+            <button class="btn btn-primary" type="submit">Add Partner</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+  }
+
+  if (state.modal.type === 'new-referral') {
+    const activePartners = state.livePartners.filter(p => p.status === 'ACTIVE');
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="new-referral-title">
+        <h2 id="new-referral-title">Send Referral</h2>
+        <p>Logs a real referral in wellipay-api against an existing partner. No routing, tracking-number generation or billing happens automatically.</p>
+        ${!activePartners.length ? `<p style="margin:0 0 8px;font-size:12px;color:var(--muted);">${state.partnersSyncing ? 'Loading partners…' : 'No partners yet — add one first.'}</p>` : ''}
+        <form id="new-referral-form" class="form-grid">
+          <div class="form-group"><label>Partner *</label>
+            <select name="partnerId" required>
+              <option value="">Select a partner…</option>
+              ${activePartners.map(p => `<option value="${p.partnerId}" data-label="${escapeHtml(p.name)}">${p.name} (${p.type})</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-grid two-col">
+            <div class="form-group"><label>Patient Reference *</label><input class="input" name="patientRef" required placeholder="e.g. WR-1187-22"></div>
+            <div class="form-group"><label>Description *</label><input class="input" name="description" required placeholder="e.g. Full Blood Count"></div>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
+            <button class="btn btn-primary" type="submit">Send Referral</button>
           </div>
         </form>
       </section>
@@ -2041,7 +2218,7 @@ async function syncInvoicesFromApi() {
     state.invoicesSyncing = false;
     // Also re-render while the reconciliation "match" modal is open, so its
     // invoice picker picks up live invoices as soon as this finishes.
-    if (state.active === 'invoices' || state.active === 'payment-plans' || (state.modal && (state.modal.type === 'match' || state.modal.type === 'new-payment-plan'))) render();
+    if (state.active === 'invoices' || state.active === 'payment-plans' || state.active === 'financing' || (state.modal && (state.modal.type === 'match' || state.modal.type === 'new-payment-plan' || state.modal.type === 'new-financing-record'))) render();
   }
 }
 
@@ -2418,6 +2595,128 @@ async function syncEventsFromApi() {
   }
 }
 
+async function syncFinancingFromApi() {
+  if (state.financingSyncing) return;
+  state.financingSyncing = true;
+  try {
+    const data = await wellipayApi.listFinancingRecords({ limit: 100 });
+    state.liveFinancingRecords = data.items;
+    state.financingSynced = true;
+  } catch (err) {
+    showToast('API Sync Failed', `Live financing records not loaded: ${err.message}`);
+  } finally {
+    state.financingSyncing = false;
+    if (state.active === 'financing') render();
+  }
+}
+
+async function createLiveFinancingRecord(invoiceId, lenderName, termMonths, invoiceLabel) {
+  try {
+    const created = await wellipayApi.createFinancingRecord({ invoiceId, lenderName, ...(termMonths ? { termMonths } : {}) });
+    state.liveFinancingRecords.unshift(created);
+    logAudit('Financing Recorded', `${invoiceLabel || invoiceId} — ${money(fromMinor(created.amountMinor))} via ${lenderName}`);
+    showToast('Financing Recorded', 'Recorded in wellipay-api — invoice marked paid.');
+  } catch (err) {
+    showToast('Create Failed', err.message === 'Invoice has no remaining balance to finance.' ? 'That invoice has no remaining balance to finance.' : err.message);
+  } finally {
+    render();
+  }
+}
+
+async function syncPartnersFromApi() {
+  if (state.partnersSyncing) return;
+  state.partnersSyncing = true;
+  try {
+    const data = await wellipayApi.listPartners({ limit: 100 });
+    state.livePartners = data.items;
+    state.partnersSynced = true;
+  } catch (err) {
+    showToast('API Sync Failed', `Live partners not loaded: ${err.message}`);
+  } finally {
+    state.partnersSyncing = false;
+    if (state.active === 'partners' || state.active === 'referrals' || (state.modal && state.modal.type === 'new-referral')) render();
+  }
+}
+
+async function createLivePartner(name, type) {
+  try {
+    const created = await wellipayApi.createPartner({ name, type });
+    state.livePartners.unshift(created);
+    logAudit('Partner Added', `${name} (${type})`);
+    showToast('Partner Added', 'Recorded in wellipay-api.');
+  } catch (err) {
+    showToast('Create Failed', err.message);
+  } finally {
+    render();
+  }
+}
+
+async function syncReferralsFromApi() {
+  if (state.referralsSyncing) return;
+  state.referralsSyncing = true;
+  try {
+    const data = await wellipayApi.listReferrals({ limit: 100 });
+    state.liveReferrals = data.items;
+    state.referralsSynced = true;
+  } catch (err) {
+    showToast('API Sync Failed', `Live referrals not loaded: ${err.message}`);
+  } finally {
+    state.referralsSyncing = false;
+    if (state.active === 'referrals') render();
+  }
+}
+
+async function createLiveReferral(partnerId, patientRef, description, partnerLabel) {
+  try {
+    const facilityRef = state.branch === 'All branches' ? 'facility-wuse' : `facility-${state.branch.toLowerCase()}`;
+    const created = await wellipayApi.createReferral({ partnerId, facilityRef, patientRef, description });
+    state.liveReferrals.unshift(created);
+    logAudit('Referral Sent', `${patientRef} → ${partnerLabel || partnerId}: ${description}`);
+    showToast('Referral Recorded', 'Recorded in wellipay-api.');
+  } catch (err) {
+    showToast('Create Failed', err.message);
+  } finally {
+    render();
+  }
+}
+
+async function completeLiveReferral(referralId) {
+  try {
+    const updated = await wellipayApi.completeReferral(referralId);
+    const idx = state.liveReferrals.findIndex(r => r.referralId === referralId);
+    if (idx !== -1) state.liveReferrals[idx] = updated;
+    logAudit('Referral Completed', referralId);
+    showToast('Referral Completed', 'Marked completed in wellipay-api.');
+  } catch (err) {
+    showToast('Update Failed', err.message);
+  } finally {
+    render();
+  }
+}
+
+// WelliPass front-desk stats: real counts from the eligibility-check and
+// financial-consent logs already in wellipay-api, replacing the fabricated
+// per-branch scan counts and "average lookup latency" (which has no real
+// timing data behind it and is dropped rather than invented).
+async function syncWelliPassStatsFromApi() {
+  if (state.welliPassStatsSyncing) return;
+  state.welliPassStatsSyncing = true;
+  try {
+    const [eligibility, consents] = await Promise.all([
+      wellipayApi.listEligibilityChecks({ limit: 100 }),
+      wellipayApi.listFinancialConsents({ limit: 100 }),
+    ]);
+    state.liveEligibilityChecks = eligibility.items;
+    state.liveConsents = consents.items;
+    state.welliPassStatsSynced = true;
+  } catch (err) {
+    showToast('API Sync Failed', `Live WelliPass stats not loaded: ${err.message}`);
+  } finally {
+    state.welliPassStatsSyncing = false;
+    if (state.active === 'wellipass') render();
+  }
+}
+
 // Pulls real payments/claims/patients and rolls them into a small set of
 // aggregate numbers for the Dashboard's "Live snapshot" card. This does not
 // touch the mock tiles, charts or branch/reconciliation/leakage sections
@@ -2512,6 +2811,17 @@ function ageInvoices(items) {
   return { rows: rows.sort((a, b) => b.days - a.days), totals, total };
 }
 
+// Reports' "leakage" proxy: wellipay-api has no clinical-order or
+// discount-audit model, so the original per-branch leakage concept isn't
+// computable. This uses a different, real measure instead — invoices open
+// 30+ days with zero payment ever applied — revenue that's stalled and may
+// never be collected. Reuses the same ageInvoices() rows already computed
+// for the Receivables page.
+function staleInvoiceRows() {
+  if (!state.liveReceivables) return [];
+  return state.liveReceivables.rows.filter(row => row.paidAmountMinor === 0 && row.days >= 30);
+}
+
 async function syncReceivablesFromApi() {
   if (state.receivablesSyncing) return;
   state.receivablesSyncing = true;
@@ -2523,7 +2833,7 @@ async function syncReceivablesFromApi() {
     showToast('API Sync Failed', `Live receivables not loaded: ${err.message}`);
   } finally {
     state.receivablesSyncing = false;
-    if (state.active === 'receivables' || state.active === 'dashboard') render();
+    if (state.active === 'receivables' || state.active === 'dashboard' || state.active === 'reports') render();
   }
 }
 
@@ -3034,6 +3344,24 @@ function dispatch(action, target, domEvent) {
     }
     case 'confirm-settlement': confirmLiveSettlement(id);break;
 
+    /* Financing */
+    case 'open-new-financing-record': {
+      state.modal={type:'new-financing-record'};
+      render();
+      if (!state.invoicesSynced) syncInvoicesFromApi();
+      break;
+    }
+
+    /* Partners & Referrals */
+    case 'open-new-partner': state.modal={type:'new-partner'};render();break;
+    case 'open-new-referral': {
+      state.modal={type:'new-referral'};
+      render();
+      if (!state.partnersSynced) syncPartnersFromApi();
+      break;
+    }
+    case 'complete-referral': completeLiveReferral(id);break;
+
     /* Notifications */
     case 'mark-all-read': {
       state.notificationsList.forEach(n => n.read = true);
@@ -3127,11 +3455,14 @@ function dispatch(action, target, domEvent) {
       break;
     }
     case 'export-leakage-report': {
-      downloadCsv('revenue_leakage_audit.csv', [
-        ['Branch', 'Detected Leakage', 'Root Cause Diagnosis', 'Recommended Provider Action'],
-        ['Maitama', '₦185,000', '14 completed services without invoice created', 'Automate clinical order auto-billing'],
-        ['Wuse', '₦62,000', '3 HMO-eligible services billed as self-pay', 'Enforce WelliPass eligibility check at desk'],
-        ['Garki', '₦41,000', 'Duplicate discount applied on 6 bills', 'Restrict discount override permission']
+      if (!state.receivablesSynced) {
+        showToast('Export Failed', 'Live invoices have not loaded yet — open the Reports or Receivables page and wait a moment.');
+        break;
+      }
+      const stale = staleInvoiceRows();
+      downloadCsv('stale_invoices_report.csv', [
+        ['Invoice', 'Facility', 'Balance (never paid)', 'Days Open'],
+        ...stale.map(row => [row.providerInvoiceRef, FACILITY_BRANCH[row.facilityRef] || row.facilityRef, row.balance, row.days]),
       ]);
       break;
     }
@@ -3402,6 +3733,42 @@ document.addEventListener('submit', async event => {
     state.modal = null;
     render();
     createLivePaymentPlan(invoiceId, installmentCount, invoiceLabel);
+  }
+  if (event.target.id === 'new-financing-record-form') {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    const invoiceId = fd.get('invoiceId').toString();
+    const lenderName = fd.get('lenderName').toString();
+    const termMonths = fd.get('termMonths') ? Number(fd.get('termMonths')) : undefined;
+    const select = event.target.querySelector('select[name="invoiceId"]');
+    const invoiceLabel = select?.selectedOptions[0]?.dataset.label;
+    if (!invoiceId || !lenderName) return;
+    state.modal = null;
+    render();
+    createLiveFinancingRecord(invoiceId, lenderName, termMonths, invoiceLabel);
+  }
+  if (event.target.id === 'new-partner-form') {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    const name = fd.get('name').toString();
+    const type = fd.get('type').toString();
+    if (!name) return;
+    state.modal = null;
+    render();
+    createLivePartner(name, type);
+  }
+  if (event.target.id === 'new-referral-form') {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    const partnerId = fd.get('partnerId').toString();
+    const patientRef = fd.get('patientRef').toString();
+    const description = fd.get('description').toString();
+    const select = event.target.querySelector('select[name="partnerId"]');
+    const partnerLabel = select?.selectedOptions[0]?.dataset.label;
+    if (!partnerId || !patientRef || !description) return;
+    state.modal = null;
+    render();
+    createLiveReferral(partnerId, patientRef, description, partnerLabel);
   }
 });
 

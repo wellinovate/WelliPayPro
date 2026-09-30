@@ -99,4 +99,14 @@ export const wellipayApi = {
   confirmSettlement: (settlementId) =>
     apiRequest(`/provider/settlements/${encodeURIComponent(settlementId)}/confirm`, { method: 'PATCH' }),
   listEvents: (query) => apiRequest(`/provider/events${toQueryString(query)}`),
+  createFinancingRecord: (body) => apiRequest('/provider/financing-records', { method: 'POST', body, idempotent: 'fin' }),
+  listFinancingRecords: (query) => apiRequest(`/provider/financing-records${toQueryString(query)}`),
+  createPartner: (body) => apiRequest('/provider/partners', { method: 'POST', body, idempotent: 'ptr' }),
+  listPartners: (query) => apiRequest(`/provider/partners${toQueryString(query)}`),
+  createReferral: (body) => apiRequest('/provider/referrals', { method: 'POST', body, idempotent: 'refl' }),
+  listReferrals: (query) => apiRequest(`/provider/referrals${toQueryString(query)}`),
+  completeReferral: (referralId) =>
+    apiRequest(`/provider/referrals/${encodeURIComponent(referralId)}/status`, { method: 'PATCH', body: { status: 'COMPLETED' } }),
+  listEligibilityChecks: (query) => apiRequest(`/provider/eligibility-checks${toQueryString(query)}`),
+  listFinancialConsents: (query) => apiRequest(`/provider/financial-consents${toQueryString(query)}`),
 };

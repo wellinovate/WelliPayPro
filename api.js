@@ -98,4 +98,5 @@ export const wellipayApi = {
   listSettlements: (query) => apiRequest(`/provider/settlements${toQueryString(query)}`),
   confirmSettlement: (settlementId) =>
     apiRequest(`/provider/settlements/${encodeURIComponent(settlementId)}/confirm`, { method: 'PATCH' }),
+  listEvents: (query) => apiRequest(`/provider/events${toQueryString(query)}`),
 };

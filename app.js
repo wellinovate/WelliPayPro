@@ -265,6 +265,9 @@ const state = {
   settlementsSynced: false,
   settlementsSyncing: false,
   liveSettlements: [],
+  eventsSynced: false,
+  eventsSyncing: false,
+  liveEvents: [],
   patient: { name: 'Femi O.', welliId: 'WR-1187-22', hmo: 'Reliance HMO — Gold' },
   claims: [
     { id: 1, ref: 'INV-2049 — Blessing K.', hmo: 'Hygeia HMO', amount: 23000, status: 'Draft' },
@@ -1067,39 +1070,41 @@ function renderReports() {
 
 /* 19. Branches */
 function renderBranches() {
-  const branches = [
-    { name: 'Wuse Branch', rev: 5200000, staff: 12, desks: 3, beds: '82%', lead: 'Tunde Adeleke (Desk Lead)' },
-    { name: 'Garki Branch', rev: 3400000, staff: 8, desks: 2, beds: '74%', lead: 'Ngozi Fashola (Billing Lead)' },
-    { name: 'Maitama Branch', rev: 7100000, staff: 15, desks: 4, beds: '91%', lead: 'Dr. Chidi Obi (Medical Director)' },
-    { name: 'Kaduna Branch', rev: 1450000, staff: 6, desks: 2, beds: '58%', lead: 'Fatima Garba (Billing Lead)' },
-    { name: 'Lagos Branch', rev: 2100000, staff: 8, desks: 2, beds: '65%', lead: 'Babajide Cole (Desk Lead)' }
-  ];
+  const revenueByBranch = Object.fromEntries(state.liveSnapshot ? state.liveSnapshot.branchRevenue : []);
+  const staffByBranch = {};
+  state.liveStaff.filter(s => s.status === 'ACTIVE').forEach(s => {
+    const key = s.branch || 'Unassigned';
+    staffByBranch[key] = (staffByBranch[key] || 0) + 1;
+  });
+  const branchNames = Array.from(new Set([...Object.values(FACILITY_BRANCH), ...Object.keys(revenueByBranch), ...Object.keys(staffByBranch)]));
+  const rows = branchNames.map(name => ({
+    name,
+    revenue: revenueByBranch[name] || 0,
+    staff: staffByBranch[name] || 0,
+  })).sort((a, b) => b.revenue - a.revenue);
+  const totalRevenue = rows.reduce((sum, r) => sum + r.revenue, 0);
+  const totalStaff = rows.reduce((sum, r) => sum + r.staff, 0);
+  const top = rows.find(r => r.revenue > 0);
+  const loading = !state.dashboardSynced || !state.staffSynced;
   return `<div class="page">
     ${renderBranchBanner()}
-    ${pageHeading('Operations', 'Branch Management', 'Consolidated monitoring and operational metrics across ABC Healthcare’s 5 locations.')}
-    ${metricGrid([['5','Active Branches','Network'],['₦19.25M','Consolidated Revenue','Month'],['Maitama','Top Performing Branch','Leader'],['46','Total Deployed Staff','Personnel']])}
-    ${card('Branch Operational Matrix', `
-      <div class="table-wrap">
-        <table class="table">
-          <thead><tr><th>Branch</th><th>Branch Lead</th><th>Staff</th><th>Active Cashier Desks</th><th>Bed Occupancy</th><th>Revenue This Month</th><th>Action</th></tr></thead>
-          <tbody>
-            ${branches.map(b => `
-              <tr>
-                <td><strong>${b.name}</strong></td>
-                <td>${b.lead}</td>
-                <td>${b.staff}</td>
-                <td>${b.desks} desks</td>
-                <td>${b.beds}</td>
-                <td><strong>${money(b.rev)}</strong></td>
-                <td>
-                  <button class="btn btn-secondary" data-action="switch-branch-quick" data-name="${b.name.replace(' Branch', '')}" style="font-size:11px;padding:4px 8px;">Filter to Branch</button>
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>
-    `)}
+    ${pageHeading('Operations', 'Branch Management', 'Revenue and active staff per branch, computed from live payments and the staff directory in wellipay-api. Desk counts and bed occupancy aren’t modeled by the API, so they’re left out rather than invented.')}
+    ${metricGrid([
+      [String(branchNames.length), 'Branches With Activity', 'Live'],
+      [money(totalRevenue), 'Consolidated Revenue', 'Successful payments'],
+      [top ? top.name : '—', 'Top Revenue Branch', 'Live'],
+      [String(totalStaff), 'Active Staff (Directory)', 'Live'],
+    ])}
+    ${card('Branch revenue & staff', loading
+      ? '<p class="empty-state">Loading live figures…</p>'
+      : (rows.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Branch</th><th>Revenue (successful payments)</th><th>Active staff</th><th>Action</th></tr></thead><tbody>${rows.map(r => `
+        <tr>
+          <td><strong>${r.name}</strong></td>
+          <td>${money(r.revenue)}</td>
+          <td>${r.staff}</td>
+          <td><button class="btn btn-secondary" data-action="switch-branch-quick" data-name="${r.name}" style="font-size:11px;padding:4px 8px;">Filter to Branch</button></td>
+        </tr>
+      `).join('')}</tbody></table></div>` : '<p class="empty-state">No live payments or staff recorded yet.</p>'))}
   </div>`;
 }
 
@@ -1177,70 +1182,132 @@ function renderAuditLog() {
 }
 
 /* 22. Notifications */
+const EVENT_LABELS = {
+  'payment.recorded': ['Payment recorded', 'accent'],
+  'refund.requested': ['Refund requested', 'outline'],
+  'refund.decided': ['Refund decision recorded', 'outline'],
+  'claim.created': ['Claim created', 'outline'],
+  'claim.status_changed': ['Claim status changed', 'outline'],
+  'invoice.delivered': ['Invoice delivered', 'outline'],
+  'settlement.created': ['Settlement batch created', 'accent'],
+  'settlement.confirmed': ['Settlement confirmed', 'neutral'],
+  'staff.invited': ['Staff invited', 'outline'],
+  'staff.deactivated': ['Staff deactivated', 'outline'],
+  'staff.reactivated': ['Staff reactivated', 'outline'],
+  'payment_plan.created': ['Payment plan created', 'outline'],
+  'payment_plan.installment_paid': ['Installment paid', 'accent'],
+  'consent.recorded': ['Financial consent recorded', 'outline'],
+  'family.contribution.updated': ['Family contribution updated', 'outline'],
+  'reconciliation.transaction_received': ['Bank transaction received', 'outline'],
+  'reconciliation.transaction_matched': ['Transaction matched', 'neutral'],
+  'reconciliation.transaction_exception': ['Transaction flagged', 'accent'],
+};
+
+function formatEventDetail(evt) {
+  const d = evt.data || {};
+  if (d.amountMinor != null) {
+    const facility = d.facilityRef ? (FACILITY_BRANCH[d.facilityRef] || d.facilityRef) : null;
+    return `${money(fromMinor(d.amountMinor))}${facility ? ' · ' + facility : ''}`;
+  }
+  const entries = Object.entries(d).filter(([k]) => k !== 'currency').slice(0, 2);
+  return entries.length ? entries.map(([k, v]) => `${k}: ${v}`).join(' · ') : evt.resourceRef;
+}
+
 function renderNotifications() {
+  const events = state.liveEvents;
+  const typeCount = new Set(events.map(e => e.eventType)).size;
+  const rows = events.map(evt => {
+    const [label, tone] = EVENT_LABELS[evt.eventType] || [evt.eventType, 'outline'];
+    const when = new Date(evt.occurredAt).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return `<div class="data-row">
+      <div class="data-primary">
+        <strong>${label}</strong>
+        <span>${formatEventDetail(evt)}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <small style="color:var(--muted)">${when}</small>
+        ${tag(tone === 'accent' ? 'Money' : 'Event', tone)}
+      </div>
+    </div>`;
+  }).join('');
   return `<div class="page">
     ${renderBranchBanner()}
-    ${pageHeading('Overview', 'Notification Centre', 'Centralized alerts for gateway payouts, claim rejections, pre-auth approvals and system events.')}
-    ${metricGrid([['14','Unread Alerts','Inbox'],['212','Sent Today Across Channels','Volume'],['4','Connected Alert Channels','Integration'],['Instant','Real-Time Push','Delivery']])}
-    ${card('<div class="section-heading"><span>Alert Stream</span><button class="btn btn-secondary" data-action="mark-all-read">Mark All as Read</button></div>', `
-      <div class="row-list">
-        ${state.notificationsList.map(n => `
-          <div class="data-row" style="background:${n.read ? 'transparent' : 'var(--color-accent-100)'};padding:12px;margin-bottom:6px;">
-            <div class="data-primary">
-              <strong style="color:${n.read ? 'inherit' : 'var(--color-accent-800)'}">${n.title}</strong>
-              <span>${n.detail}</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:10px;">
-              <small style="color:var(--muted)">${n.time}</small>
-              ${tag(n.type, n.read ? 'outline' : 'accent')}
-            </div>
-          </div>
-        `).join('')}
-      </div>
-    `)}
+    ${pageHeading('Overview', 'Notification Centre', 'Live event stream from wellipay-api — every payment, claim, refund, settlement, consent and staff change, in order. There’s no read/unread state server-side, so this shows the raw stream rather than an inbox.')}
+    ${metricGrid([
+      [String(events.length), events.length >= 50 ? 'Events Shown (most recent 50)' : 'Events Logged', 'Stream'],
+      [String(typeCount), 'Distinct Event Types', 'Coverage'],
+      [events[0] ? new Date(events[0].occurredAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' }) : '—', 'Most Recent Event', 'Live'],
+      ['wellipay-api', 'Source', 'Live'],
+    ])}
+    ${card('Event stream', events.length
+      ? `<div class="row-list">${rows}</div>`
+      : (state.eventsSynced ? '<p class="empty-state">No events recorded yet.</p>' : '<p class="empty-state">Loading live events…</p>'))}
   </div>`;
 }
 
 /* 23. AI Insights */
+// No scoring or forecasting model runs here — every number below is a
+// direct count or average computed from live claims in wellipay-api. There's
+// no historical snapshot stored anywhere, so trend/dip figures (which need a
+// prior period to compare against) aren't computable and are left out rather
+// than invented.
+function computePayerStats(claims) {
+  const byPayer = new Map();
+  for (const c of claims) {
+    const key = c.payerRef || 'Unknown payer';
+    if (!byPayer.has(key)) byPayer.set(key, { total: 0, rejected: 0, decisionDaysSum: 0, decisionCount: 0 });
+    const b = byPayer.get(key);
+    b.total += 1;
+    if (c.status === 'REJECTED') b.rejected += 1;
+    if (c.decidedAt && c.submittedAt) {
+      b.decisionDaysSum += (new Date(c.decidedAt) - new Date(c.submittedAt)) / 86400000;
+      b.decisionCount += 1;
+    }
+  }
+  return byPayer;
+}
+
 function renderAiInsights() {
+  const claims = state.liveClaims;
+  const loading = !state.claimsSynced;
+  const payerStats = computePayerStats(claims);
+  const totalAmount = claims.reduce((sum, c) => sum + c.amountMinor, 0);
+  const rejectedCount = claims.filter(c => c.status === 'REJECTED').length;
+  const rejectionRate = claims.length ? Math.round((rejectedCount / claims.length) * 100) : 0;
+  const pending = claims
+    .filter(c => c.status === 'SUBMITTED' && c.submittedAt)
+    .map(c => ({ ...c, ageDays: Math.floor((Date.now() - new Date(c.submittedAt).getTime()) / 86400000) }))
+    .sort((a, b) => b.ageDays - a.ageDays);
+  const oldest = pending[0];
+
+  const payerRows = [...payerStats.entries()].map(([payer, s]) => {
+    const rate = s.total ? Math.round((s.rejected / s.total) * 100) : 0;
+    const avgDays = s.decisionCount ? (s.decisionDaysSum / s.decisionCount).toFixed(1) : null;
+    return `<div class="data-row"><span>${payer}</span><strong>${avgDays ? `Avg ${avgDays}d to decide` : 'No decided claims yet'} · ${rate}% rejection rate (${s.total} claim${s.total === 1 ? '' : 's'})</strong></div>`;
+  }).join('') || '<p class="empty-state">No live claims yet.</p>';
+
+  const pendingRows = pending.slice(0, 5).map(c => `
+    <div class="data-row">
+      <div class="data-primary">
+        <strong>${c.providerClaimRef} · ${c.payerRef}</strong>
+        <span>${money(fromMinor(c.amountMinor))} — submitted ${c.ageDays} day${c.ageDays === 1 ? '' : 's'} ago, still awaiting a decision</span>
+      </div>
+      <a class="btn btn-secondary" href="#claims" style="font-size:11px;padding:4px 8px;">Review</a>
+    </div>
+  `).join('') || (loading ? '<p class="empty-state">Loading live claims…</p>' : '<p class="empty-state">Nothing outstanding — every submitted claim has been decided.</p>');
+
   return `<div class="page">
     ${renderBranchBanner()}
-    ${pageHeading('Overview', 'AI Insights & Financial Intelligence', 'Real-time machine analysis of tariff variances, claim rejection risks and branch collection trends.')}
-    ${metricGrid([['94 / 100','Financial Health Score','Strong'],['₦185,000','Detected Revenue Leakage','Actionable'],['3','Claims at Risk of Denial','Warning'],['+8.4%','Projected Growth','Next Month']])}
+    ${pageHeading('Overview', 'Claims Intelligence', 'Payer turnaround and rejection rates, computed directly from live claims in wellipay-api. No AI model or scoring runs behind this — every figure is a real count or average.')}
+    ${metricGrid([
+      [String(claims.length), 'Live Claims Tracked', 'wellipay-api'],
+      [money(fromMinor(totalAmount)), 'Total Claimed Amount', 'Live'],
+      [`${rejectionRate}%`, 'Overall Rejection Rate', claims.length ? `${rejectedCount} of ${claims.length}` : '—'],
+      [oldest ? `${oldest.ageDays}d` : '—', 'Oldest Undecided Claim', oldest ? oldest.providerClaimRef : '—'],
+    ])}
     <div class="grid two-col">
-      ${card('Smart Recommendations', `
-        <div class="row-list">
-          <div class="data-row">
-            <div class="data-primary">
-              <strong>Kaduna Branch Revenue Dip (−12%)</strong>
-              <span>Fewer diagnostic bookings. Reallocate mobile radiology assets to improve turnaround.</span>
-            </div>
-            <button class="btn btn-secondary" data-action="investigate-ai" data-topic="Kaduna" style="font-size:11px;padding:4px 8px;">Investigate</button>
-          </div>
-          <div class="data-row">
-            <div class="data-primary">
-              <strong>Reliance HMO Tariff Below Private Benchmark</strong>
-              <span>ECG contracted at ₦15,000 vs ₦18,000 cash cost. Request contract tariff review.</span>
-            </div>
-            <button class="btn btn-secondary" data-action="investigate-ai" data-topic="HMO Tariff" style="font-size:11px;padding:4px 8px;">Review Tariff</button>
-          </div>
-          <div class="data-row">
-            <div class="data-primary">
-              <strong>3 Claims Missing Pre-Authorization References</strong>
-              <span>CLM-5544, CLM-5545 likely to reject. Flagged before clearing house submission.</span>
-            </div>
-            <a class="btn btn-secondary" href="#claims" style="font-size:11px;padding:4px 8px;">Scrub Claims</a>
-          </div>
-        </div>
-      `)}
-      ${card('Payer Payout & Risk Scorecard', `
-        <div class="row-list">
-          <div class="data-row"><span>Reliance HMO</span><strong>Avg 2.2 days to settle · 2.1% rejection rate</strong></div>
-          <div class="data-row"><span>Hygeia HMO</span><strong>Avg 7.5 days to settle · 8.4% rejection rate</strong></div>
-          <div class="data-row"><span>AXA Mansard</span><strong>Avg 4.0 days to settle · 3.2% rejection rate</strong></div>
-          <div class="data-row"><span>Leadway Health</span><strong>Avg 3.8 days to settle · 1.9% rejection rate</strong></div>
-        </div>
-      `)}
+      ${card('Claims awaiting a decision, oldest first', pendingRows)}
+      ${card('Payer turnaround & rejection rate', payerRows)}
     </div>
   </div>`;
 }
@@ -1405,14 +1472,15 @@ function render() {
   if (state.active === 'patients' && !state.patientsSynced) syncPatientsFromApi();
   if (state.active === 'payments' && !state.paymentsSynced) syncPaymentsFromApi();
   if (state.active === 'invoices' && !state.invoicesSynced) syncInvoicesFromApi();
-  if ((state.active === 'claims' || state.active === 'hmo-insurance' || state.active === 'reports') && !state.claimsSynced) syncClaimsFromApi();
-  if ((state.active === 'dashboard' || state.active === 'reports') && !state.dashboardSynced) syncDashboardFromApi();
+  if ((state.active === 'claims' || state.active === 'hmo-insurance' || state.active === 'reports' || state.active === 'ai-insights') && !state.claimsSynced) syncClaimsFromApi();
+  if ((state.active === 'dashboard' || state.active === 'reports' || state.active === 'branches') && !state.dashboardSynced) syncDashboardFromApi();
   if ((state.active === 'receivables' || state.active === 'dashboard') && !state.receivablesSynced) syncReceivablesFromApi();
   if ((state.active === 'refunds' || state.active === 'dashboard') && !state.refundsSynced) syncRefundsFromApi();
   if (state.active === 'reconciliation' && !state.reconciliationSynced) syncReconciliationFromApi();
-  if (state.active === 'staff' && !state.staffSynced) syncStaffFromApi();
+  if ((state.active === 'staff' || state.active === 'branches') && !state.staffSynced) syncStaffFromApi();
   if (state.active === 'payment-plans' && !state.paymentPlansSynced) syncPaymentPlansFromApi();
   if (state.active === 'payment-plans' && !state.invoicesSynced) syncInvoicesFromApi();
+  if (state.active === 'notifications' && !state.eventsSynced) syncEventsFromApi();
   if (state.active === 'settlements' && !state.settlementsSynced) syncSettlementsFromApi();
 
   if (state.active === 'dashboard' || state.active === 'reports') {
@@ -2328,6 +2396,25 @@ async function confirmLiveSettlement(settlementId) {
     showToast('Confirm Failed', err.message);
   } finally {
     render();
+  }
+}
+
+// Notifications page: reads the real OutboxEvent log via GET
+// /provider/events — the same events every route already queues for
+// outbound webhooks — instead of a fabricated alert list. There's no
+// read/unread state anywhere server-side, so this doesn't invent one.
+async function syncEventsFromApi() {
+  if (state.eventsSyncing) return;
+  state.eventsSyncing = true;
+  try {
+    const data = await wellipayApi.listEvents({ limit: 50 });
+    state.liveEvents = data.items;
+    state.eventsSynced = true;
+  } catch (err) {
+    showToast('API Sync Failed', `Live events not loaded: ${err.message}`);
+  } finally {
+    state.eventsSyncing = false;
+    if (state.active === 'notifications') render();
   }
 }
 

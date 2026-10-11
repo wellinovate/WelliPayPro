@@ -2040,7 +2040,7 @@ function renderModal() {
         <h2 id="set-pw-title">Set Password — ${state.modal.name}</h2>
         <p>Sets or resets this person's login password in wellipay-api. Tell them the new password yourself — there's no reset email.</p>
         <form id="set-staff-password-form" class="form-grid">
-          <div class="form-group"><label>New Password *</label><input class="input" type="password" name="password" required minlength="8" placeholder="At least 8 characters"></div>
+          <div class="form-group"><label>New Password *</label><input class="input" type="password" name="password" required minlength="12" placeholder="At least 12 characters; avoid common words"></div>
           <div class="modal-actions">
             <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
             <button class="btn btn-primary" type="submit">Set Password</button>

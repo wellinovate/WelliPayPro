@@ -170,6 +170,8 @@ export const wellipayApi = {
   listStaff: (query) => apiRequest(`/provider/staff${toQueryString(query)}`),
   updateStaffStatus: (staffId, body) =>
     apiRequest(`/provider/staff/${encodeURIComponent(staffId)}/status`, { method: 'PATCH', body }),
+  updateStaffAccessLevel: (staffId, body) =>
+    apiRequest(`/provider/staff/${encodeURIComponent(staffId)}/access-level`, { method: 'PATCH', body }),
   setStaffPassword: (staffId, body) =>
     apiRequest(`/provider/staff/${encodeURIComponent(staffId)}/password`, { method: 'PATCH', body }),
   createPaymentPlan: (body) => apiRequest('/provider/payment-plans', { method: 'POST', body, idempotent: 'plan' }),

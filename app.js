@@ -593,6 +593,7 @@ function renderInvoices() {
                 <td>${tag(inv.status, inv.status === 'Paid' ? 'neutral' : inv.status === 'Unpaid' ? 'accent' : 'outline')}</td>
                 <td>
                   <button class="btn btn-secondary" data-action="view-invoice-modal" data-id="${inv.id}" style="font-size:11px;padding:4px 8px;">View Receipt</button>
+                  ${inv.live && inv.invoiceId && inv.status !== 'Paid' ? `<button class="btn btn-primary" data-action="open-paystack-pay" data-id="${escapeHtml(inv.id)}" style="font-size:11px;padding:4px 8px;">Pay online</button>` : ''}
                   <button class="btn btn-ghost" data-action="send-invoice-sms" data-id="${inv.id}" style="font-size:11px;padding:4px 8px;">Send SMS</button>
                 </td>
               </tr>
@@ -1884,6 +1885,35 @@ function renderModal() {
     </div>`;
   }
 
+  if (state.modal.type === 'paystack-pay') {
+    const m = state.modal;
+    const inv = m.invoice;
+    const outstanding = inv.amount - inv.paid;
+    const charge = m.charge;
+    const statusText = !charge ? '' : charge.status === 'SUCCESS' ? 'Paid. The invoice has been updated.' : charge.status === 'FAILED' ? `Failed${charge.failureReason ? ': ' + escapeHtml(charge.failureReason) : ''}.` : 'Waiting for the payer to complete checkout.';
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="paystack-title">
+        <h2 id="paystack-title">Pay online · ${escapeHtml(inv.id)}</h2>
+        <p>${escapeHtml(inv.patient)} · balance ${money(outstanding)}. The payer completes payment on Paystack's page. The invoice updates when Paystack confirms it.</p>
+        ${!charge ? `
+        <form id="paystack-pay-form" class="form-grid">
+          <div class="form-group"><label>Payer email *</label><input class="input" type="email" name="email" required placeholder="payer@example.com"></div>
+          <div class="form-group"><label>Amount (₦) *</label><input class="input" type="number" name="amount" required min="1" max="${outstanding}" step="0.01" value="${outstanding}"></div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
+            <button class="btn btn-primary" type="submit" ${m.busy ? 'disabled' : ''}>${m.busy ? 'Starting…' : 'Start checkout'}</button>
+          </div>
+        </form>` : `
+        <p><strong>${money(fromMinor(charge.amountMinor))}</strong> · ${statusText}</p>
+        ${charge.status === 'PENDING' && charge.authorizationUrl ? `<p><a class="btn btn-primary" href="${escapeHtml(charge.authorizationUrl)}" target="_blank" rel="noopener noreferrer">Open Paystack checkout</a></p><p style="font-size:12px;color:var(--muted);word-break:break-all;">Or send this link to the payer: ${escapeHtml(charge.authorizationUrl)}</p>` : ''}
+        <div class="modal-actions">
+          ${charge.status === 'PENDING' ? `<button class="btn btn-secondary" data-action="check-paystack-charge" ${m.busy ? 'disabled' : ''}>${m.busy ? 'Checking…' : 'Check status'}</button>` : ''}
+          <button class="btn btn-primary" data-action="close-modal">Close</button>
+        </div>`}
+      </section>
+    </div>`;
+  }
+
   if (state.modal.type === 'receipt') {
     const inv = state.modal.invoice || state.invoiceList[0];
     return `<div class="modal-backdrop" data-action="dismiss-modal">
@@ -2463,6 +2493,37 @@ async function syncStaffFromApi() {
   } finally {
     state.staffSyncing = false;
     if (state.active === 'staff') render();
+  }
+}
+
+async function startPaystackCharge(email, amountNaira) {
+  const m = state.modal;
+  if (!m || m.type !== 'paystack-pay') return;
+  m.busy = true; render();
+  try {
+    m.charge = await wellipayApi.createPaystackCharge({ invoiceId: m.invoice.invoiceId, email, amountMinor: toMinor(amountNaira) });
+    logAudit('Paystack Checkout Started', `${m.invoice.id} · ${money(amountNaira)}`);
+  } catch (err) {
+    showToast('Checkout Failed', err.message);
+  } finally {
+    m.busy = false; render();
+  }
+}
+
+async function checkPaystackCharge() {
+  const m = state.modal;
+  if (!m || m.type !== 'paystack-pay' || !m.charge) return;
+  m.busy = true; render();
+  try {
+    m.charge = await wellipayApi.getPaystackCharge(m.charge.reference);
+    if (m.charge.status === 'SUCCESS') {
+      showToast('Payment Received', `${m.invoice.id} paid through Paystack.`);
+      syncInvoicesFromApi();
+    }
+  } catch (err) {
+    showToast('Check Failed', err.message);
+  } finally {
+    m.busy = false; render();
   }
 }
 
@@ -3279,6 +3340,12 @@ function dispatch(action, target, domEvent) {
       if (inv) { state.modal = { type: 'receipt', invoice: inv }; render(); }
       break;
     }
+    case 'open-paystack-pay': {
+      const inv = state.invoiceList.find(i => i.id === id && i.live);
+      if (inv) { state.modal = { type: 'paystack-pay', invoice: inv, charge: null, busy: false }; render(); }
+      break;
+    }
+    case 'check-paystack-charge': checkPaystackCharge(); break;
     case 'send-invoice-sms': {
       showToast('SMS Dispatched', `Digital payment link sent via Termii SMS gateway`);
       logAudit('SMS Link Sent', `Invoice ${id} payment link sent to patient`);
@@ -3745,6 +3812,11 @@ document.addEventListener('submit', async event => {
     state.modal = null;
     render();
     matchLiveTransaction(transactionId, invoiceId, invoiceLabel);
+  }
+  if (event.target.id === 'paystack-pay-form') {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    startPaystackCharge(fd.get('email').toString().trim(), Number(fd.get('amount')));
   }
   if (event.target.id === 'invite-staff-form') {
     event.preventDefault();

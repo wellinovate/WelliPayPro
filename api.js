@@ -152,6 +152,8 @@ export const wellipayApi = {
     apiRequest('/provider/financial-consents', { method: 'POST', body, idempotent: 'consent' }),
   listPatients: (query) => apiRequest(`/provider/patients${toQueryString(query)}`),
   listPayments: (query) => apiRequest(`/provider/payments${toQueryString(query)}`),
+  createPaystackCharge: (body) => apiRequest('/provider/paystack/charges', { method: 'POST', body }),
+  getPaystackCharge: (reference) => apiRequest(`/provider/paystack/charges/${encodeURIComponent(reference)}`),
   createPayment: (body) => apiRequest('/provider/payments', { method: 'POST', body, idempotent: 'pmt' }),
   listClaims: (query) => apiRequest(`/provider/claims${toQueryString(query)}`),
   createClaim: (body) => apiRequest('/provider/claims', { method: 'POST', body, idempotent: 'claim' }),

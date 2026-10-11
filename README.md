@@ -14,6 +14,9 @@ The console needs a staff login (`POST /staff/login` on wellipay-api). There is 
 
 Each staff member has an access level (Admin, Finance, Billing, Cashier, Viewer). The API enforces it on every request; the console shows the API's message when an action is blocked. Admins change levels on the Staff page. A change applies at the person's next sign-in.
 
+## Paying an invoice online
+On the Invoices page, "Pay online" appears on live unpaid invoices. It starts a Paystack checkout through the API (`POST /provider/paystack/charges`) and shows a link for the payer. The invoice updates when Paystack's webhook confirms the payment; "Check status" reloads it. Needs `PAYSTACK_SECRET_KEY` set on the API.
+
 ## Overview
 A provider-facing healthcare billing/payments console (multi-branch hospital tenant "ABC Healthcare"), built for a Finance Manager persona. Covers: dashboard financial command centre, front-desk cashier workflow ("Hospital Desk") with a live family-payment and HMO-authorization demo, HMO pre-authorization workspace, claims lifecycle, receivables/reconciliation, settlements, family/sponsor multi-payer funding, settings, and a provider-side Mobile App Integration workspace for a separate patient app. Most navigation destinations are illustrative screens; a subset is fully interactive (see Screens below).
 

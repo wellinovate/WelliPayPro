@@ -36,6 +36,11 @@ function applyStaffToTopbar(staff) {
   }
 }
 
+// The signed-in staff member's name, for anything the console labels as "who did this".
+function currentActorName() {
+  return authState.user?.name || 'Unknown staff';
+}
+
 function enterApp(staff) {
   authState.user = staff;
   applyStaffToTopbar(staff);
@@ -2035,7 +2040,7 @@ function renderModal() {
         <h2 id="set-pw-title">Set Password — ${state.modal.name}</h2>
         <p>Sets or resets this person's login password in wellipay-api. Tell them the new password yourself — there's no reset email.</p>
         <form id="set-staff-password-form" class="form-grid">
-          <div class="form-group"><label>New Password *</label><input class="input" type="password" name="password" required minlength="8" placeholder="At least 8 characters"></div>
+          <div class="form-group"><label>New Password *</label><input class="input" type="password" name="password" required minlength="12" placeholder="At least 12 characters; avoid common words"></div>
           <div class="modal-actions">
             <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
             <button class="btn btn-primary" type="submit">Set Password</button>
@@ -2263,7 +2268,7 @@ async function decideLiveRefund(refundId, apiDecision, decisionLabel) {
   try {
     const result = await wellipayApi.decideRefund(refundId, {
       decision: apiDecision,
-      actor: 'Adaeze O. (Finance Manager)',
+      actor: currentActorName(),
     });
     const row = state.refundList.find(r => r.id === refundId);
     if (row) {
@@ -2276,7 +2281,7 @@ async function decideLiveRefund(refundId, apiDecision, decisionLabel) {
       state.approvalHistory.unshift({
         ...queued,
         decision: decisionLabel,
-        actor: 'Adaeze O.',
+        actor: currentActorName(),
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       });
     }
@@ -2304,7 +2309,7 @@ async function createLiveRefundRequest(paymentId, amountNaira, reason, paymentRo
       paymentId,
       amountMinor: toMinor(amountNaira),
       reason,
-      requestedBy: 'front-desk-wuse',
+      requestedBy: currentActorName(),
     });
     const row = {
       id: created.refundId,
@@ -3111,7 +3116,7 @@ function dispatch(action, target, domEvent) {
       const index=state.approvals.findIndex(entry=>entry.id===numId);
       if(index!==-1){
         const [old]=state.approvals.splice(index,1);
-        state.approvalHistory.unshift({...old,decision,actor:'Adaeze O.',time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})});
+        state.approvalHistory.unshift({...old,decision,actor:currentActorName(),time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})});
         logAudit(`Approval: ${decision}`, `${old.type} of ${money(old.amount)} for ${old.requester}`);
         showToast(`${old.type} ${decision}`, `${money(old.amount)} decision recorded.`);
       }

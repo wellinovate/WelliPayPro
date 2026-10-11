@@ -4,11 +4,19 @@
 
 // Real per-staff login against wellipay-api (POST /staff/login), replacing
 // the earlier hardcoded DEMO_USERS list. A logged-in staff member's own
-// role is a free-text label set when they were invited (see the Staff
-// page) — there's no per-role permission model behind it yet, only
-// per-person identity, so every signed-in staff member sees the full nav.
-// That's a real, documented gap (see the Staff page banner), not an
-// oversight here.
+// role is a free-text job title. What they may do comes from their access
+// level (ACCESS_LEVELS below), which the API enforces on every request.
+// The console does not hide menu items; a blocked action shows the API's
+// message in a toast.
+const ACCESS_LEVELS = {
+  ADMIN: { label: 'Admin', hint: 'Everything, including staff and webhooks' },
+  FINANCE: { label: 'Finance', hint: 'Decide refunds, confirm settlements, match transactions' },
+  BILLING: { label: 'Billing', hint: 'Claims, HMO policies, payment plans; no refund decisions' },
+  CASHIER: { label: 'Cashier', hint: 'Invoices, payments and refund requests' },
+  VIEWER: { label: 'Viewer', hint: 'Read-only' }
+};
+const accessLevelLabel = level => (ACCESS_LEVELS[level] ? ACCESS_LEVELS[level].label : '—');
+
 const authState = {
   user: null,
   isDark: localStorage.getItem('wp-theme') === 'dark',
@@ -28,7 +36,7 @@ function applyTheme() {
 function applyStaffToTopbar(staff) {
   const roleTag = document.getElementById('topbar-role');
   const avatar  = document.getElementById('topbar-avatar');
-  if (roleTag) roleTag.textContent = staff.role;
+  if (roleTag) roleTag.textContent = staff.accessLevel ? `${staff.role} · ${accessLevelLabel(staff.accessLevel)}` : staff.role;
   if (avatar) {
     const initials = staff.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
     avatar.textContent = initials;
@@ -1127,6 +1135,9 @@ function renderStaffRow(item, isLive) {
   const lastCol = isLive
     ? `<small style="color:var(--muted)">Invited ${new Date(item.invitedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}</small>`
     : `<small>${item.lastActive}</small>`;
+  const accessCell = isLive
+    ? `<select class="input" data-staff-level="${item.staffId}" aria-label="Access level for ${escapeHtml(name)}">${Object.entries(ACCESS_LEVELS).map(([value, meta]) => `<option value="${value}" ${item.accessLevel === value ? 'selected' : ''}>${meta.label}</option>`).join('')}</select>`
+    : '—';
   const action = isLive
     ? (item.status === 'ACTIVE'
         ? `<button class="btn btn-secondary" data-action="open-set-password" data-id="${item.staffId}" data-name="${item.name}">Set Password</button>
@@ -1136,6 +1147,7 @@ function renderStaffRow(item, isLive) {
   return `<tr>
     <td><strong>${name}</strong>${isLive ? ' <small style="color:var(--muted)">(Live)</small>' : ''}<br><small style="color:var(--muted)">${email}</small></td>
     <td>${tag(role, 'outline')}</td>
+    <td>${accessCell}</td>
     <td>${branch}</td>
     <td>${tag(statusLabel, statusLabel === 'Deactivated' ? 'accent' : 'neutral')}</td>
     <td>${lastCol}</td>
@@ -1149,11 +1161,11 @@ function renderStaff() {
     ${renderBranchBanner()}
     ${pageHeading('Operations', 'Staff & Role-Based Access', 'Configure permissions, cashier shift limits and audit roles for clinical & billing personnel.')}
     ${metricGrid([['46','Active Staff Members','Roster'],['5','Role Levels Configured','Security'],['2','Pending Invitations','Onboarding'],['100%','Audit Logging Active','Compliance']])}
-    <p style="color:var(--muted);font-size:0.85em;margin:-8px 0 12px;">Roster tiles above are illustrative. Invite/deactivate/Set Password below write to a real staff directory in wellipay-api. Each staff member can sign in with their own email and password once one is set — that's real identity, but there's still no per-role permission enforcement, so every signed-in staff member sees the same app regardless of role.</p>
+    <p style="color:var(--muted);font-size:0.85em;margin:-8px 0 12px;">Roster tiles above are illustrative. Invite/deactivate/Set Password below write to a real staff directory in wellipay-api. Each staff member can sign in with their own email and password once one is set — the API enforces each person's access level on every request. Admin: everything. Finance: decides refunds and confirms settlements. Billing: claims, policies and payment plans. Cashier: invoices, payments and refund requests. Viewer: read-only. A level change applies at the person's next sign-in.</p>
     ${card('<div class="section-heading"><span>Staff Directory</span><button class="btn btn-primary" data-action="open-invite-staff">Invite Staff Member</button></div>', `
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>Name & Email</th><th>Role</th><th>Branch Scoping</th><th>Status</th><th>Last Active</th><th></th></tr></thead>
+          <thead><tr><th>Name & Email</th><th>Job title</th><th>Access level</th><th>Branch Scoping</th><th>Status</th><th>Last Active</th><th></th></tr></thead>
           <tbody>${rows.join('')}</tbody>
         </table>
       </div>
@@ -2011,7 +2023,7 @@ function renderModal() {
             <div class="form-group"><label>Official Email *</label><input class="input" type="email" name="email" required placeholder="s.okafor@abchealth.ng"></div>
           </div>
           <div class="form-grid two-col">
-            <div class="form-group"><label>Assigned Role *</label>
+            <div class="form-group"><label>Job title *</label>
               <select name="role">
                 <option value="Front-Desk Cashier">Front-Desk Cashier</option>
                 <option value="Billing Officer">Billing Officer</option>
@@ -2024,6 +2036,11 @@ function renderModal() {
                 <option value="Wuse Branch">Wuse Branch</option><option value="Maitama Branch">Maitama Branch</option><option value="Garki Branch">Garki Branch</option><option value="Kaduna Branch">Kaduna Branch</option><option value="Lagos Branch">Lagos Branch</option><option value="Consolidated (All)">Consolidated (All)</option>
               </select>
             </div>
+          </div>
+          <div class="form-group"><label>Access level *</label>
+            <select name="accessLevel">
+              ${Object.entries(ACCESS_LEVELS).map(([value, meta]) => `<option value="${value}" ${value === 'CASHIER' ? 'selected' : ''}>${meta.label} — ${meta.hint}</option>`).join('')}
+            </select>
           </div>
           <div class="modal-actions">
             <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
@@ -2449,11 +2466,11 @@ async function syncStaffFromApi() {
   }
 }
 
-async function inviteLiveStaff(name, email, role, branch) {
+async function inviteLiveStaff(name, email, role, branch, accessLevel) {
   try {
-    const created = await wellipayApi.createStaff({ name, email, role, branch: branch || undefined });
+    const created = await wellipayApi.createStaff({ name, email, role, branch: branch || undefined, accessLevel });
     state.liveStaff.unshift(created);
-    logAudit('Staff Invited', `${created.name} invited as ${created.role}`);
+    logAudit('Staff Invited', `${created.name} invited as ${created.role} (${accessLevelLabel(created.accessLevel)})`);
     showToast('Staff Invited', `Recorded in wellipay-api. Use "Set Password" on their row to activate their login.`);
   } catch (err) {
     showToast('Invite Failed', err.message);
@@ -2470,6 +2487,20 @@ async function setLiveStaffPassword(staffId, name, password) {
     state.modal = null;
   } catch (err) {
     showToast('Set Password Failed', err.message);
+  } finally {
+    render();
+  }
+}
+
+async function changeLiveStaffAccessLevel(staffId, accessLevel) {
+  try {
+    const updated = await wellipayApi.updateStaffAccessLevel(staffId, { accessLevel });
+    const idx = state.liveStaff.findIndex(row => row.staffId === staffId);
+    if (idx !== -1) state.liveStaff[idx] = updated;
+    logAudit('Access Level Changed', `${updated.name} set to ${accessLevelLabel(updated.accessLevel)}`);
+    showToast('Access Level Changed', `${updated.name} is now ${accessLevelLabel(updated.accessLevel)}. It applies at their next sign-in.`);
+  } catch (err) {
+    showToast('Update Failed', err.message);
   } finally {
     render();
   }
@@ -3533,6 +3564,7 @@ document.addEventListener('click', event => {
 });
 
 document.addEventListener('input', event => {
+  if (event.target.dataset.staffLevel) { changeLiveStaffAccessLevel(event.target.dataset.staffLevel, event.target.value); }
   if (event.target.id === 'refund-threshold') {
     state.settings.threshold = Math.max(0, Number(event.target.value) || 0);
   }
@@ -3721,9 +3753,10 @@ document.addEventListener('submit', async event => {
     const email = fd.get('email').toString();
     const role = fd.get('role').toString();
     const branch = fd.get('branch').toString();
+    const accessLevel = fd.get('accessLevel').toString();
     state.modal = null;
     render();
-    inviteLiveStaff(name, email, role, branch);
+    inviteLiveStaff(name, email, role, branch, accessLevel);
   }
   if (event.target.id === 'set-staff-password-form') {
     event.preventDefault();

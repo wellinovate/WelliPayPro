@@ -12,6 +12,8 @@ The draft server-to-server contract for invoice publishing, payment events, fami
 ## Signing in
 The console needs a staff login (`POST /staff/login` on wellipay-api). There is no shared token or shared-access button. The first manager's password is set by running `npm run staff:set-password` on the API (see wellipay-api).
 
+Each staff member has an access level (Admin, Finance, Billing, Cashier, Viewer). The API enforces it on every request; the console shows the API's message when an action is blocked. Admins change levels on the Staff page. A change applies at the person's next sign-in.
+
 ## Overview
 A provider-facing healthcare billing/payments console (multi-branch hospital tenant "ABC Healthcare"), built for a Finance Manager persona. Covers: dashboard financial command centre, front-desk cashier workflow ("Hospital Desk") with a live family-payment and HMO-authorization demo, HMO pre-authorization workspace, claims lifecycle, receivables/reconciliation, settlements, family/sponsor multi-payer funding, settings, and a provider-side Mobile App Integration workspace for a separate patient app. Most navigation destinations are illustrative screens; a subset is fully interactive (see Screens below).
 

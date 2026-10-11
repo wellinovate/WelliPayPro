@@ -9,6 +9,9 @@ The Patient MobileApp is a separate client product, not part of this provider we
 
 The draft server-to-server contract for invoice publishing, payment events, family funding, eligibility, and financial consent is in [`docs/mobile-app-integration.md`](docs/mobile-app-integration.md) and [`docs/mobile-app-integration.openapi.json`](docs/mobile-app-integration.openapi.json). The negotiation-ready ownership, identity/authentication, payment-state, SLA, IP/exit, and launch-gate draft is in [`docs/technical-schedule-draft.md`](docs/technical-schedule-draft.md). These are drafts; confirm the open decisions with the MobileApp/backend teams and counsel before signing or treating the API as production-ready.
 
+## Signing in
+The console needs a staff login (`POST /staff/login` on wellipay-api). There is no shared token or shared-access button. The first manager's password is set by running `npm run staff:set-password` on the API (see wellipay-api).
+
 ## Overview
 A provider-facing healthcare billing/payments console (multi-branch hospital tenant "ABC Healthcare"), built for a Finance Manager persona. Covers: dashboard financial command centre, front-desk cashier workflow ("Hospital Desk") with a live family-payment and HMO-authorization demo, HMO pre-authorization workspace, claims lifecycle, receivables/reconciliation, settlements, family/sponsor multi-payer funding, settings, and a provider-side Mobile App Integration workspace for a separate patient app. Most navigation destinations are illustrative screens; a subset is fully interactive (see Screens below).
 

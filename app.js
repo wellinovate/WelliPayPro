@@ -75,25 +75,10 @@ function showAuthScreen(noticeMessage) {
           </button>
         </form>
         <p style="margin-top:16px;font-size:11px;color:var(--muted);text-align:center;">
-          No account yet? Ask a manager to invite you and set a password on the Staff page.
-        </p>
-        <button type="button" class="btn btn-secondary" id="admin-bypass" style="width:100%;height:38px;font-size:13px;margin-top:10px;">
-          Continue with shared admin access
-        </button>
-        <p style="margin-top:8px;font-size:11px;color:var(--muted);text-align:center;">
-          For first-time setup only, before anyone has a personal login — go to Staff and set a password for yourself, then sign in above from then on.
+          No account yet? Ask a manager to invite you and set a password on the Staff page. The first manager's login is set by whoever runs the WelliPay API.
         </p>
       </div>
     </div>`;
-
-  root.querySelector('#admin-bypass').addEventListener('click', () => {
-    // No staff login exists yet (or this staff member's password hasn't
-    // been set) — this falls back to the same shared frontend-proxy token
-    // the app used before per-staff login existed. It's not tied to a
-    // person, so it never gets stored as a session and won't survive a
-    // reload — it's a way in for initial setup, not a daily login.
-    enterApp({ name: 'Admin (shared access)', email: 'shared session — not a personal login', role: 'Set a password on Staff to switch to a real login' });
-  });
 
   root.querySelector('#login-form').addEventListener('submit', async e => {
     e.preventDefault();

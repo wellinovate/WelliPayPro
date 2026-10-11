@@ -36,6 +36,11 @@ function applyStaffToTopbar(staff) {
   }
 }
 
+// The signed-in staff member's name, for anything the console labels as "who did this".
+function currentActorName() {
+  return authState.user?.name || 'Unknown staff';
+}
+
 function enterApp(staff) {
   authState.user = staff;
   applyStaffToTopbar(staff);
@@ -2263,7 +2268,7 @@ async function decideLiveRefund(refundId, apiDecision, decisionLabel) {
   try {
     const result = await wellipayApi.decideRefund(refundId, {
       decision: apiDecision,
-      actor: 'Adaeze O. (Finance Manager)',
+      actor: currentActorName(),
     });
     const row = state.refundList.find(r => r.id === refundId);
     if (row) {
@@ -2276,7 +2281,7 @@ async function decideLiveRefund(refundId, apiDecision, decisionLabel) {
       state.approvalHistory.unshift({
         ...queued,
         decision: decisionLabel,
-        actor: 'Adaeze O.',
+        actor: currentActorName(),
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       });
     }
@@ -2304,7 +2309,7 @@ async function createLiveRefundRequest(paymentId, amountNaira, reason, paymentRo
       paymentId,
       amountMinor: toMinor(amountNaira),
       reason,
-      requestedBy: 'front-desk-wuse',
+      requestedBy: currentActorName(),
     });
     const row = {
       id: created.refundId,
@@ -3111,7 +3116,7 @@ function dispatch(action, target, domEvent) {
       const index=state.approvals.findIndex(entry=>entry.id===numId);
       if(index!==-1){
         const [old]=state.approvals.splice(index,1);
-        state.approvalHistory.unshift({...old,decision,actor:'Adaeze O.',time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})});
+        state.approvalHistory.unshift({...old,decision,actor:currentActorName(),time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})});
         logAudit(`Approval: ${decision}`, `${old.type} of ${money(old.amount)} for ${old.requester}`);
         showToast(`${old.type} ${decision}`, `${money(old.amount)} decision recorded.`);
       }

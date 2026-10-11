@@ -1,26 +1,14 @@
 // WelliPay API client — talks to the live wellipay-api backend (Fastify +
 // Postgres) instead of the mock arrays in app.js's `state` object.
 //
-// Token issuance goes through the backend's own proxy endpoint
-// (POST /public/frontend-token) instead of the browser holding a
-// client_secret: the backend reads its own FRONTEND_CLIENT_ID /
-// FRONTEND_CLIENT_SECRET env vars and hands back a short-lived token, so
-// nothing secret ever ships in this file or shows up in view-source.
+// Every request carries the signed-in staff member's own token from
+// POST /staff/login. There is no shared token: the API's
+// /public/frontend-token endpoint is off, and without a session a request
+// fails and the console shows the login screen.
 //
 // Override this from index.html before app.js loads if needed:
 //   <script>window.WELLIPAY_API_BASE = 'https://your-env.onrender.com';</script>
 const API_BASE = window.WELLIPAY_API_BASE || 'https://wellipay-api.onrender.com';
-
-let cachedToken = null; // { value: string, expiresAt: number }
-
-async function getToken() {
-  if (cachedToken && cachedToken.expiresAt - Date.now() > 15000) return cachedToken.value;
-  const res = await fetch(`${API_BASE}/public/frontend-token`, { method: 'POST' });
-  if (!res.ok) throw new Error(`WelliPay API: token request failed (HTTP ${res.status})`);
-  const data = await res.json();
-  cachedToken = { value: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 };
-  return cachedToken.value;
-}
 
 // Per-staff login (POST /staff/login). Once a staff member is signed in,
 // every request below carries their own token instead of the shared
@@ -105,7 +93,9 @@ async function getActiveToken() {
     clearExpiredSession('Your session expired. Please sign in again.');
     throw new Error('Your session expired. Please sign in again.');
   }
-  return getToken();
+  const message = 'Please sign in to continue.';
+  if (sessionExpiredHandler) sessionExpiredHandler(message);
+  throw new Error(message);
 }
 
 function idempotencyKey(prefix) {

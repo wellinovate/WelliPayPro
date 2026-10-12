@@ -2062,7 +2062,7 @@ function renderModal() {
             </select>
           </div>
           <div class="form-grid two-col">
-            <div class="form-group"><label>Refund Amount (₦) *</label><input class="input" type="number" name="amount" required min="1000" placeholder="45000"></div>
+            <div class="form-group"><label>Refund Amount (₦) *</label><input class="input" type="number" name="amount" required min="1" step="any" placeholder="45000"></div>
             <div class="form-group"><label>Reason for Refund *</label>
               <select name="reason">
                 <option value="Duplicate payment swipe">Duplicate payment swipe</option>

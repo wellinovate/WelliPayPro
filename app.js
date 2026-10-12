@@ -442,7 +442,9 @@ function renderBranchBanner() {
 
 /* 1. Dashboard */
 function renderDashboard() {
-  const tiles = [['₦2,450,000','This period','Revenue'],['₦1,950,000','This period','Collected'],['₦500,000','This period','Outstanding'],['₦1,200,000','Owed to facility','HMO receivables'],['₦750,000','Awaiting HMO decision','Pending claims'],['₦450,000','In gateway pipeline','Pending settlements'],['124','This period','Patients served'],['₦35,000','This period','Refunds']];
+  const sampleTiles = [['₦2,450,000','This period','Revenue'],['₦1,950,000','This period','Collected'],['₦500,000','This period','Outstanding'],['₦1,200,000','Owed to facility','HMO receivables'],['₦750,000','Awaiting HMO decision','Pending claims'],['₦450,000','In gateway pipeline','Pending settlements'],['124','This period','Patients served'],['₦35,000','This period','Refunds']];
+  // These figures are sample data. Mark them so nobody reads them as live.
+  const tiles = sampleTiles.map(([value, note, label]) => [value, `${note} · sample data`, label]);
   const trend = [1.8,2.1,1.6,2.4,2.0,2.6,2.45];
   const trendMax = Math.max(...trend);
   const unmatchedMarkup = state.unmatched.length ? state.unmatched.slice(0,3).map(item=>`<div class="data-row"><div class="data-primary"><strong>${money(item.amount)} · ${escapeHtml(item.source)}</strong><span>${escapeHtml(item.suggestion)}</span></div><button class="btn btn-secondary" data-action="open-match" data-id="${escapeHtml(item.id)}">Match</button></div>`).join('') : '<p class="empty-state">Nothing unmatched right now.</p>';
@@ -465,8 +467,8 @@ function renderDashboard() {
     ${snapshotCard}
     ${metricGrid(tiles)}
     <div class="grid two-col">
-      ${card('Revenue trend · last 7 days',`<div class="chart-summary" style="margin-bottom:12px;"><strong>₦2.45M</strong><span>+8.4% vs last week</span></div><div style="height:160px;position:relative"><canvas id="revenueTrendChart"></canvas></div>`,'trend-card')}
-      ${card('Payer mix · this month', `<div class="chart-summary" style="margin-bottom:12px;"><strong>₦6.2M</strong><span>collected by payer</span></div><div style="height:160px;position:relative"><canvas id="payerMixChart"></canvas></div>`, 'mix-card')}
+      ${card('Revenue trend · last 7 days (sample data)',`<div class="chart-summary" style="margin-bottom:12px;"><strong>₦2.45M</strong><span>+8.4% vs last week</span></div><div style="height:160px;position:relative"><canvas id="revenueTrendChart"></canvas></div>`,'trend-card')}
+      ${card('Payer mix · this month (sample data)', `<div class="chart-summary" style="margin-bottom:12px;"><strong>₦6.2M</strong><span>collected by payer</span></div><div style="height:160px;position:relative"><canvas id="payerMixChart"></canvas></div>`, 'mix-card')}
     </div>
     ${card('Branch revenue', branchRevenueBody)}
     <div class="grid two-col">
@@ -790,7 +792,7 @@ function renderFamily() {
 function renderWelliPass() {
   const eligByBranch = {};
   state.liveEligibilityChecks.forEach(e => {
-    const name = FACILITY_BRANCH[e.facilityRef] || e.facilityRef;
+    const name = branchLabel(e.facilityRef);
     eligByBranch[name] = (eligByBranch[name] || 0) + 1;
   });
   const todayStr = new Date().toDateString();
@@ -845,7 +847,7 @@ function renderReceivables() {
     ? `<div class="table-wrap"><table class="table"><thead><tr><th>${AGEING_BUCKETS.map(b => `<th>${b.label}</th>`).join('')}<th>Total</th></tr></thead><tbody><tr>${AGEING_BUCKETS.map(b => `<td>${money(receivables.totals[b.key])}</td>`).join('')}<td><strong>${money(receivables.total)}</strong></td></tr></tbody></table></div>`
     : (state.receivablesSyncing ? '<p class="empty-state">Loading live figures…</p>' : '<p class="empty-state">No live data yet.</p>');
   const invoiceRows = receivables && receivables.rows.length
-    ? `<div class="table-wrap"><table class="table"><thead><tr><th>Invoice</th><th>Facility</th><th>Balance</th><th>Days outstanding</th><th>Bucket</th></tr></thead><tbody>${receivables.rows.map(row => `<tr><td>${escapeHtml(row.providerInvoiceRef)}</td><td>${FACILITY_BRANCH[row.facilityRef] || row.facilityRef}</td><td>${money(row.balance)}</td><td>${escapeHtml(row.days)}</td><td>${AGEING_BUCKETS.find(b => b.key === row.bucket).label}</td></tr>`).join('')}</tbody></table></div>`
+    ? `<div class="table-wrap"><table class="table"><thead><tr><th>Invoice</th><th>Facility</th><th>Balance</th><th>Days outstanding</th><th>Bucket</th></tr></thead><tbody>${receivables.rows.map(row => `<tr><td>${escapeHtml(row.providerInvoiceRef)}</td><td>${branchLabel(row.facilityRef)}</td><td>${money(row.balance)}</td><td>${escapeHtml(row.days)}</td><td>${AGEING_BUCKETS.find(b => b.key === row.bucket).label}</td></tr>`).join('')}</tbody></table></div>`
     : '<p class="empty-state">No open invoices — everything is paid up.</p>';
   return `<div class="page">
     ${renderBranchBanner()}
@@ -914,7 +916,7 @@ function renderSettlements() {
   const rows=[['Wuse',1240000,120000],['Garki',780000,0],['Maitama',1650000,210000],['Kaduna',310000,60000],['Lagos',420000,60000]];
   const liveRows = state.liveSettlements.map(s => `
     <tr>
-      <td><strong>${FACILITY_BRANCH[s.facilityRef] || s.facilityRef}</strong> <small style="color:var(--muted)">(Live)</small><br><small style="color:var(--muted)">${escapeHtml(s.settlementId)}</small></td>
+      <td><strong>${branchLabel(s.facilityRef)}</strong> <small style="color:var(--muted)">(Live)</small><br><small style="color:var(--muted)">${escapeHtml(s.settlementId)}</small></td>
       <td>${money(fromMinor(s.amountMinor))}</td>
       <td>${s.paymentCount ?? '—'}</td>
       <td>${tag(s.status === 'SETTLED' ? 'Settled' : 'Pending', s.status === 'SETTLED' ? 'neutral' : 'outline')}</td>
@@ -1263,7 +1265,7 @@ const EVENT_LABELS = {
 function formatEventDetail(evt) {
   const d = evt.data || {};
   if (d.amountMinor != null) {
-    const facility = d.facilityRef ? (FACILITY_BRANCH[d.facilityRef] || d.facilityRef) : null;
+    const facility = d.facilityRef ? branchLabel(d.facilityRef) : null;
     return `${money(fromMinor(d.amountMinor))}${facility ? ' · ' + facility : ''}`;
   }
   const entries = Object.entries(d).filter(([k]) => k !== 'currency').slice(0, 2);
@@ -1429,7 +1431,7 @@ function renderReferrals() {
   const rows = referrals.map(r => `
     <tr>
       <td><strong>${escapeHtml(r.patientRef)}</strong> → ${escapeHtml(partnerName(r.partnerId))}<br><small style="color:var(--muted)">${escapeHtml(r.description)}</small></td>
-      <td>${escapeHtml(FACILITY_BRANCH[r.facilityRef] || r.facilityRef)}</td>
+      <td>${escapeHtml(branchLabel(r.facilityRef))}</td>
       <td>${tag(r.status === 'COMPLETED' ? 'Completed' : 'Sent', r.status === 'COMPLETED' ? 'neutral' : 'outline')}</td>
       <td><small>${new Date(r.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}</small></td>
       <td>${r.status === 'SENT' ? `<button class="btn btn-secondary" data-action="complete-referral" data-id="${escapeHtml(r.referralId)}" style="font-size:11px;padding:4px 8px;">Mark Completed</button>` : ''}</td>
@@ -2195,6 +2197,7 @@ function updateClaim(id, status) {
 // prepended, tagged `live: true` so a re-sync can replace them without
 // touching the original mock rows.
 
+function branchLabel(ref) { return FACILITY_BRANCH[ref] || 'Other facility'; }
 const FACILITY_BRANCH = { 'facility-wuse': 'Wuse', 'facility-maitama': 'Maitama', 'facility-garki': 'Garki', 'facility-kaduna': 'Kaduna', 'facility-lagos': 'Lagos' };
 const PAYMENT_CHANNEL_LABEL = { card: 'Card (Live)', bank_transfer: 'Bank Transfer (Live)', ussd: 'USSD (Live)', cash: 'Cash (Live)', hmo_direct: 'HMO Direct (Live)', wellipass: 'WelliPass (Live)' };
 const PAYMENT_STATUS_LABEL = { SUCCESS: 'Success', PENDING: 'Pending', FAILED: 'Failed' };
@@ -2247,7 +2250,7 @@ async function syncPaymentsFromApi() {
       amount: fromMinor(item.amountMinor),
       time: new Date(item.occurredAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' }),
       status: PAYMENT_STATUS_LABEL[item.status] || item.status,
-      branch: FACILITY_BRANCH[item.facilityRef] || item.facilityRef,
+      branch: branchLabel(item.facilityRef),
       live: true,
     }));
     state.paymentList = [...liveRows, ...state.paymentList.filter(p => !p.live)];
@@ -2277,7 +2280,7 @@ async function syncInvoicesFromApi() {
       date: new Date(item.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }),
       amount: fromMinor(item.amountMinor),
       paid: fromMinor(item.paidAmountMinor),
-      branch: FACILITY_BRANCH[item.facilityRef] || item.facilityRef,
+      branch: branchLabel(item.facilityRef),
       knownBranch: Boolean(FACILITY_BRANCH[item.facilityRef]),
       // No payer-type field exists on Invoice (see receivables ageing) —
       // this column shows the invoice's real description instead of a
@@ -2892,7 +2895,7 @@ async function syncDashboardFromApi() {
     payments.items
       .filter(item => item.status === 'SUCCESS')
       .forEach(item => {
-        const name = FACILITY_BRANCH[item.facilityRef] || item.facilityRef;
+        const name = branchLabel(item.facilityRef);
         branchTotals[name] = (branchTotals[name] || 0) + fromMinor(item.amountMinor);
       });
     const branchRevenue = Object.entries(branchTotals).sort((a, b) => b[1] - a[1]);
@@ -3549,7 +3552,7 @@ function dispatch(action, target, domEvent) {
       }
       downloadCsv('receivables_ageing_report.csv', [
         ['Invoice', 'Facility', 'Balance', 'Days Outstanding', 'Bucket'],
-        ...receivables.rows.map(row => [row.providerInvoiceRef, FACILITY_BRANCH[row.facilityRef] || row.facilityRef, row.balance, row.days, AGEING_BUCKETS.find(b => b.key === row.bucket).label]),
+        ...receivables.rows.map(row => [row.providerInvoiceRef, branchLabel(row.facilityRef), row.balance, row.days, AGEING_BUCKETS.find(b => b.key === row.bucket).label]),
       ]);
       break;
     }
@@ -3605,7 +3608,7 @@ function dispatch(action, target, domEvent) {
       const stale = staleInvoiceRows();
       downloadCsv('stale_invoices_report.csv', [
         ['Invoice', 'Facility', 'Balance (never paid)', 'Days Open'],
-        ...stale.map(row => [row.providerInvoiceRef, FACILITY_BRANCH[row.facilityRef] || row.facilityRef, row.balance, row.days]),
+        ...stale.map(row => [row.providerInvoiceRef, branchLabel(row.facilityRef), row.balance, row.days]),
       ]);
       break;
     }

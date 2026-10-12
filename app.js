@@ -49,8 +49,30 @@ function currentActorName() {
   return authState.user?.name || 'Unknown staff';
 }
 
+const PROVIDER_TYPE_LABEL = {
+  HOSPITAL: 'Hospital',
+  DIAGNOSTIC_LAB: 'Diagnostic and laboratory centre',
+  PHARMACY: 'Pharmacy',
+  INDEPENDENT_PRACTITIONER: 'Independent practitioner',
+};
+
+// The signed-in provider's own name. Falls back to a neutral label for a
+// session saved before the login response carried the tenant.
+function orgName() {
+  return getTenant()?.name || 'Your organisation';
+}
+
+function applyTenantToSidebar() {
+  const tenant = getTenant();
+  const box = document.querySelector('.tenant');
+  if (!box) return;
+  box.innerHTML = `<strong>${escapeHtml(orgName())}</strong><span>${escapeHtml(PROVIDER_TYPE_LABEL[tenant?.providerType] || 'Provider')}</span>`;
+  document.title = `WelliPay Provider | ${orgName()}`;
+}
+
 function enterApp(staff) {
   authState.user = staff;
+  applyTenantToSidebar();
   applyStaffToTopbar(staff);
   document.getElementById('auth-root').innerHTML = '';
   document.getElementById('app-shell').style.display = '';
@@ -70,13 +92,13 @@ function showAuthScreen(noticeMessage) {
           <span><strong>WelliPay</strong><small>PROVIDER</small></span>
         </div>
         <h1 class="auth-heading">Welcome back</h1>
-        <p class="auth-sub">Sign in to ABC Healthcare · Multi-branch portal</p>
+        <p class="auth-sub">Sign in to your WelliPay Provider account</p>
         <div class="auth-error" id="auth-error" style="display:${noticeMessage ? 'block' : 'none'}">${noticeMessage || ''}</div>
         <form class="auth-form" id="login-form" autocomplete="on">
           <div class="form-group">
             <label for="login-email">Email address</label>
             <input class="input" id="login-email" name="email" type="email" autocomplete="email"
-              placeholder="you@abchealthcare.ng" required>
+              placeholder="you@yourbusiness.ng" required>
           </div>
           <div class="form-group">
             <label for="login-password">Password</label>
@@ -88,10 +110,18 @@ function showAuthScreen(noticeMessage) {
           </button>
         </form>
         <p style="margin-top:16px;font-size:11px;color:var(--muted);text-align:center;">
-          No account yet? Ask a manager to invite you and set a password on the Staff page. The first manager's login is set by whoever runs the WelliPay API.
+          Staff: ask a manager to invite you and set a password on the Staff page.
+        </p>
+        <p style="margin-top:8px;font-size:12px;text-align:center;">
+          Hospital, laboratory, pharmacy or independent practitioner? <a href="#" id="apply-link">Apply to join WelliPay</a>
         </p>
       </div>
     </div>`;
+
+  root.querySelector('#apply-link').addEventListener('click', e => {
+    e.preventDefault();
+    showApplyScreen();
+  });
 
   root.querySelector('#login-form').addEventListener('submit', async e => {
     e.preventDefault();
@@ -112,6 +142,90 @@ function showAuthScreen(noticeMessage) {
       root.querySelector('#login-password').focus();
       submitBtn.disabled = false;
       submitBtn.textContent = 'Sign in';
+    }
+  });
+}
+
+// Provider sign-up. Creates an application only. Wellinovate reviews it, then
+// creates the account, so nothing here gives access to anything.
+async function showApplyScreen() {
+  const root = document.getElementById('auth-root');
+  document.getElementById('app-shell').style.display = 'none';
+  root.innerHTML = `
+    <div class="auth-screen" id="auth-screen">
+      <div class="auth-card" style="max-width:520px;">
+        <div class="auth-brand">
+          <span class="auth-brand-mark"></span>
+          <span><strong>WelliPay</strong><small>PROVIDER</small></span>
+        </div>
+        <h1 class="auth-heading">Apply to join</h1>
+        <p class="auth-sub">Tell us about your business and the bank account that should receive your payments. We review every application.</p>
+        <div class="auth-error" id="apply-error" style="display:none"></div>
+        <form class="auth-form" id="apply-form" autocomplete="on">
+          <div class="form-group"><label for="ap-name">Business name</label><input class="input" id="ap-name" required maxlength="160"></div>
+          <div class="form-group"><label for="ap-type">Type of provider</label>
+            <select class="input" id="ap-type" required>
+              ${Object.entries(PROVIDER_TYPE_LABEL).map(([value, label]) => `<option value="${value}">${escapeHtml(label)}</option>`).join('')}
+            </select></div>
+          <div class="form-group"><label for="ap-contact">Your name</label><input class="input" id="ap-contact" autocomplete="name" required maxlength="120"></div>
+          <div class="form-group"><label for="ap-email">Email address</label><input class="input" id="ap-email" type="email" autocomplete="email" required></div>
+          <div class="form-group"><label for="ap-phone">Phone number</label><input class="input" id="ap-phone" type="tel" autocomplete="tel" placeholder="08012345678" required></div>
+          <div class="form-group"><label for="ap-address">Address (optional)</label><input class="input" id="ap-address" maxlength="240"></div>
+          <div class="form-group"><label for="ap-licence">Registration or licence number (optional)</label><input class="input" id="ap-licence" maxlength="80"></div>
+          <div class="form-group"><label for="ap-bank">Bank</label>
+            <select class="input" id="ap-bank" required><option value="">Loading banks…</option></select></div>
+          <div class="form-group"><label for="ap-account">Account number (10 digits)</label><input class="input" id="ap-account" inputmode="numeric" pattern="\\d{10}" maxlength="10" required></div>
+          <button type="submit" class="btn btn-primary" style="width:100%;height:44px;font-size:15px;margin-top:4px;" id="apply-submit">Submit application</button>
+        </form>
+        <p style="margin-top:16px;font-size:12px;text-align:center;"><a href="#" id="apply-back">Back to sign in</a></p>
+      </div>
+    </div>`;
+
+  root.querySelector('#apply-back').addEventListener('click', e => { e.preventDefault(); showAuthScreen(); });
+
+  const bankSelect = root.querySelector('#ap-bank');
+  try {
+    const { items } = await fetchBanks();
+    bankSelect.innerHTML = '<option value="">Select your bank</option>' + items.map(b => `<option value="${escapeHtml(b.code)}">${escapeHtml(b.name)}</option>`).join('');
+  } catch (err) {
+    bankSelect.innerHTML = '<option value="">Could not load banks</option>';
+    const errEl = root.querySelector('#apply-error');
+    errEl.textContent = `Could not load the bank list: ${err.message}. Refresh the page to try again.`;
+    errEl.style.display = 'block';
+  }
+
+  root.querySelector('#apply-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const errEl = root.querySelector('#apply-error');
+    const btn = root.querySelector('#apply-submit');
+    errEl.style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = 'Submitting…';
+    const value = id => root.querySelector(id).value.trim();
+    try {
+      const result = await submitProviderApplication({
+        businessName: value('#ap-name'),
+        providerType: value('#ap-type'),
+        contactName: value('#ap-contact'),
+        contactEmail: value('#ap-email'),
+        contactPhone: value('#ap-phone'),
+        ...(value('#ap-address') ? { address: value('#ap-address') } : {}),
+        ...(value('#ap-licence') ? { licenseNumber: value('#ap-licence') } : {}),
+        bankCode: value('#ap-bank'),
+        accountNumber: value('#ap-account'),
+      });
+      root.querySelector('.auth-card').innerHTML = `
+        <div class="auth-brand"><span class="auth-brand-mark"></span><span><strong>WelliPay</strong><small>PROVIDER</small></span></div>
+        <h1 class="auth-heading">Application received</h1>
+        <p class="auth-sub">The bank shows this account as <strong>${escapeHtml(result.accountName)}</strong>. If that is not your business or its owner, email us before we review it.</p>
+        <p style="font-size:13px;">We review applications by hand and will contact you at the email you gave. You can sign in once we approve it.</p>
+        <p style="margin-top:16px;font-size:12px;text-align:center;"><a href="#" id="apply-done">Back to sign in</a></p>`;
+      root.querySelector('#apply-done').addEventListener('click', ev => { ev.preventDefault(); showAuthScreen(); });
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Submit application';
     }
   });
 }
@@ -153,7 +267,7 @@ function openProfileDropdown() {
   }, 50);
 }
 
-import { wellipayApi, toMinor, fromMinor, loginStaff, logoutStaff, getStaffSession, onSessionExpired } from './api.js';
+import { wellipayApi, toMinor, fromMinor, loginStaff, logoutStaff, getStaffSession, getTenant, fetchBanks, submitProviderApplication, onSessionExpired } from './api.js';
 
 const groups = [
   { name: 'Overview', items: [['dashboard', 'Dashboard', 'grid'], ['hospital-desk', 'Hospital Desk', 'wallet'], ['ai-insights', 'AI Insights', 'spark'], ['notifications', 'Notifications', 'bell']] },
@@ -468,7 +582,7 @@ function renderDashboard() {
     : (state.dashboardSyncing ? '<p class="empty-state">Loading live figures…</p>' : '<p class="empty-state">No successful payments recorded yet.</p>');
   return `<div class="page">
     ${renderBranchBanner()}
-    <div class="page-heading"><div><h1>${greetingForNow()}, ${(authState.user?.name || 'there').split(' ')[0]}</h1><p>${new Date().toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · ABC Healthcare, ${state.branch === 'All branches' ? 'consolidated (5 branches)' : state.branch + ' Branch'}</p></div><div class="seg" role="group" aria-label="Date range">${['Today','Week','Month','Quarter'].map(value=>`<label class="seg-opt"><input type="radio" name="filter" value="${value}" ${state.filter===value?'checked':''}><span>${value}</span></label>`).join('')}</div></div>
+    <div class="page-heading"><div><h1>${greetingForNow()}, ${(authState.user?.name || 'there').split(' ')[0]}</h1><p>${new Date().toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · ${escapeHtml(orgName())}${state.branch === 'All branches' ? '' : ', ' + escapeHtml(state.branch) + ' Branch'}</p></div><div class="seg" role="group" aria-label="Date range">${['Today','Week','Month','Quarter'].map(value=>`<label class="seg-opt"><input type="radio" name="filter" value="${value}" ${state.filter===value?'checked':''}><span>${value}</span></label>`).join('')}</div></div>
     ${snapshotCard}
     ${metricGrid(tiles)}
     <div class="grid two-col">
@@ -727,7 +841,7 @@ function renderClaims() {
   const rows = [...state.claims.map(item=>renderClaimItem(item,false)), ...state.liveClaims.map(item=>renderClaimItem(item,true))];
   return `<div class="page">
     ${renderBranchBanner()}
-    ${pageHeading('HMO Claims','Submission, tracking & resubmission','A live claim queue for ABC Healthcare’s payer submissions.')}
+    ${pageHeading('HMO Claims','Submission, tracking & resubmission','A live claim queue for ' + orgName() + '’s payer submissions.')}
     ${card('Claim lifecycle',rows.join(''))}
   </div>`;
 }
@@ -1387,13 +1501,13 @@ function renderSettings() {
 /* 25. Mobile App Integration */
 function renderMobileIntegration() {
   const app=state.mobileApp;
-  const features=[['billPayments','Patient bill payments','Patients can pay ABC Healthcare invoices from the separate app.'],['billHistory','Bill history','Patients can view current and past facility bills.'],['familyFunding','Family funding','Patients can request contributions from linked sponsors.'],['welliPass','WelliPass access','Patients can present a WelliPass at the hospital desk.']];
+  const features=[['billPayments','Patient bill payments','Patients can pay ' + orgName() + ' invoices from the separate app.'],['billHistory','Bill history','Patients can view current and past facility bills.'],['familyFunding','Family funding','Patients can request contributions from linked sponsors.'],['welliPass','WelliPass access','Patients can present a WelliPass at the hospital desk.']];
   const featureMarkup=features.map(([id,label,description])=>`<label class="integration-feature"><span><strong>${label}</strong><small>${description}</small></span><input type="checkbox" data-mobile-feature="${id}" ${app.features[id]?'checked':''} aria-label="${label}"></label>`).join('');
   const eventMarkup=app.events.map(([time,name,detail])=>`<div class="data-row"><div class="data-primary"><strong>${name}</strong><span>${detail}</span></div><time class="event-time">${time}</time></div>`).join('');
-  return `<div class="page">${renderBranchBanner()}${pageHeading('Connected Apps','Patient Mobile App','Configure how ABC Healthcare connects with the separate WelliPay patient app. Patients use the MobileApp on their own devices; this console manages the provider connection.')}
+  return `<div class="page">${renderBranchBanner()}${pageHeading('Connected Apps','Patient Mobile App','Configure how ' + orgName() + ' connects with the separate WelliPay patient app. Patients use the MobileApp on their own devices; this console manages the provider connection.')}
     <div class="grid stats-grid">${stat('3,204','Linked patient profiles','Mobile accounts')}${stat('1','Connected app','Client')}${stat(app.syncCount.toLocaleString(),'Records synced','Data exchange')}${stat('Sandbox','Demo environment','Connection mode')}</div>
     <div class="grid two-col">
-      ${card('Provider connection',`<div class="connection-status"><div><strong>Demo connection active</strong><span>Sample connector · no live patient data or transactions</span></div>${tag('Sandbox','outline')}</div><div class="integration-details"><div><span>Facility</span><strong>ABC Healthcare</strong></div><div><span>Connection ID</span><strong>CONN-ABC-001</strong></div><div><span>Last sync</span><strong>${app.lastSync}</strong></div><div><span>Sync status</span><strong>Ready</strong></div></div><div class="toolbar"><button class="btn btn-primary" data-action="sync-mobile">Sync demo data</button><button class="btn btn-secondary" data-action="test-mobile-connection">Test connection</button></div>${app.notice?`<p class="integration-notice" role="status">${app.notice}</p>`:''}`)}
+      ${card('Provider connection',`<div class="connection-status"><div><strong>Demo connection active</strong><span>Sample connector · no live patient data or transactions</span></div>${tag('Sandbox','outline')}</div><div class="integration-details"><div><span>Facility</span><strong>${escapeHtml(orgName())}</strong></div><div><span>Connection ID</span><strong>CONN-ABC-001</strong></div><div><span>Last sync</span><strong>${app.lastSync}</strong></div><div><span>Sync status</span><strong>Ready</strong></div></div><div class="toolbar"><button class="btn btn-primary" data-action="sync-mobile">Sync demo data</button><button class="btn btn-secondary" data-action="test-mobile-connection">Test connection</button></div>${app.notice?`<p class="integration-notice" role="status">${app.notice}</p>`:''}`)}
       ${card('Patient app capabilities',`<div class="integration-features">${featureMarkup}</div>`)}
     </div>
     ${card('<div class="section-heading"><span>Mobile app events</span><button class="btn btn-secondary" data-action="simulate-mobile-event">Simulate incoming event</button></div>',`<p class="integration-caption">Sample events received from the separate patient app. In production, these arrive through the connected API. <a href="docs/mobile-app-integration.md" target="_blank" rel="noreferrer">Review API contract →</a></p><div class="row-list">${eventMarkup}</div>`)}
@@ -1462,10 +1576,10 @@ function renderStub() {
   const stubData = {
     integrations: ['Integrations & EHR Connectors','Synchronize patient charts, charge slips and payments with hospital systems.',[['3','Connected Gateways'],['12','EHR Connectors Available'],['4,204','Records Synced Today']], [['WelliRecord EHR','Patient Records & Vitals','Connected'],['Paystack Payment Gateway','Virtual Accounts & Cards','Live'],['Termii SMS Gateway','Billing SMS Alerts','Connected']]],
     'api-developers': ['API & Developer Sandbox','Manage OAuth2 client credentials, webhook subscriptions and API keys.',[['2','Active API Keys'],['18,204','API Requests This Month'],['99.6%','Webhook Delivery Rate']], [['payment.success','Webhook Listener','200 OK'],['claim.adjudicated','Webhook Listener','200 OK'],['Client Key: wp_live_...','Production API Key','Active']]],
-    subscription: ['Subscription & SaaS Plan','Manage ABC Healthcare’s SaaS tier, branches and add-on subscriptions.',[['Business Tier','Current Plan'],['₦85,000','Monthly Platform Fee'],['1.4%','Capped Transaction Fee']], [['Multi-Branch Add-on (5 branches)','Included in Business','Active'],['AI Financial Copilot Add-on','₦15,000 / month','Active'],['HMO Electronic Claims Gateway','₦25,000 / month','Active']]],
+    subscription: ['Subscription & SaaS Plan','Manage ' + orgName() + '’s SaaS tier, branches and add-on subscriptions.',[['Business Tier','Current Plan'],['₦85,000','Monthly Platform Fee'],['1.4%','Capped Transaction Fee']], [['Multi-Branch Add-on (5 branches)','Included in Business','Active'],['AI Financial Copilot Add-on','₦15,000 / month','Active'],['HMO Electronic Claims Gateway','₦25,000 / month','Active']]],
     support: ['Provider Support & SLA Desk','Priority support tickets, disputes resolution and dedicated account team.',[['0','Open Critical Disputes'],['18 min','Avg Support Response'],['4.8 / 5','Customer Satisfaction']], [['SET-1189 Bank Processing Verification','Paystack settlement delay enquiry','Resolved'],['WelliPass Desk Scanner Setup','Terminal configuration check','Resolved']]]
   };
-  const data = stubData[state.active] || ['Workspace','Operational workspace for ABC Healthcare.',[['—','Records'],['—','This month'],['—','Needs attention']],[['No sample records','Workspace is ready for configuration','Review']]];
+  const data = stubData[state.active] || ['Workspace','Operational workspace for ' + orgName() + '.',[['—','Records'],['—','This month'],['—','Needs attention']],[['No sample records','Workspace is ready for configuration','Review']]];
   const [kicker,blurb,stats,rows]=data;
   return `<div class="page">${renderBranchBanner()}${pageHeading(kicker,labels[state.active]||'Workspace',blurb)}${metricGrid(stats.map(([value,label])=>[value,label,label]))}${card('Latest activity',rows.map(([title,detail,status],index)=>dataRow(title,detail,status,index===1?'outline':'neutral')).join(''))}</div>`;
 }
@@ -1964,9 +2078,9 @@ function renderModal() {
       <section class="modal" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
         <div class="receipt-paper">
           <div class="receipt-header">
-            <h3>ABC HEALTHCARE NIGERIA</h3>
-            <p style="margin:2px 0;font-size:10px;">Consolidated Hospital Operations · Nigeria</p>
-            <p style="margin:2px 0;font-size:10px;">${inv.live && !inv.knownBranch ? '' : `Branch: ${escapeHtml(inv.branch || 'Wuse')} · `}Tel: +234 9 291 0000</p>
+            <h3>${escapeHtml(orgName()).toUpperCase()}</h3>
+            ${inv.live ? '' : '<p style="margin:2px 0;font-size:10px;">Consolidated Hospital Operations · Nigeria</p>'}
+            <p style="margin:2px 0;font-size:10px;">${inv.live ? (inv.knownBranch ? `Branch: ${escapeHtml(inv.branch)}` : '') : `Branch: ${escapeHtml(inv.branch || 'Wuse')} · Tel: +234 9 291 0000`}</p>
           </div>
           <div class="receipt-row"><span>Receipt / Invoice:</span><strong>${escapeHtml(inv.id)}</strong></div>
           <div class="receipt-row"><span>Date:</span><span>${inv.date || 'Sep 27, 2026'}</span></div>
@@ -1987,7 +2101,7 @@ function renderModal() {
             ? `<div class="receipt-row" style="margin-top:6px;"><span>For:</span><span>${escapeHtml(inv.description || '')}</span></div>`
             : `<div class="receipt-row" style="margin-top:6px;"><span>Payer:</span><span>${escapeHtml(inv.payer || 'Patient / Sponsor')}</span></div>`}
           <div class="receipt-row"><span>Status:</span><span><strong>${escapeHtml(inv.status)}</strong></span></div>
-          <p style="text-align:center;font-size:10px;margin-top:12px;color:#555;">Thank you for trusting ABC Healthcare.<br>Powered by WelliPay Provider SaaS</p>
+          <p style="text-align:center;font-size:10px;margin-top:12px;color:#555;">Thank you for trusting ${escapeHtml(orgName())}.<br>Powered by WelliPay Provider SaaS</p>
         </div>
         <div class="modal-actions">
           <button class="btn btn-secondary" data-action="close-modal">Close</button>

@@ -77,10 +77,33 @@ export async function loginStaff(email, password) {
     token: payload.access_token,
     expiresAt: Date.now() + payload.expires_in * 1000,
     staff: payload.staff,
+    tenant: payload.tenant || null,
   };
   persistStaffSession();
   return staffSession.staff;
 }
+
+// The signed-in provider's own name and type, from the login response.
+export function getTenant() {
+  return staffSession?.tenant || null;
+}
+
+// Public calls a provider makes before it has an account. No token.
+async function publicRequest(path, { method = 'GET', body } = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const payload = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error((payload && (payload.detail || payload.title)) || `Request failed (HTTP ${res.status})`);
+  }
+  return payload;
+}
+
+export const fetchBanks = () => publicRequest('/onboarding/banks');
+export const submitProviderApplication = (body) => publicRequest('/onboarding/applications', { method: 'POST', body });
 
 export function logoutStaff() {
   staffSession = null;

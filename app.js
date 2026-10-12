@@ -243,6 +243,7 @@ const state = {
   paymentPlansSyncing: false,
   livePaymentPlans: [],
   settlementsSynced: false,
+  paystackPayouts: null, // { loading, error, data } once loaded on request
   settlementsSyncing: false,
   liveSettlements: [],
   eventsSynced: false,
@@ -872,6 +873,41 @@ function renderReconciliation() {
   </div>`;
 }
 
+function renderPaystackPayouts() {
+  const po = state.paystackPayouts;
+  const button = `<button class="btn btn-secondary" data-action="load-paystack-payouts" style="font-size:11px;padding:6px 10px;">${po?.data ? 'Refresh' : 'Load this month'}</button>`;
+  let body = '<p style="margin:0 0 12px;font-size:12px;color:var(--muted);">What Paystack has paid out to the bank account this month, next to what this system recorded as paid through Paystack. Payouts arrive a day or more after the payment, so the two totals can differ near the end of the month.</p>';
+  if (po?.loading) return body + '<p style="color:var(--muted);font-size:12px;">Loading from Paystack…</p>';
+  if (po?.error) body += `<p style="color:var(--color-accent);font-size:12px;">${escapeHtml(po.error)}</p>`;
+  if (po?.data) {
+    const d = po.data;
+    body += metricGrid([
+      [money(fromMinor(d.totals.recordedPaymentsMinor)), `Recorded via Paystack (${d.totals.recordedPaymentsCount})`, 'recorded'],
+      [money(fromMinor(d.totals.paidOutMinor)), 'Paid out by Paystack', 'paidout'],
+      [money(fromMinor(d.totals.feesMinor)), 'Paystack fees', 'fees'],
+    ], 'grid activity-grid');
+    body += d.settlements.length
+      ? `<div class="table-wrap"><table class="table"><thead><tr><th>Payout</th><th>Date</th><th>Collected</th><th>Fees</th><th>Paid out</th><th>Status</th></tr></thead><tbody>${d.settlements.map(s => `<tr><td>${escapeHtml(s.id)}</td><td>${s.settlementDate ? escapeHtml(new Date(s.settlementDate).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })) : '—'}</td><td>${money(fromMinor(s.totalAmountMinor))}</td><td>${money(fromMinor(s.totalFeesMinor))}</td><td>${money(fromMinor(s.payoutAmountMinor))}</td><td>${escapeHtml(s.status)}</td></tr>`).join('')}</tbody></table></div>`
+      : '<p style="color:var(--muted);font-size:12px;">Paystack has made no payouts in this period.</p>';
+  }
+  return `${body}<div class="toolbar" style="margin-top:12px;">${button}</div>`;
+}
+
+async function loadPaystackPayouts() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const from = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
+  const to = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  state.paystackPayouts = { loading: true };
+  render();
+  try {
+    state.paystackPayouts = { data: await wellipayApi.listPaystackSettlements({ from, to }) };
+  } catch (err) {
+    state.paystackPayouts = { error: `Could not load Paystack payouts: ${err.message}` };
+  }
+  if (state.active === 'settlements') render();
+}
+
 /* 14. Settlements */
 function renderSettlements() {
   const events=[['08:30','SET-1187 — ₦2,100,000 — Flutterwave payout initiated'],['08:34','SET-1187 — Completed to GTBank ••4471'],['09:02','SET-1188 — ₦1,950,000 — Paystack payout initiated'],['09:10','SET-1188 — Completed to GTBank ••4471'],['—','SET-1189 — ₦450,000 — Pending (Paystack processing)']];
@@ -888,6 +924,7 @@ function renderSettlements() {
   return `<div class="page">
     ${renderBranchBanner()}
     ${pageHeading('Settlements','Gateway payouts & branch settlement','Follow gateway payout status and branch-level settlement totals.')}
+    ${card('Paystack payouts (live)', renderPaystackPayouts())}
     ${card('Payout timeline (illustrative)',events.map(([time,text])=>`<div class="timeline-line"><time>${time}</time><span>${text}</span></div>`).join(''))}
     ${card('<div class="section-heading"><span>Live settlement batches</span><span></span></div>', `
       <p style="margin:0 0 12px;font-size:12px;color:var(--muted);">There's no real payment gateway behind this service — payments are recorded directly, not via a Paystack/Flutterwave webhook — so "Create settlement" batches a branch's unsettled successful payments in wellipay-api, and "Confirm Settled" records that a human verified the funds landed. Neither is a real bank payout.</p>
@@ -3358,6 +3395,7 @@ function dispatch(action, target, domEvent) {
 
     /* Payments */
     case 'filter-payments': state.paymentFilter=target.dataset.filter;render();break;
+    case 'load-paystack-payouts': loadPaystackPayouts(); break;
     case 'view-payment-receipt': {
       const p = state.paymentList.find(item=>item.id===id);
       if (p) {

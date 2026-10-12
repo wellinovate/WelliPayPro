@@ -3960,4 +3960,3 @@ if (existingSession) {
 } else {
   showAuthScreen();
 }
-showAuthScreen();

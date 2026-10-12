@@ -440,6 +440,11 @@ function renderBranchBanner() {
   return `<div class="branch-banner"><span>Viewing filtered financial records for <strong>${state.branch} Branch</strong></span><a data-action="reset-branch">Show consolidated (all branches)</a></div>`;
 }
 
+function greetingForNow() {
+  const h = new Date().getHours();
+  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+}
+
 /* 1. Dashboard */
 function renderDashboard() {
   const sampleTiles = [['₦2,450,000','This period','Revenue'],['₦1,950,000','This period','Collected'],['₦500,000','This period','Outstanding'],['₦1,200,000','Owed to facility','HMO receivables'],['₦750,000','Awaiting HMO decision','Pending claims'],['₦450,000','In gateway pipeline','Pending settlements'],['124','This period','Patients served'],['₦35,000','This period','Refunds']];
@@ -463,7 +468,7 @@ function renderDashboard() {
     : (state.dashboardSyncing ? '<p class="empty-state">Loading live figures…</p>' : '<p class="empty-state">No successful payments recorded yet.</p>');
   return `<div class="page">
     ${renderBranchBanner()}
-    <div class="page-heading"><div><h1>Good afternoon, ${(authState.user?.name || 'there').split(' ')[0]}</h1><p>Sunday, September 27, 2026 · ABC Healthcare, ${state.branch === 'All branches' ? 'consolidated (5 branches)' : state.branch + ' Branch'}</p></div><div class="seg" role="group" aria-label="Date range">${['Today','Week','Month','Quarter'].map(value=>`<label class="seg-opt"><input type="radio" name="filter" value="${value}" ${state.filter===value?'checked':''}><span>${value}</span></label>`).join('')}</div></div>
+    <div class="page-heading"><div><h1>${greetingForNow()}, ${(authState.user?.name || 'there').split(' ')[0]}</h1><p>${new Date().toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · ABC Healthcare, ${state.branch === 'All branches' ? 'consolidated (5 branches)' : state.branch + ' Branch'}</p></div><div class="seg" role="group" aria-label="Date range">${['Today','Week','Month','Quarter'].map(value=>`<label class="seg-opt"><input type="radio" name="filter" value="${value}" ${state.filter===value?'checked':''}><span>${value}</span></label>`).join('')}</div></div>
     ${snapshotCard}
     ${metricGrid(tiles)}
     <div class="grid two-col">
@@ -479,8 +484,8 @@ function renderDashboard() {
       ${card('Revenue leakage alerts (sample data)',`<div class="row-list">${[['₦185,000','14 completed services have no corresponding invoice.','Maitama'],['₦62,000','3 HMO-eligible services were billed as self-pay.','Wuse'],['₦41,000','Duplicate discount applied on 6 invoices.','Garki']].map(([amount,reason,branch])=>`<div class="data-row"><div class="data-primary"><strong class="alert-amount">${amount}</strong><span>${reason}</span></div>${tag(branch,'accent')}</div>`).join('')}</div>`)}
       ${card('Claim scrubbing readiness (sample data)',`<div class="row-list">${[['CLM-5544','Reliance HMO',87,['Missing pre-auth ref']],['CLM-5545','Hygeia HMO',62,['Tariff mismatch','Expired eligibility']],['CLM-5546','AXA Mansard',95,[]]].map(([id,hmo,pct,issues])=>`<div class="data-row"><div class="data-primary"><strong>${id} · ${hmo}</strong><div class="readiness"><div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div><strong>${pct}%</strong></div><div class="issue-tags">${issues.length?issues.map(issue=>tag(issue,'outline')).join(''):tag('Ready to submit')}</div></div></div>`).join('')}</div>`)}
     </div>
-    ${card('Approval queue · refunds & write-offs',approvalRows)}
-    ${card('Ask WelliPay',`<div class="chat-log" id="chat-log">${messages}</div><div class="chips">${['Which HMO owes us the most?','Show unpaid invoices over 30 days','Which claims are likely to be rejected?','What payments haven’t been reconciled?'].map(text=>`<button class="chip-button" data-action="ask-suggestion" data-text="${text}">${text}</button>`).join('')}</div><form class="chat-form" id="chat-form"><input class="input" name="question" placeholder="Ask about revenue, claims, receivables…" aria-label="Ask WelliPay a question" required><button class="btn btn-primary" type="submit">Ask</button></form>`)}
+    ${card('Approval queue · refunds & write-offs (sample data — real refunds are under Refunds)',approvalRows)}
+    ${card('Ask WelliPay (sample answers, not from live data)',`<div class="chat-log" id="chat-log">${messages}</div><div class="chips">${['Which HMO owes us the most?','Show unpaid invoices over 30 days','Which claims are likely to be rejected?','What payments haven’t been reconciled?'].map(text=>`<button class="chip-button" data-action="ask-suggestion" data-text="${text}">${text}</button>`).join('')}</div><form class="chat-form" id="chat-form"><input class="input" name="question" placeholder="Ask about revenue, claims, receivables…" aria-label="Ask WelliPay a question" required><button class="btn btn-primary" type="submit">Ask</button></form>`)}
   </div>`;
 }
 

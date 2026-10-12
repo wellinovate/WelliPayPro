@@ -529,7 +529,10 @@ function showToast(title, message = '') {
   toast.innerHTML = `<div><strong>${escapeHtml(title)}</strong>${message ? `<span>${escapeHtml(message)}</span>` : ''}</div><button style="background:transparent;border:0;color:#fff;cursor:pointer;font-size:16px;padding:2px 6px;" aria-label="Dismiss">&times;</button>`;
   toast.querySelector('button').onclick = () => toast.remove();
   root.appendChild(toast);
-  setTimeout(() => { if (toast.parentNode) toast.remove(); }, 3800);
+  // Failures carry the reason (for example Paystack's message), so they stay
+  // until dismissed instead of vanishing after a few seconds.
+  const isFailure = /fail|error|could not|unable|refused/i.test(title);
+  if (!isFailure) setTimeout(() => { if (toast.parentNode) toast.remove(); }, 3800);
 }
 
 function logAudit(action, detail, actor = 'Adaeze O. (Finance Manager)') {

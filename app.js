@@ -1922,7 +1922,7 @@ function renderModal() {
           <div class="receipt-header">
             <h3>ABC HEALTHCARE NIGERIA</h3>
             <p style="margin:2px 0;font-size:10px;">Consolidated Hospital Operations · Nigeria</p>
-            <p style="margin:2px 0;font-size:10px;">Branch: ${inv.branch || 'Wuse'} · Tel: +234 9 291 0000</p>
+            <p style="margin:2px 0;font-size:10px;">${inv.live && !inv.knownBranch ? '' : `Branch: ${escapeHtml(inv.branch || 'Wuse')} · `}Tel: +234 9 291 0000</p>
           </div>
           <div class="receipt-row"><span>Receipt / Invoice:</span><strong>${escapeHtml(inv.id)}</strong></div>
           <div class="receipt-row"><span>Date:</span><span>${inv.date || 'Sep 27, 2026'}</span></div>
@@ -1939,7 +1939,9 @@ function renderModal() {
           </div>
           <div class="receipt-row"><span>Paid to Date:</span><strong>${money(inv.paid)}</strong></div>
           <div class="receipt-row"><span>Balance Due:</span><strong style="color:var(--color-accent)">${money(inv.amount - inv.paid)}</strong></div>
-          <div class="receipt-row" style="margin-top:6px;"><span>Payer:</span><span>${inv.payer || 'Patient / Sponsor'}</span></div>
+          ${inv.live
+            ? `<div class="receipt-row" style="margin-top:6px;"><span>For:</span><span>${escapeHtml(inv.description || '')}</span></div>`
+            : `<div class="receipt-row" style="margin-top:6px;"><span>Payer:</span><span>${escapeHtml(inv.payer || 'Patient / Sponsor')}</span></div>`}
           <div class="receipt-row"><span>Status:</span><span><strong>${escapeHtml(inv.status)}</strong></span></div>
           <p style="text-align:center;font-size:10px;margin-top:12px;color:#555;">Thank you for trusting ABC Healthcare.<br>Powered by WelliPay Provider SaaS</p>
         </div>
@@ -2239,10 +2241,12 @@ async function syncInvoicesFromApi() {
       amount: fromMinor(item.amountMinor),
       paid: fromMinor(item.paidAmountMinor),
       branch: FACILITY_BRANCH[item.facilityRef] || item.facilityRef,
+      knownBranch: Boolean(FACILITY_BRANCH[item.facilityRef]),
       // No payer-type field exists on Invoice (see receivables ageing) —
       // this column shows the invoice's real description instead of a
       // fabricated payer name.
       payer: item.description,
+      description: item.description,
       status: INVOICE_STATUS_LABEL[item.status] || item.status,
       live: true,
     }));

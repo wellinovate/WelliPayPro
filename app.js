@@ -36,7 +36,7 @@ function applyTheme() {
 function applyStaffToTopbar(staff) {
   const roleTag = document.getElementById('topbar-role');
   const avatar  = document.getElementById('topbar-avatar');
-  if (roleTag) roleTag.textContent = staff.accessLevel ? `${staff.role} · ${accessLevelLabel(staff.accessLevel)}` : staff.role;
+  if (roleTag) roleTag.textContent = staff.accessLevel ? `${escapeHtml(staff.role)} · ${accessLevelLabel(staff.accessLevel)}` : staff.role;
   if (avatar) {
     const initials = staff.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
     avatar.textContent = initials;
@@ -128,9 +128,9 @@ function openProfileDropdown() {
   el.id = 'profile-dropdown';
   el.innerHTML = `
     <div class="profile-dropdown-header">
-      <strong>${user.name}</strong>
-      <span>${user.email}</span>
-      <span style="margin-top:3px;display:block;font-size:10px;color:var(--color-accent);font-weight:700;">${user.role}</span>
+      <strong>${escapeHtml(user.name)}</strong>
+      <span>${escapeHtml(user.email)}</span>
+      <span style="margin-top:3px;display:block;font-size:10px;color:var(--color-accent);font-weight:700;">${escapeHtml(user.role)}</span>
     </div>
     <div class="profile-dropdown-item" data-action="goto-settings">⚙️  Settings</div>
     <div class="profile-dropdown-item" data-action="goto-audit">📋  Audit Log</div>
@@ -444,9 +444,9 @@ function renderDashboard() {
   const tiles = [['₦2,450,000','This period','Revenue'],['₦1,950,000','This period','Collected'],['₦500,000','This period','Outstanding'],['₦1,200,000','Owed to facility','HMO receivables'],['₦750,000','Awaiting HMO decision','Pending claims'],['₦450,000','In gateway pipeline','Pending settlements'],['124','This period','Patients served'],['₦35,000','This period','Refunds']];
   const trend = [1.8,2.1,1.6,2.4,2.0,2.6,2.45];
   const trendMax = Math.max(...trend);
-  const unmatchedMarkup = state.unmatched.length ? state.unmatched.slice(0,3).map(item=>`<div class="data-row"><div class="data-primary"><strong>${money(item.amount)} · ${item.source}</strong><span>${item.suggestion}</span></div><button class="btn btn-secondary" data-action="open-match" data-id="${item.id}">Match</button></div>`).join('') : '<p class="empty-state">Nothing unmatched right now.</p>';
-  const approvalRows = `${state.approvals.length ? `<div class="table-wrap"><table class="table approval-table"><thead><tr><th>Type</th><th>Amount</th><th>Requester</th><th>Reason</th><th>Decision</th></tr></thead><tbody>${state.approvals.map(item=>`<tr><td>${item.type}</td><td>${money(item.amount)}</td><td>${item.requester}</td><td>${item.reason}</td><td>${item.deciding ? tag('Processing…','outline') : `<button class="btn btn-secondary" data-action="approval" data-decision="Rejected" data-id="${item.id}">Reject</button> <button class="btn btn-primary" data-action="approval" data-decision="Approved" data-id="${item.id}">Approve</button>`}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-state">Queue is clear — nothing pending approval.</p>'}${state.approvalHistory.length ? `<div class="approval-history"><span class="card-kicker">Recent decisions</span>${state.approvalHistory.slice(0,5).map(item=>`<div class="data-row"><div class="data-primary"><strong>${item.decision} ${item.type.toLowerCase()} · ${money(item.amount)}</strong><span>${item.requester} · ${item.reason} · ${item.actor} · ${item.time}</span></div>${tag(item.decision,item.decision==='Approved'?'neutral':'accent')}</div>`).join('')}</div>` : ''}`;
-  const messages = state.messages.map(item=>`<div class="chat-line ${item.role}"><div class="chat-bubble">${escapeHtml(item.text)}</div></div>`).join('');
+  const unmatchedMarkup = state.unmatched.length ? state.unmatched.slice(0,3).map(item=>`<div class="data-row"><div class="data-primary"><strong>${money(item.amount)} · ${escapeHtml(item.source)}</strong><span>${escapeHtml(item.suggestion)}</span></div><button class="btn btn-secondary" data-action="open-match" data-id="${escapeHtml(item.id)}">Match</button></div>`).join('') : '<p class="empty-state">Nothing unmatched right now.</p>';
+  const approvalRows = `${state.approvals.length ? `<div class="table-wrap"><table class="table approval-table"><thead><tr><th>Type</th><th>Amount</th><th>Requester</th><th>Reason</th><th>Decision</th></tr></thead><tbody>${state.approvals.map(item=>`<tr><td>${escapeHtml(item.type)}</td><td>${money(item.amount)}</td><td>${escapeHtml(item.requester)}</td><td>${escapeHtml(item.reason)}</td><td>${item.deciding ? tag('Processing…','outline') : `<button class="btn btn-secondary" data-action="approval" data-decision="Rejected" data-id="${escapeHtml(item.id)}">Reject</button> <button class="btn btn-primary" data-action="approval" data-decision="Approved" data-id="${escapeHtml(item.id)}">Approve</button>`}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-state">Queue is clear — nothing pending approval.</p>'}${state.approvalHistory.length ? `<div class="approval-history"><span class="card-kicker">Recent decisions</span>${state.approvalHistory.slice(0,5).map(item=>`<div class="data-row"><div class="data-primary"><strong>${escapeHtml(item.decision)} ${item.type.toLowerCase()} · ${money(item.amount)}</strong><span>${escapeHtml(item.requester)} · ${escapeHtml(item.reason)} · ${escapeHtml(item.actor)} · ${escapeHtml(item.time)}</span></div>${tag(item.decision,item.decision==='Approved'?'neutral':'accent')}</div>`).join('')}</div>` : ''}`;
+  const messages = state.messages.map(item=>`<div class="chat-line ${escapeHtml(item.role)}"><div class="chat-bubble">${escapeHtml(item.text)}</div></div>`).join('');
   const snapshot = state.liveSnapshot;
   const snapshotCard = snapshot ? card('<div class="section-heading"><span>Live snapshot</span><span style="color:var(--muted);font-weight:400;font-size:13px">from wellipay-api</span></div>', `<div class="mini-metrics"><div class="mini-metric"><strong>${money(snapshot.collected)}</strong><span>Collected · ${snapshot.paymentCount} payments</span></div><div class="mini-metric"><strong>${money(snapshot.pendingClaims)}</strong><span>Pending claims</span></div><div class="mini-metric"><strong>${money(snapshot.approvedClaims)}</strong><span>Approved claims</span></div><div class="mini-metric"><strong>${money(snapshot.patientBalance)}</strong><span>Patient balance · ${snapshot.patientCount} patients</span></div></div>`) : (state.dashboardSyncing ? card('Live snapshot', '<p class="empty-state">Loading live figures…</p>') : '');
   const receivables = state.liveReceivables;
@@ -500,7 +500,7 @@ function renderDesk() {
     <div class="page-heading"><div><span class="eyebrow">Hospital Desk</span><h2>Front desk & cashier</h2><p>Manage today’s patient billing, insurance eligibility and point-of-sale collections.</p></div><div class="toolbar"><button class="btn btn-secondary" data-action="open-new-patient">New Patient</button><button class="btn btn-secondary" data-action="open-find-patient">Find Patient</button><button class="btn btn-primary" data-action="open-wellipass">Scan WelliPass</button></div></div>
     ${metricGrid(activity.map(([value,label])=>[value,label,label]),'grid activity-grid')}
     <div class="desk-layout"><div class="desk-stack">${card('Payment queue',`<div class="row-list">${[['John',50000,'Awaiting','outline'],['Mary',120000,'HMO','outline'],['Peter',80000,'Family','accent'],['David',200000,'Financing','outline'],['Sarah',30000,'Partial','neutral']].map(([name,amount,status,type])=>`<div class="queue-row"><strong>${name}</strong><span>${money(amount)}</span>${tag(status,type)}</div>`).join('')}</div>`)}${card('Recent activity',`${dataRow('Receipt RCT-9021','Tunde A. · Wuse · 09:12','Paid')}${dataRow('HMO request sent','Reliance Gold · 09:04','Pending','outline')}${dataRow('Family payment received','Peter · 08:51','Settled')}`)}</div>
-    <section class="card elev-sm bill-card"><span class="card-kicker">Create bill & collect payment</span><div class="patient-summary"><div><strong>${state.patient.name} · ${state.patient.welliId}</strong><span>${state.patient.hmo}</span></div><button class="btn btn-ghost" data-action="open-find-patient">Change →</button></div><div class="row-list">${[['Consultation',15000],['ECG',18000],['Lab — Full Blood Count',25000]].map(([name,amount])=>`<div class="data-row"><span>${name}</span><strong>${money(amount)}</strong></div>`).join('')}<div class="data-row"><strong>Total</strong><strong>${money(total)}</strong></div></div><div class="payer-group"><span class="card-kicker">Who is paying?</span><div class="seg">${[['patient','Patient'],['family','Family'],['hmo','HMO'],['financing','Financing'],['mixed','Mixed']].map(([id,label])=>`<label class="seg-opt"><input type="radio" name="payer" value="${id}" ${state.payer===id?'checked':''}><span>${label}</span></label>`).join('')}</div></div><div class="workflow-panel ${state.payment==='paid'?'neutral':''}">${flow}</div></section></div>
+    <section class="card elev-sm bill-card"><span class="card-kicker">Create bill & collect payment</span><div class="patient-summary"><div><strong>${escapeHtml(state.patient.name)} · ${escapeHtml(state.patient.welliId)}</strong><span>${escapeHtml(state.patient.hmo)}</span></div><button class="btn btn-ghost" data-action="open-find-patient">Change →</button></div><div class="row-list">${[['Consultation',15000],['ECG',18000],['Lab — Full Blood Count',25000]].map(([name,amount])=>`<div class="data-row"><span>${name}</span><strong>${money(amount)}</strong></div>`).join('')}<div class="data-row"><strong>Total</strong><strong>${money(total)}</strong></div></div><div class="payer-group"><span class="card-kicker">Who is paying?</span><div class="seg">${[['patient','Patient'],['family','Family'],['hmo','HMO'],['financing','Financing'],['mixed','Mixed']].map(([id,label])=>`<label class="seg-opt"><input type="radio" name="payer" value="${id}" ${state.payer===id?'checked':''}><span>${label}</span></label>`).join('')}</div></div><div class="workflow-panel ${state.payment==='paid'?'neutral':''}">${flow}</div></section></div>
   </div>`;
 }
 
@@ -527,7 +527,7 @@ function renderPatients() {
           ${['All','HMO','Self-Pay','Family','With Balance'].map(f => `<button class="filter-btn ${state.patientFilter === f ? 'active' : ''}" data-action="filter-patients" data-filter="${f}">${f}</button>`).join('')}
         </div>
         <div class="search-box">
-          <input class="input" placeholder="Search by name or WelliID…" value="${state.patientSearch}" data-action="search-patients" aria-label="Search patients">
+          <input class="input" placeholder="Search by name or WelliID…" value="${escapeHtml(state.patientSearch)}" data-action="search-patients" aria-label="Search patients">
         </div>
       </div>
       <div class="table-wrap">
@@ -536,15 +536,15 @@ function renderPatients() {
           <tbody>
             ${filtered.map(p => `
               <tr>
-                <td><strong>${p.name}</strong><br><small style="color:var(--muted)">${p.id} · ${p.phone}</small></td>
-                <td>${p.hmo} <small style="color:var(--muted)">(${p.plan})</small></td>
-                <td>${p.branch}</td>
+                <td><strong>${escapeHtml(p.name)}</strong><br><small style="color:var(--muted)">${escapeHtml(p.id)} · ${escapeHtml(p.phone)}</small></td>
+                <td>${escapeHtml(p.hmo)} <small style="color:var(--muted)">(${escapeHtml(p.plan)})</small></td>
+                <td>${escapeHtml(p.branch)}</td>
                 <td><strong>${money(p.balance)}</strong>${p.live ? ' <small style="color:var(--muted)">(Live)</small>' : ''}</td>
                 <td>${p.sponsors.length ? p.sponsors.join(', ') : '—'}</td>
                 <td>${tag(p.status, p.balance > 0 ? 'accent' : 'neutral')}</td>
                 <td>
-                  <button class="btn btn-secondary" data-action="bill-patient" data-id="${p.id}" style="font-size:11px;padding:4px 8px;">Bill at Desk</button>
-                  <button class="btn btn-ghost" data-action="view-patient" data-id="${p.id}" style="font-size:11px;padding:4px 8px;">Profile</button>
+                  <button class="btn btn-secondary" data-action="bill-patient" data-id="${escapeHtml(p.id)}" style="font-size:11px;padding:4px 8px;">Bill at Desk</button>
+                  <button class="btn btn-ghost" data-action="view-patient" data-id="${escapeHtml(p.id)}" style="font-size:11px;padding:4px 8px;">Profile</button>
                 </td>
               </tr>
             `).join('')}
@@ -574,7 +574,7 @@ function renderInvoices() {
           ${['All','Unpaid','Part-paid','Paid','Draft'].map(f => `<button class="filter-btn ${state.invoiceFilter === f ? 'active' : ''}" data-action="filter-invoices" data-filter="${f}">${f}</button>`).join('')}
         </div>
         <div class="search-box">
-          <input class="input" placeholder="Search invoice # or patient…" value="${state.invoiceSearch}" data-action="search-invoices" aria-label="Search invoices">
+          <input class="input" placeholder="Search invoice # or patient…" value="${escapeHtml(state.invoiceSearch)}" data-action="search-invoices" aria-label="Search invoices">
         </div>
       </div>
       <div class="table-wrap">
@@ -583,18 +583,18 @@ function renderInvoices() {
           <tbody>
             ${filtered.map(inv => `
               <tr>
-                <td><strong>${inv.id}</strong></td>
-                <td>${inv.patient}<br><small style="color:var(--muted)">${inv.patientId} · ${inv.branch}</small></td>
-                <td>${inv.date}</td>
+                <td><strong>${escapeHtml(inv.id)}</strong></td>
+                <td>${escapeHtml(inv.patient)}<br><small style="color:var(--muted)">${escapeHtml(inv.patientId)} · ${escapeHtml(inv.branch)}</small></td>
+                <td>${escapeHtml(inv.date)}</td>
                 <td><strong>${money(inv.amount)}</strong></td>
                 <td>${money(inv.paid)}</td>
                 <td><strong style="color:${inv.amount - inv.paid > 0 ? 'var(--color-accent-700)' : 'inherit'}">${money(inv.amount - inv.paid)}</strong></td>
-                <td><small>${inv.payer}</small></td>
+                <td><small>${escapeHtml(inv.payer)}</small></td>
                 <td>${tag(inv.status, inv.status === 'Paid' ? 'neutral' : inv.status === 'Unpaid' ? 'accent' : 'outline')}</td>
                 <td>
-                  <button class="btn btn-secondary" data-action="view-invoice-modal" data-id="${inv.id}" style="font-size:11px;padding:4px 8px;">View Receipt</button>
+                  <button class="btn btn-secondary" data-action="view-invoice-modal" data-id="${escapeHtml(inv.id)}" style="font-size:11px;padding:4px 8px;">View Receipt</button>
                   ${inv.live && inv.invoiceId && inv.status !== 'Paid' ? `<button class="btn btn-primary" data-action="open-paystack-pay" data-id="${escapeHtml(inv.id)}" style="font-size:11px;padding:4px 8px;">Pay online</button>` : ''}
-                  <button class="btn btn-ghost" data-action="send-invoice-sms" data-id="${inv.id}" style="font-size:11px;padding:4px 8px;">Send SMS</button>
+                  <button class="btn btn-ghost" data-action="send-invoice-sms" data-id="${escapeHtml(inv.id)}" style="font-size:11px;padding:4px 8px;">Send SMS</button>
                 </td>
               </tr>
             `).join('')}
@@ -629,14 +629,14 @@ function renderPayments() {
           <tbody>
             ${filtered.map(p => `
               <tr>
-                <td><strong>${p.id}</strong><br><small style="color:var(--muted)">${p.ref}</small></td>
-                <td>${p.channel}</td>
-                <td>${p.patient}<br><small style="color:var(--muted)">${p.inv}</small></td>
-                <td>${p.branch}</td>
+                <td><strong>${escapeHtml(p.id)}</strong><br><small style="color:var(--muted)">${escapeHtml(p.ref)}</small></td>
+                <td>${escapeHtml(p.channel)}</td>
+                <td>${escapeHtml(p.patient)}<br><small style="color:var(--muted)">${escapeHtml(p.inv)}</small></td>
+                <td>${escapeHtml(p.branch)}</td>
                 <td><strong>${money(p.amount)}</strong></td>
-                <td>${p.time}</td>
+                <td>${escapeHtml(p.time)}</td>
                 <td>${tag(p.status, 'neutral')}</td>
-                <td><button class="btn btn-secondary" data-action="view-payment-receipt" data-id="${p.id}" style="font-size:11px;padding:4px 8px;">Receipt</button></td>
+                <td><button class="btn btn-secondary" data-action="view-payment-receipt" data-id="${escapeHtml(p.id)}" style="font-size:11px;padding:4px 8px;">Receipt</button></td>
               </tr>
             `).join('')}
           </tbody>
@@ -664,7 +664,7 @@ function renderServicesPricing() {
           ${['All','Consultation','Cardiology','Diagnostics','Lab','Packages'].map(f => `<button class="filter-btn ${state.serviceFilter === f ? 'active' : ''}" data-action="filter-services" data-filter="${f}">${f}</button>`).join('')}
         </div>
         <div class="search-box">
-          <input class="input" placeholder="Search service…" value="${state.serviceSearch}" data-action="search-services" aria-label="Search service">
+          <input class="input" placeholder="Search service…" value="${escapeHtml(state.serviceSearch)}" data-action="search-services" aria-label="Search service">
         </div>
       </div>
       <div class="table-wrap">
@@ -677,7 +677,7 @@ function renderServicesPricing() {
               const varianceClass = variancePct < 0 ? 'variance-neg' : variancePct > 0 ? 'variance-pos' : 'variance-par';
               return `
                 <tr>
-                  <td><strong>${s.name}</strong><br><small style="color:var(--muted)">${s.id}</small></td>
+                  <td><strong>${escapeHtml(s.name)}</strong><br><small style="color:var(--muted)">${escapeHtml(s.id)}</small></td>
                   <td>${tag(s.cat, 'outline')}</td>
                   <td><strong>${money(s.cash)}</strong></td>
                   <td>${money(s.reliance)}</td>
@@ -712,7 +712,7 @@ function renderClaimItem(item, isLive) {
   const reason = item.reason;
   const prefix = isLive ? 'live-' : '';
   const simulateLabel = isLive ? '' : 'Simulate: ';
-  return `<div class="auth-item"><div class="auth-head"><div class="data-primary"><strong>${ref}</strong><span>${hmo} · ${money(amount)}${isLive ? ' <small style="color:var(--muted)">(Live)</small>' : ''}</span></div>${tag(status,status==='Approved'?'neutral':status==='Rejected'?'accent':'outline')}</div>${reason?`<p class="claim-reason" style="color:var(--color-accent-700);margin:6px 0;"><strong>Rejection reason:</strong> ${reason}</p>`:''}<div class="toolbar" style="margin-top:8px;">${status==='Draft'?`<button class="btn btn-primary" data-action="${prefix}claim-submit" data-id="${id}">Submit claim</button>`:''}${status==='Submitted'?`<button class="btn btn-secondary" data-action="${prefix}claim-approve" data-id="${id}">${simulateLabel}approve</button><button class="btn btn-secondary" data-action="${prefix}claim-reject" data-id="${id}">${simulateLabel}reject</button>`:''}${status==='Rejected'?`<button class="btn btn-primary" data-action="${prefix}claim-resubmit" data-id="${id}">Resubmit claim</button>`:''}</div></div>`;
+  return `<div class="auth-item"><div class="auth-head"><div class="data-primary"><strong>${escapeHtml(ref)}</strong><span>${escapeHtml(hmo)} · ${money(amount)}${isLive ? ' <small style="color:var(--muted)">(Live)</small>' : ''}</span></div>${tag(escapeHtml(status),status==='Approved'?'neutral':status==='Rejected'?'accent':'outline')}</div>${reason?`<p class="claim-reason" style="color:var(--color-accent-700);margin:6px 0;"><strong>Rejection reason:</strong> ${escapeHtml(reason)}</p>`:''}<div class="toolbar" style="margin-top:8px;">${status==='Draft'?`<button class="btn btn-primary" data-action="${prefix}claim-submit" data-id="${escapeHtml(id)}">Submit claim</button>`:''}${status==='Submitted'?`<button class="btn btn-secondary" data-action="${prefix}claim-approve" data-id="${escapeHtml(id)}">${simulateLabel}approve</button><button class="btn btn-secondary" data-action="${prefix}claim-reject" data-id="${escapeHtml(id)}">${simulateLabel}reject</button>`:''}${status==='Rejected'?`<button class="btn btn-primary" data-action="${prefix}claim-resubmit" data-id="${escapeHtml(id)}">Resubmit claim</button>`:''}</div></div>`;
 }
 
 function renderClaims() {
@@ -733,7 +733,7 @@ function renderHmoInsurance() {
     ${pageHeading('Claims & Payers', 'HMO / Insurance Directory', 'Contracted HMO profiles, eligibility verification criteria, benefit caps and SLA performance.')}
     ${metricGrid([['9','Contracted HMOs','Active'],['27','Active Insurance Plans','Policies'],['4.2 hrs','Avg Pre-Auth SLA','Turnaround'],['₦3.52M','Outstanding HMO Debts','Receivables']])}
     ${card('Live claims by payer <small style="font-weight:400;color:var(--muted)">from wellipay-api</small>', byPayer.size
-      ? `<div class="row-list">${[...byPayer.entries()].map(([name, stats]) => `<div class="data-row"><span>${name}${knownNames.has(name) ? '' : ' <small style="color:var(--muted)">(not a contracted payer above)</small>'}</span><strong>${stats.count} claim${stats.count === 1 ? '' : 's'} · ${money(fromMinor(stats.submittedMinor))} submitted${stats.approvedMinor ? ` · ${money(fromMinor(stats.approvedMinor))} approved` : ''}</strong></div>`).join('')}</div>`
+      ? `<div class="row-list">${[...byPayer.entries()].map(([name, stats]) => `<div class="data-row"><span>${escapeHtml(name)}${knownNames.has(name) ? '' : ' <small style="color:var(--muted)">(not a contracted payer above)</small>'}</span><strong>${stats.count} claim${stats.count === 1 ? '' : 's'} · ${money(fromMinor(stats.submittedMinor))} submitted${stats.approvedMinor ? ` · ${money(fromMinor(stats.approvedMinor))} approved` : ''}</strong></div>`).join('')}</div>`
       : `<p style="color:var(--muted)">${state.claimsSynced ? 'No live claims recorded yet.' : 'Loading live claims…'}</p>`
     )}
     <div class="grid two-col">
@@ -762,7 +762,7 @@ function renderHmoInsurance() {
 /* 9. Authorization Centre */
 function renderAuthorization() {
   const counts=Object.entries(state.authCounts).map(([label,value])=>`<section class="card elev-sm auth-count"><span class="stat-value">${value}</span><span class="stat-label">${label}</span></section>`).join('');
-  const authItems=state.authItems.map(item=>`<div class="auth-item"><div class="auth-head" data-action="toggle-auth" data-id="${item.id}"><div class="data-primary"><strong>${item.patient} · ${item.service}</strong><span>${item.hmo} · ${money(item.amount)}</span></div>${tag(item.status,item.status==='Approved'?'neutral':item.status==='Rejected'?'accent':'outline')}</div>${state.selectedAuth===item.id?`<div class="auth-detail">${item.readiness?`<div class="readiness"><span class="card-kicker">Readiness</span><div class="progress-track"><div class="progress-fill" style="width:${item.readiness}%"></div></div><strong>${item.readiness}%</strong></div>`:''}${item.timeline.map(([time,text])=>`<div class="timeline-line"><time>${time}</time><span>${text}</span></div>`).join('')}<div class="toolbar">${item.status==='Draft'?`<button class="btn btn-primary" data-action="submit-auth" data-id="${item.id}">Submit to HMO</button>`:''}${['Submitted','Pending'].includes(item.status)?`<button class="btn btn-secondary" data-action="approve-auth" data-id="${item.id}">Simulate: HMO approves</button>`:''}${item.status==='Approved'?'<span class="stat-label">Patient notified.</span>':''}</div></div>`:''}</div>`).join('');
+  const authItems=state.authItems.map(item=>`<div class="auth-item"><div class="auth-head" data-action="toggle-auth" data-id="${escapeHtml(item.id)}"><div class="data-primary"><strong>${escapeHtml(item.patient)} · ${escapeHtml(item.service)}</strong><span>${escapeHtml(item.hmo)} · ${money(item.amount)}</span></div>${tag(item.status,item.status==='Approved'?'neutral':item.status==='Rejected'?'accent':'outline')}</div>${state.selectedAuth===item.id?`<div class="auth-detail">${item.readiness?`<div class="readiness"><span class="card-kicker">Readiness</span><div class="progress-track"><div class="progress-fill" style="width:${escapeHtml(item.readiness)}%"></div></div><strong>${escapeHtml(item.readiness)}%</strong></div>`:''}${item.timeline.map(([time,text])=>`<div class="timeline-line"><time>${time}</time><span>${text}</span></div>`).join('')}<div class="toolbar">${item.status==='Draft'?`<button class="btn btn-primary" data-action="submit-auth" data-id="${escapeHtml(item.id)}">Submit to HMO</button>`:''}${['Submitted','Pending'].includes(item.status)?`<button class="btn btn-secondary" data-action="approve-auth" data-id="${escapeHtml(item.id)}">Simulate: HMO approves</button>`:''}${item.status==='Approved'?'<span class="stat-label">Patient notified.</span>':''}</div></div>`:''}</div>`).join('');
   return `<div class="page">
     ${renderBranchBanner()}
     ${pageHeading('Authorization Centre','Pre-authorization & eligibility','Track payer decisions, service readiness and member benefit limits.')}
@@ -780,7 +780,7 @@ function renderFamily() {
   return `<div class="page">
     ${renderBranchBanner()}
     ${pageHeading('Family / Sponsors','Multi-sponsor funding','Coordinate contributions toward a single treatment invoice.')}
-    ${card(`<div class="section-heading"><span>Chidi O. — Treatment plan</span><strong>${money(total)}</strong></div>`,`${state.family.map(item=>`<div class="split-row"><span>${item.name}</span><strong>${money(item.amount)}</strong>${item.paid?tag('Paid'): `<button class="btn btn-secondary" data-action="contribute" data-name="${item.name}">Simulate pays</button>`}</div>`).join('')}<div class="progress-track"><div class="progress-fill" style="width:${funded/total*100}%"></div></div><div class="progress-meta"><span>Funded ${money(funded)}</span><span>Remaining ${money(remaining)}</span></div>${remaining===0?tag('Bill fully funded — settled to provider'):''}`,'funding-card')}
+    ${card(`<div class="section-heading"><span>Chidi O. — Treatment plan</span><strong>${money(total)}</strong></div>`,`${state.family.map(item=>`<div class="split-row"><span>${escapeHtml(item.name)}</span><strong>${money(item.amount)}</strong>${item.paid?tag('Paid'): `<button class="btn btn-secondary" data-action="contribute" data-name="${escapeHtml(item.name)}">Simulate pays</button>`}</div>`).join('')}<div class="progress-track"><div class="progress-fill" style="width:${funded/total*100}%"></div></div><div class="progress-meta"><span>Funded ${money(funded)}</span><span>Remaining ${money(remaining)}</span></div>${remaining===0?tag('Bill fully funded — settled to provider'):''}`,'funding-card')}
     ${card('Sponsor directory',`${dataRow('Femi O. — Invoice INV-2048','Sponsor: Brother (UK) — ₦58,000','Paid')}${dataRow('Blessing K. — Invoice INV-2061','Sponsor: Daughter — ₦23,500','Awaiting payment','outline')}${dataRow('Chidi O. — Treatment plan','3 sponsors — ₦1,000,000 total','Partially funded','outline')}`)}
   </div>`;
 }
@@ -844,7 +844,7 @@ function renderReceivables() {
     ? `<div class="table-wrap"><table class="table"><thead><tr><th>${AGEING_BUCKETS.map(b => `<th>${b.label}</th>`).join('')}<th>Total</th></tr></thead><tbody><tr>${AGEING_BUCKETS.map(b => `<td>${money(receivables.totals[b.key])}</td>`).join('')}<td><strong>${money(receivables.total)}</strong></td></tr></tbody></table></div>`
     : (state.receivablesSyncing ? '<p class="empty-state">Loading live figures…</p>' : '<p class="empty-state">No live data yet.</p>');
   const invoiceRows = receivables && receivables.rows.length
-    ? `<div class="table-wrap"><table class="table"><thead><tr><th>Invoice</th><th>Facility</th><th>Balance</th><th>Days outstanding</th><th>Bucket</th></tr></thead><tbody>${receivables.rows.map(row => `<tr><td>${row.providerInvoiceRef}</td><td>${FACILITY_BRANCH[row.facilityRef] || row.facilityRef}</td><td>${money(row.balance)}</td><td>${row.days}</td><td>${AGEING_BUCKETS.find(b => b.key === row.bucket).label}</td></tr>`).join('')}</tbody></table></div>`
+    ? `<div class="table-wrap"><table class="table"><thead><tr><th>Invoice</th><th>Facility</th><th>Balance</th><th>Days outstanding</th><th>Bucket</th></tr></thead><tbody>${receivables.rows.map(row => `<tr><td>${escapeHtml(row.providerInvoiceRef)}</td><td>${FACILITY_BRANCH[row.facilityRef] || row.facilityRef}</td><td>${money(row.balance)}</td><td>${escapeHtml(row.days)}</td><td>${AGEING_BUCKETS.find(b => b.key === row.bucket).label}</td></tr>`).join('')}</tbody></table></div>`
     : '<p class="empty-state">No open invoices — everything is paid up.</p>';
   return `<div class="page">
     ${renderBranchBanner()}
@@ -857,7 +857,7 @@ function renderReceivables() {
 /* 13. Reconciliation */
 function renderReconciliation() {
   const summaries=[[state.matched.toLocaleString(),'Matched'],[state.unmatched.length,'Unmatched'],[state.exceptions,'Exceptions'],[state.duplicates,'Duplicate']];
-  const unmatched=state.unmatched.length?state.unmatched.map(item=>`<div class="data-row"><div class="data-primary"><strong>${money(item.amount)} · ${item.source} · ${item.date}</strong><span>${item.live ? `Ref: ${item.reference || '—'}` : `Suggested: ${item.suggestion}`}</span></div>${item.deciding ? tag('Processing…','outline') : `<button class="btn btn-secondary" data-action="open-match" data-id="${item.id}">Review match</button>`}</div>`).join(''):'<p class="empty-state">Nothing unmatched right now.</p>';
+  const unmatched=state.unmatched.length?state.unmatched.map(item=>`<div class="data-row"><div class="data-primary"><strong>${money(item.amount)} · ${escapeHtml(item.source)} · ${escapeHtml(item.date)}</strong><span>${item.live ? `Ref: ${item.reference || '—'}` : `Suggested: ${escapeHtml(item.suggestion)}`}</span></div>${item.deciding ? tag('Processing…','outline') : `<button class="btn btn-secondary" data-action="open-match" data-id="${escapeHtml(item.id)}">Review match</button>`}</div>`).join(''):'<p class="empty-state">Nothing unmatched right now.</p>';
   const liveSummary = state.liveReconciliationSummary;
   const liveCard = liveSummary
     ? card('<div class="section-heading"><span>Live reconciliation</span><span style="color:var(--muted);font-weight:400;font-size:13px">from wellipay-api</span></div>', `<div class="mini-metrics"><div class="mini-metric"><strong>${liveSummary.unmatched}</strong><span>Unmatched</span></div><div class="mini-metric"><strong>${liveSummary.matched}</strong><span>Matched</span></div><div class="mini-metric"><strong>${liveSummary.exception}</strong><span>Exceptions</span></div></div>`)
@@ -878,11 +878,11 @@ function renderSettlements() {
   const rows=[['Wuse',1240000,120000],['Garki',780000,0],['Maitama',1650000,210000],['Kaduna',310000,60000],['Lagos',420000,60000]];
   const liveRows = state.liveSettlements.map(s => `
     <tr>
-      <td><strong>${FACILITY_BRANCH[s.facilityRef] || s.facilityRef}</strong> <small style="color:var(--muted)">(Live)</small><br><small style="color:var(--muted)">${s.settlementId}</small></td>
+      <td><strong>${FACILITY_BRANCH[s.facilityRef] || s.facilityRef}</strong> <small style="color:var(--muted)">(Live)</small><br><small style="color:var(--muted)">${escapeHtml(s.settlementId)}</small></td>
       <td>${money(fromMinor(s.amountMinor))}</td>
       <td>${s.paymentCount ?? '—'}</td>
       <td>${tag(s.status === 'SETTLED' ? 'Settled' : 'Pending', s.status === 'SETTLED' ? 'neutral' : 'outline')}</td>
-      <td>${s.status === 'PENDING' ? `<button class="btn btn-secondary" data-action="confirm-settlement" data-id="${s.settlementId}" style="font-size:11px;padding:4px 8px;">Confirm Settled</button>` : ''}</td>
+      <td>${s.status === 'PENDING' ? `<button class="btn btn-secondary" data-action="confirm-settlement" data-id="${escapeHtml(s.settlementId)}" style="font-size:11px;padding:4px 8px;">Confirm Settled</button>` : ''}</td>
     </tr>
   `).join('');
   return `<div class="page">
@@ -918,16 +918,16 @@ function renderRefunds() {
           <tbody>
             ${state.refundList.map(r => `
               <tr>
-                <td><strong>${r.id}</strong></td>
-                <td>${r.patient}<br><small style="color:var(--muted)">${r.inv}</small></td>
+                <td><strong>${escapeHtml(r.id)}</strong></td>
+                <td>${escapeHtml(r.patient)}<br><small style="color:var(--muted)">${escapeHtml(r.inv)}</small></td>
                 <td><strong>${money(r.amount)}</strong></td>
-                <td>${r.requester}</td>
-                <td>${r.reason}</td>
+                <td>${escapeHtml(r.requester)}</td>
+                <td>${escapeHtml(r.reason)}</td>
                 <td>${tag(r.status, r.status === 'Approved' || r.status === 'Settled' ? 'neutral' : 'accent')}</td>
                 <td>
                   ${r.deciding ? tag('Processing…', 'outline') : r.status.includes('Pending') ? `
-                    <button class="btn btn-secondary" data-action="approve-refund-item" data-id="${r.id}" style="font-size:11px;padding:4px 8px;">Approve</button>
-                    <button class="btn btn-ghost" data-action="reject-refund-item" data-id="${r.id}" style="font-size:11px;padding:4px 8px;">Reject</button>
+                    <button class="btn btn-secondary" data-action="approve-refund-item" data-id="${escapeHtml(r.id)}" style="font-size:11px;padding:4px 8px;">Approve</button>
+                    <button class="btn btn-ghost" data-action="reject-refund-item" data-id="${escapeHtml(r.id)}" style="font-size:11px;padding:4px 8px;">Reject</button>
                   ` : tag('Recorded', 'outline')}
                 </td>
               </tr>
@@ -946,9 +946,9 @@ function renderFinancing() {
   const lenderCount = new Set(liveRows.map(r => r.lenderName)).size;
   const rows = liveRows.map(r => `
     <tr>
-      <td><strong>${r.invoiceId}</strong> <small style="color:var(--muted)">(Live)</small><br><small style="color:var(--muted)">${r.financingRecordId}</small></td>
-      <td>${r.lenderName}</td>
-      <td>${r.termMonths ? `${r.termMonths} months` : '—'}</td>
+      <td><strong>${escapeHtml(r.invoiceId)}</strong> <small style="color:var(--muted)">(Live)</small><br><small style="color:var(--muted)">${escapeHtml(r.financingRecordId)}</small></td>
+      <td>${escapeHtml(r.lenderName)}</td>
+      <td>${r.termMonths ? `${escapeHtml(r.termMonths)} months` : '—'}</td>
       <td><strong>${money(fromMinor(r.amountMinor))}</strong></td>
       <td><small>${new Date(r.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}</small></td>
     </tr>
@@ -971,7 +971,7 @@ function renderFinancing() {
 /* 17. Payment Plans */
 function renderLivePlanRow(plan) {
   const invoice = state.invoiceList.find(i => i.live && i.invoiceId === plan.invoiceId);
-  const label = invoice ? `${invoice.patient} · ${invoice.id}` : plan.invoiceId;
+  const label = invoice ? `${escapeHtml(invoice.patient)} · ${escapeHtml(invoice.id)}` : plan.invoiceId;
   const branch = invoice ? invoice.branch : '';
   const paidMinor = plan.installments.filter(i => i.status === 'PAID').reduce((sum, i) => sum + i.amountMinor, 0);
   const paidCount = plan.installments.filter(i => i.status === 'PAID').length;
@@ -979,7 +979,7 @@ function renderLivePlanRow(plan) {
   const next = plan.installments.find(i => i.status === 'PENDING');
   const avgInstallment = plan.totalMinor / plan.installmentCount;
   return `<tr>
-    <td><strong>${label}</strong> <small style="color:var(--muted)">(Live)</small><br><small style="color:var(--muted)">${plan.planId}${branch ? ' · ' + branch : ''}</small></td>
+    <td><strong>${escapeHtml(label)}</strong> <small style="color:var(--muted)">(Live)</small><br><small style="color:var(--muted)">${escapeHtml(plan.planId)}${branch ? ' · ' + escapeHtml(branch) : ''}</small></td>
     <td>${money(fromMinor(plan.totalMinor))}</td>
     <td><strong>${money(fromMinor(paidMinor))}</strong></td>
     <td>
@@ -991,7 +991,7 @@ function renderLivePlanRow(plan) {
     <td>~${money(fromMinor(avgInstallment))}</td>
     <td>${next ? new Date(next.dueAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</td>
     <td>${tag(plan.status === 'COMPLETED' ? 'Completed' : 'Active', plan.status === 'COMPLETED' ? 'neutral' : 'outline')}</td>
-    <td>${next ? `<button class="btn btn-secondary" data-action="pay-plan-installment" data-id="${plan.planId}" data-seq="${next.seq}" style="font-size:11px;padding:4px 8px;">Record Payment (#${next.seq})</button>` : ''}</td>
+    <td>${next ? `<button class="btn btn-secondary" data-action="pay-plan-installment" data-id="${escapeHtml(plan.planId)}" data-seq="${next.seq}" style="font-size:11px;padding:4px 8px;">Record Payment (#${next.seq})</button>` : ''}</td>
   </tr>`;
 }
 
@@ -1001,7 +1001,7 @@ function renderPaymentPlans() {
     const pct = Math.round((plan.paid / plan.total) * 100);
     return `
       <tr>
-        <td><strong>${plan.patient}</strong><br><small style="color:var(--muted)">${plan.id} · ${plan.branch}</small></td>
+        <td><strong>${escapeHtml(plan.patient)}</strong><br><small style="color:var(--muted)">${escapeHtml(plan.id)} · ${escapeHtml(plan.branch)}</small></td>
         <td>${money(plan.total)}</td>
         <td><strong>${money(plan.paid)}</strong></td>
         <td>
@@ -1014,7 +1014,7 @@ function renderPaymentPlans() {
         <td>${plan.nextDue}</td>
         <td>${tag(plan.status, plan.status === 'On track' ? 'neutral' : 'accent')}</td>
         <td>
-          <button class="btn btn-secondary" data-action="remind-plan-sms" data-id="${plan.id}" style="font-size:11px;padding:4px 8px;">Send SMS</button>
+          <button class="btn btn-secondary" data-action="remind-plan-sms" data-id="${escapeHtml(plan.id)}" style="font-size:11px;padding:4px 8px;">Send SMS</button>
         </td>
       </tr>
     `;
@@ -1114,10 +1114,10 @@ function renderBranches() {
       ? '<p class="empty-state">Loading live figures…</p>'
       : (rows.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Branch</th><th>Revenue (successful payments)</th><th>Active staff</th><th>Action</th></tr></thead><tbody>${rows.map(r => `
         <tr>
-          <td><strong>${r.name}</strong></td>
+          <td><strong>${escapeHtml(r.name)}</strong></td>
           <td>${money(r.revenue)}</td>
-          <td>${r.staff}</td>
-          <td><button class="btn btn-secondary" data-action="switch-branch-quick" data-name="${r.name}" style="font-size:11px;padding:4px 8px;">Filter to Branch</button></td>
+          <td>${escapeHtml(r.staff)}</td>
+          <td><button class="btn btn-secondary" data-action="switch-branch-quick" data-name="${escapeHtml(r.name)}" style="font-size:11px;padding:4px 8px;">Filter to Branch</button></td>
         </tr>
       `).join('')}</tbody></table></div>` : '<p class="empty-state">No live payments or staff recorded yet.</p>'))}
   </div>`;
@@ -1135,21 +1135,21 @@ function renderStaffRow(item, isLive) {
   // activity timestamp.
   const lastCol = isLive
     ? `<small style="color:var(--muted)">Invited ${new Date(item.invitedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}</small>`
-    : `<small>${item.lastActive}</small>`;
+    : `<small>${escapeHtml(item.lastActive)}</small>`;
   const accessCell = isLive
-    ? `<select class="input" data-staff-level="${item.staffId}" aria-label="Access level for ${escapeHtml(name)}">${Object.entries(ACCESS_LEVELS).map(([value, meta]) => `<option value="${value}" ${item.accessLevel === value ? 'selected' : ''}>${meta.label}</option>`).join('')}</select>`
+    ? `<select class="input" data-staff-level="${escapeHtml(item.staffId)}" aria-label="Access level for ${escapeHtml(name)}">${Object.entries(ACCESS_LEVELS).map(([value, meta]) => `<option value="${value}" ${item.accessLevel === value ? 'selected' : ''}>${meta.label}</option>`).join('')}</select>`
     : '—';
   const action = isLive
     ? (item.status === 'ACTIVE'
-        ? `<button class="btn btn-secondary" data-action="open-set-password" data-id="${item.staffId}" data-name="${item.name}">Set Password</button>
-           <button class="btn btn-secondary" data-action="deactivate-staff" data-id="${item.staffId}">Deactivate</button>`
-        : `<button class="btn btn-secondary" data-action="reactivate-staff" data-id="${item.staffId}">Reactivate</button>`)
+        ? `<button class="btn btn-secondary" data-action="open-set-password" data-id="${escapeHtml(item.staffId)}" data-name="${escapeHtml(item.name)}">Set Password</button>
+           <button class="btn btn-secondary" data-action="deactivate-staff" data-id="${escapeHtml(item.staffId)}">Deactivate</button>`
+        : `<button class="btn btn-secondary" data-action="reactivate-staff" data-id="${escapeHtml(item.staffId)}">Reactivate</button>`)
     : '';
   return `<tr>
-    <td><strong>${name}</strong>${isLive ? ' <small style="color:var(--muted)">(Live)</small>' : ''}<br><small style="color:var(--muted)">${email}</small></td>
-    <td>${tag(role, 'outline')}</td>
+    <td><strong>${escapeHtml(name)}</strong>${isLive ? ' <small style="color:var(--muted)">(Live)</small>' : ''}<br><small style="color:var(--muted)">${escapeHtml(email)}</small></td>
+    <td>${tag(escapeHtml(role), 'outline')}</td>
     <td>${accessCell}</td>
-    <td>${branch}</td>
+    <td>${escapeHtml(branch)}</td>
     <td>${tag(statusLabel, statusLabel === 'Deactivated' ? 'accent' : 'neutral')}</td>
     <td>${lastCol}</td>
     <td>${action}</td>
@@ -1187,11 +1187,11 @@ function renderAuditLog() {
           <tbody>
             ${state.auditLog.map(ev => `
               <tr>
-                <td><strong>${ev.action}</strong></td>
-                <td>${ev.detail}</td>
-                <td>${ev.actor}</td>
-                <td>${ev.branch}</td>
-                <td><small>${ev.time}</small></td>
+                <td><strong>${escapeHtml(ev.action)}</strong></td>
+                <td>${escapeHtml(ev.detail)}</td>
+                <td>${escapeHtml(ev.actor)}</td>
+                <td>${escapeHtml(ev.branch)}</td>
+                <td><small>${escapeHtml(ev.time)}</small></td>
               </tr>
             `).join('')}
           </tbody>
@@ -1241,8 +1241,8 @@ function renderNotifications() {
     const when = new Date(evt.occurredAt).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
     return `<div class="data-row">
       <div class="data-primary">
-        <strong>${label}</strong>
-        <span>${formatEventDetail(evt)}</span>
+        <strong>${escapeHtml(label)}</strong>
+        <span>${escapeHtml(formatEventDetail(evt))}</span>
       </div>
       <div style="display:flex;align-items:center;gap:10px;">
         <small style="color:var(--muted)">${when}</small>
@@ -1303,14 +1303,14 @@ function renderAiInsights() {
   const payerRows = [...payerStats.entries()].map(([payer, s]) => {
     const rate = s.total ? Math.round((s.rejected / s.total) * 100) : 0;
     const avgDays = s.decisionCount ? (s.decisionDaysSum / s.decisionCount).toFixed(1) : null;
-    return `<div class="data-row"><span>${payer}</span><strong>${avgDays ? `Avg ${avgDays}d to decide` : 'No decided claims yet'} · ${rate}% rejection rate (${s.total} claim${s.total === 1 ? '' : 's'})</strong></div>`;
+    return `<div class="data-row"><span>${escapeHtml(payer)}</span><strong>${avgDays ? `Avg ${avgDays}d to decide` : 'No decided claims yet'} · ${rate}% rejection rate (${escapeHtml(s.total)} claim${s.total === 1 ? '' : 's'})</strong></div>`;
   }).join('') || '<p class="empty-state">No live claims yet.</p>';
 
   const pendingRows = pending.slice(0, 5).map(c => `
     <div class="data-row">
       <div class="data-primary">
-        <strong>${c.providerClaimRef} · ${c.payerRef}</strong>
-        <span>${money(fromMinor(c.amountMinor))} — submitted ${c.ageDays} day${c.ageDays === 1 ? '' : 's'} ago, still awaiting a decision</span>
+        <strong>${escapeHtml(c.providerClaimRef)} · ${escapeHtml(c.payerRef)}</strong>
+        <span>${money(fromMinor(c.amountMinor))} — submitted ${escapeHtml(c.ageDays)} day${c.ageDays === 1 ? '' : 's'} ago, still awaiting a decision</span>
       </div>
       <a class="btn btn-secondary" href="#claims" style="font-size:11px;padding:4px 8px;">Review</a>
     </div>
@@ -1363,7 +1363,7 @@ function renderPartners() {
   partners.forEach(p => { byType[p.type] = (byType[p.type] || 0) + 1; });
   const rows = partners.map(p => `
     <tr>
-      <td><strong>${p.name}</strong></td>
+      <td><strong>${escapeHtml(p.name)}</strong></td>
       <td>${tag(p.type.charAt(0) + p.type.slice(1).toLowerCase(), 'outline')}</td>
       <td>${tag(p.status === 'ACTIVE' ? 'Active' : 'Inactive', p.status === 'ACTIVE' ? 'neutral' : 'accent')}</td>
       <td><small>${new Date(p.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}</small></td>
@@ -1391,11 +1391,11 @@ function renderReferrals() {
   const completedCount = referrals.filter(r => r.status === 'COMPLETED').length;
   const rows = referrals.map(r => `
     <tr>
-      <td><strong>${r.patientRef}</strong> → ${partnerName(r.partnerId)}<br><small style="color:var(--muted)">${r.description}</small></td>
-      <td>${FACILITY_BRANCH[r.facilityRef] || r.facilityRef}</td>
+      <td><strong>${escapeHtml(r.patientRef)}</strong> → ${escapeHtml(partnerName(r.partnerId))}<br><small style="color:var(--muted)">${escapeHtml(r.description)}</small></td>
+      <td>${escapeHtml(FACILITY_BRANCH[r.facilityRef] || r.facilityRef)}</td>
       <td>${tag(r.status === 'COMPLETED' ? 'Completed' : 'Sent', r.status === 'COMPLETED' ? 'neutral' : 'outline')}</td>
       <td><small>${new Date(r.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}</small></td>
-      <td>${r.status === 'SENT' ? `<button class="btn btn-secondary" data-action="complete-referral" data-id="${r.referralId}" style="font-size:11px;padding:4px 8px;">Mark Completed</button>` : ''}</td>
+      <td>${r.status === 'SENT' ? `<button class="btn btn-secondary" data-action="complete-referral" data-id="${escapeHtml(r.referralId)}" style="font-size:11px;padding:4px 8px;">Mark Completed</button>` : ''}</td>
     </tr>
   `).join('');
   return `<div class="page">
@@ -1615,17 +1615,17 @@ function renderModal() {
       return `<div class="modal-backdrop" data-action="dismiss-modal">
         <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="modal-title">
           <h2 id="modal-title">Reconcile transaction</h2>
-          <p>An unattributed <strong>${item.source}</strong> of <strong>${money(item.amount)}</strong> arrived ${item.date}${item.reference ? ` — ref "${escapeHtml(item.reference)}"` : ''}. There's no automatic suggestion for this one — pick the invoice it belongs to, or flag it if nobody can identify it.</p>
+          <p>An unattributed <strong>${escapeHtml(item.source)}</strong> of <strong>${money(item.amount)}</strong> arrived ${escapeHtml(item.date)}${item.reference ? ` — ref "${escapeHtml(item.reference)}"` : ''}. There's no automatic suggestion for this one — pick the invoice it belongs to, or flag it if nobody can identify it.</p>
           ${!liveInvoices.length && state.invoicesSyncing ? '<p style="margin:0 0 8px;font-size:12px;color:var(--muted);">Loading live invoices…</p>' : ''}
-          <form id="match-transaction-form" class="form-grid" data-transaction-id="${item.id}">
+          <form id="match-transaction-form" class="form-grid" data-transaction-id="${escapeHtml(item.id)}">
             <div class="form-group"><label>Match to invoice *</label>
               <select name="invoiceId" required>
                 <option value="">Select an invoice…</option>
-                ${liveInvoices.map(i => `<option value="${i.invoiceId}" data-label="${escapeHtml(i.id)}">${i.id} — ${i.patient} (${money(i.amount - i.paid)} outstanding)</option>`).join('')}
+                ${liveInvoices.map(i => `<option value="${escapeHtml(i.invoiceId)}" data-label="${escapeHtml(i.id)}">${escapeHtml(i.id)} — ${escapeHtml(i.patient)} (${money(i.amount - i.paid)} outstanding)</option>`).join('')}
               </select>
             </div>
             <div class="modal-actions">
-              <button class="btn btn-ghost" type="button" data-action="reject-match" data-id="${item.id}">Flag as exception</button>
+              <button class="btn btn-ghost" type="button" data-action="reject-match" data-id="${escapeHtml(item.id)}">Flag as exception</button>
               <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
               <button class="btn btn-primary" type="submit">Confirm match</button>
             </div>
@@ -1633,7 +1633,7 @@ function renderModal() {
         </section>
       </div>`;
     }
-    return `<div class="modal-backdrop" data-action="dismiss-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><h2 id="modal-title">Confirm match</h2><p>An unmatched payment of <strong>${money(item.amount)}</strong> via ${item.source} looks like it belongs to:</p><p class="patient-summary"><strong>${item.suggestion}</strong></p><div class="modal-actions"><button class="btn btn-secondary" data-action="reject-match">Not a match</button><button class="btn btn-primary" data-action="confirm-match">Confirm match</button></div></section></div>`;
+    return `<div class="modal-backdrop" data-action="dismiss-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><h2 id="modal-title">Confirm match</h2><p>An unmatched payment of <strong>${money(item.amount)}</strong> via ${escapeHtml(item.source)} looks like it belongs to:</p><p class="patient-summary"><strong>${escapeHtml(item.suggestion)}</strong></p><div class="modal-actions"><button class="btn btn-secondary" data-action="reject-match">Not a match</button><button class="btn btn-primary" data-action="confirm-match">Confirm match</button></div></section></div>`;
   }
 
   if (state.modal.type === 'new-payment-plan') {
@@ -1647,7 +1647,7 @@ function renderModal() {
           <div class="form-group"><label>Invoice *</label>
             <select name="invoiceId" required>
               <option value="">Select an invoice…</option>
-              ${liveInvoices.map(i => `<option value="${i.invoiceId}" data-label="${escapeHtml(i.patient)} · ${escapeHtml(i.id)}">${i.id} — ${i.patient} (${money(i.amount - i.paid)} outstanding)</option>`).join('')}
+              ${liveInvoices.map(i => `<option value="${escapeHtml(i.invoiceId)}" data-label="${escapeHtml(i.patient)} · ${escapeHtml(i.id)}">${escapeHtml(i.id)} — ${escapeHtml(i.patient)} (${money(i.amount - i.paid)} outstanding)</option>`).join('')}
             </select>
           </div>
           <div class="form-group"><label>Number of Installments *</label>
@@ -1675,7 +1675,7 @@ function renderModal() {
           <div class="form-group"><label>Invoice *</label>
             <select name="invoiceId" required>
               <option value="">Select an invoice…</option>
-              ${liveInvoices.map(i => `<option value="${i.invoiceId}" data-label="${escapeHtml(i.patient)} · ${escapeHtml(i.id)}">${i.id} — ${i.patient} (${money(i.amount - i.paid)} outstanding)</option>`).join('')}
+              ${liveInvoices.map(i => `<option value="${escapeHtml(i.invoiceId)}" data-label="${escapeHtml(i.patient)} · ${escapeHtml(i.id)}">${escapeHtml(i.id)} — ${escapeHtml(i.patient)} (${money(i.amount - i.paid)} outstanding)</option>`).join('')}
             </select>
           </div>
           <div class="form-grid two-col">
@@ -1729,7 +1729,7 @@ function renderModal() {
           <div class="form-group"><label>Partner *</label>
             <select name="partnerId" required>
               <option value="">Select a partner…</option>
-              ${activePartners.map(p => `<option value="${p.partnerId}" data-label="${escapeHtml(p.name)}">${p.name} (${p.type})</option>`).join('')}
+              ${activePartners.map(p => `<option value="${escapeHtml(p.partnerId)}" data-label="${escapeHtml(p.name)}">${escapeHtml(p.name)} (${escapeHtml(p.type)})</option>`).join('')}
             </select>
           </div>
           <div class="form-grid two-col">
@@ -1822,11 +1822,11 @@ function renderModal() {
             <tbody>
               ${list.map(p => `
                 <tr>
-                  <td><strong>${p.name}</strong></td>
-                  <td>${p.id}</td>
-                  <td>${p.hmo}</td>
-                  <td>${p.branch}</td>
-                  <td><button class="btn btn-primary" data-action="select-desk-patient" data-id="${p.id}" style="font-size:11px;padding:3px 7px;">Select</button></td>
+                  <td><strong>${escapeHtml(p.name)}</strong></td>
+                  <td>${escapeHtml(p.id)}</td>
+                  <td>${escapeHtml(p.hmo)}</td>
+                  <td>${escapeHtml(p.branch)}</td>
+                  <td><button class="btn btn-primary" data-action="select-desk-patient" data-id="${escapeHtml(p.id)}" style="font-size:11px;padding:3px 7px;">Select</button></td>
                 </tr>
               `).join('')}
             </tbody>
@@ -1849,7 +1849,7 @@ function renderModal() {
           <div class="form-grid two-col">
             <div class="form-group"><label>Patient *</label>
               <select name="patientId" required>
-                ${state.patientList.map(p => `<option value="${p.id}">${p.name} (${p.id} · ${p.branch})</option>`).join('')}
+                ${state.patientList.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)} (${escapeHtml(p.id)} · ${escapeHtml(p.branch)})</option>`).join('')}
               </select>
             </div>
             <div class="form-group"><label>Branch</label>
@@ -1860,7 +1860,7 @@ function renderModal() {
           </div>
           <div class="form-group"><label>Primary Service Item</label>
             <select name="serviceItem" id="inv-service-picker">
-              ${state.servicesList.map(s => `<option value="${s.cash}" data-name="${s.name}">${s.name} — ${money(s.cash)}</option>`).join('')}
+              ${state.servicesList.map(s => `<option value="${escapeHtml(s.cash)}" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)} — ${money(s.cash)}</option>`).join('')}
             </select>
           </div>
           <div class="form-grid two-col">
@@ -1924,13 +1924,13 @@ function renderModal() {
             <p style="margin:2px 0;font-size:10px;">Consolidated Hospital Operations · Nigeria</p>
             <p style="margin:2px 0;font-size:10px;">Branch: ${inv.branch || 'Wuse'} · Tel: +234 9 291 0000</p>
           </div>
-          <div class="receipt-row"><span>Receipt / Invoice:</span><strong>${inv.id}</strong></div>
+          <div class="receipt-row"><span>Receipt / Invoice:</span><strong>${escapeHtml(inv.id)}</strong></div>
           <div class="receipt-row"><span>Date:</span><span>${inv.date || 'Sep 27, 2026'}</span></div>
-          <div class="receipt-row"><span>Patient:</span><strong>${inv.patient}</strong></div>
+          <div class="receipt-row"><span>Patient:</span><strong>${escapeHtml(inv.patient)}</strong></div>
           <div class="receipt-row"><span>WelliID:</span><span>${inv.patientId || 'WR-1187-22'}</span></div>
           <div style="border-top:1px dashed #bbb;margin:8px 0;padding-top:6px;">
             ${(inv.items || [{ desc: 'General Consultation & Diagnostics', amt: inv.amount }]).map(it => `
-              <div class="receipt-row"><span>${it.desc}</span><strong>${money(it.amt)}</strong></div>
+              <div class="receipt-row"><span>${escapeHtml(it.desc)}</span><strong>${money(it.amt)}</strong></div>
             `).join('')}
           </div>
           <div class="receipt-total receipt-row">
@@ -1940,7 +1940,7 @@ function renderModal() {
           <div class="receipt-row"><span>Paid to Date:</span><strong>${money(inv.paid)}</strong></div>
           <div class="receipt-row"><span>Balance Due:</span><strong style="color:var(--color-accent)">${money(inv.amount - inv.paid)}</strong></div>
           <div class="receipt-row" style="margin-top:6px;"><span>Payer:</span><span>${inv.payer || 'Patient / Sponsor'}</span></div>
-          <div class="receipt-row"><span>Status:</span><span><strong>${inv.status}</strong></span></div>
+          <div class="receipt-row"><span>Status:</span><span><strong>${escapeHtml(inv.status)}</strong></span></div>
           <p style="text-align:center;font-size:10px;margin-top:12px;color:#555;">Thank you for trusting ABC Healthcare.<br>Powered by WelliPay Provider SaaS</p>
         </div>
         <div class="modal-actions">
@@ -1956,20 +1956,20 @@ function renderModal() {
     const p = state.patientList.find(pt => pt.id === state.modal.id) || state.patientList[0];
     return `<div class="modal-backdrop" data-action="dismiss-modal">
       <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="pt-prof-title">
-        <h2 id="pt-prof-title">${p.name}</h2>
+        <h2 id="pt-prof-title">${escapeHtml(p.name)}</h2>
         <p>Patient Profile & Healthcare Billing History</p>
         <div class="row-list" style="margin-bottom:14px;">
-          <div class="data-row"><span>WelliID</span><strong>${p.id}</strong></div>
-          <div class="data-row"><span>Phone</span><strong>${p.phone}</strong></div>
-          <div class="data-row"><span>Registered Branch</span><strong>${p.branch}</strong></div>
-          <div class="data-row"><span>HMO Plan</span><strong>${p.hmo} (${p.plan})</strong></div>
+          <div class="data-row"><span>WelliID</span><strong>${escapeHtml(p.id)}</strong></div>
+          <div class="data-row"><span>Phone</span><strong>${escapeHtml(p.phone)}</strong></div>
+          <div class="data-row"><span>Registered Branch</span><strong>${escapeHtml(p.branch)}</strong></div>
+          <div class="data-row"><span>HMO Plan</span><strong>${escapeHtml(p.hmo)} (${escapeHtml(p.plan)})</strong></div>
           <div class="data-row"><span>Outstanding Balance</span><strong style="color:${p.balance > 0 ? 'var(--color-accent)' : 'inherit'}">${money(p.balance)}</strong></div>
           <div class="data-row"><span>Linked Sponsors</span><strong>${p.sponsors.length ? p.sponsors.join(', ') : 'None configured'}</strong></div>
           <div class="data-row"><span>WelliPass Status</span>${tag(p.wellipass ? 'Active Digital Pass' : 'Not Issued', p.wellipass ? 'neutral' : 'outline')}</div>
         </div>
         <div class="modal-actions">
           <button class="btn btn-secondary" data-action="close-modal">Close</button>
-          <button class="btn btn-primary" data-action="bill-patient" data-id="${p.id}">Load into Hospital Desk</button>
+          <button class="btn btn-primary" data-action="bill-patient" data-id="${escapeHtml(p.id)}">Load into Hospital Desk</button>
         </div>
       </section>
     </div>`;
@@ -2016,9 +2016,9 @@ function renderModal() {
         <form id="request-refund-form" class="form-grid">
           <div class="form-group"><label>Select Payment *</label>
             <select name="payment" required>
-              ${livePayments.length ? `<optgroup label="Live payments (wellipay-api)">${livePayments.map(p => `<option value="live:${p.apiPaymentId}">${p.ref} — ${p.patient} (${money(p.amount)}, ${p.channel})</option>`).join('')}</optgroup>` : ''}
+              ${livePayments.length ? `<optgroup label="Live payments (wellipay-api)">${livePayments.map(p => `<option value="live:${escapeHtml(p.apiPaymentId)}">${escapeHtml(p.ref)} — ${escapeHtml(p.patient)} (${money(p.amount)}, ${escapeHtml(p.channel)})</option>`).join('')}</optgroup>` : ''}
               <optgroup label="Demo invoices">
-                ${state.invoiceList.filter(i=>i.paid>0 && !i.live).map(i => `<option value="mock:${i.id}">${i.id} — ${i.patient} (Paid ${money(i.paid)})</option>`).join('')}
+                ${state.invoiceList.filter(i=>i.paid>0 && !i.live).map(i => `<option value="mock:${escapeHtml(i.id)}">${escapeHtml(i.id)} — ${escapeHtml(i.patient)} (Paid ${money(i.paid)})</option>`).join('')}
               </optgroup>
             </select>
           </div>
@@ -2084,7 +2084,7 @@ function renderModal() {
   if (state.modal.type === 'set-staff-password') {
     return `<div class="modal-backdrop" data-action="dismiss-modal">
       <section class="modal" role="dialog" aria-modal="true" aria-labelledby="set-pw-title">
-        <h2 id="set-pw-title">Set Password — ${state.modal.name}</h2>
+        <h2 id="set-pw-title">Set Password — ${escapeHtml(state.modal.name)}</h2>
         <p>Sets or resets this person's login password in wellipay-api. Tell them the new password yourself — there's no reset email.</p>
         <form id="set-staff-password-form" class="form-grid">
           <div class="form-group"><label>New Password *</label><input class="input" type="password" name="password" required minlength="12" placeholder="At least 12 characters; avoid common words"></div>
@@ -2120,7 +2120,7 @@ function updateAuthCounts(item, next) {
   state.authCounts[item.status]=Math.max(0,state.authCounts[item.status]-1);
   state.authCounts[next]=(state.authCounts[next]||0)+1;
   item.status=next;
-  item.timeline.push(['Just now',next==='Submitted'?`Submitted to ${item.hmo}`:`Approved by ${item.hmo}`]);
+  item.timeline.push(['Just now',next==='Submitted'?`Submitted to ${escapeHtml(item.hmo)}`:`Approved by ${escapeHtml(item.hmo)}`]);
   logAudit(`Pre-Auth ${next}`, `${item.service} for ${item.patient} (${item.hmo})`);
   showToast(`Pre-Authorization ${next}`, `${item.service} — ${item.patient}`);
 }
@@ -2399,7 +2399,7 @@ async function syncReconciliationFromApi() {
       .map(item => ({
         id: item.transactionId,
         amount: fromMinor(item.amountMinor),
-        source: `${item.source} (Live)`,
+        source: `${escapeHtml(item.source)} (Live)`,
         reference: item.reference,
         date: new Date(item.receivedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' }),
         live: true,
@@ -2980,7 +2980,7 @@ async function submitMockClaim(item) {
     if (!item.apiClaimId) {
       const invoiceId = await ensureDeskInvoice();
       const created = await wellipayApi.createClaim({
-        providerClaimRef: `CLAIM-${item.id}-${Date.now()}`,
+        providerClaimRef: `CLAIM-${escapeHtml(item.id)}-${Date.now()}`,
         invoiceId,
         payerRef: item.hmo,
         amountMinor: toMinor(item.amount),
@@ -3010,7 +3010,7 @@ async function updateLiveClaimStatus(claimId, status, extra) {
 async function ensureDeskInvoice() {
   if (state.deskInvoiceId) return state.deskInvoiceId;
   const created = await wellipayApi.createInvoice({
-    providerInvoiceRef: `DESK-${state.patient.welliId}-${Date.now()}`,
+    providerInvoiceRef: `DESK-${escapeHtml(state.patient.welliId)}-${Date.now()}`,
     facilityRef: state.branch === 'All branches' ? 'facility-wuse' : `facility-${state.branch.toLowerCase()}`,
     patientRef: state.patient.welliId,
     description: 'Consultation + ECG + Full Blood Count',
@@ -3064,7 +3064,7 @@ async function syncDeskConsent() {
 async function syncAuthItemEligibilityCheck(item) {
   try {
     await wellipayApi.createEligibilityCheck({
-      providerRequestRef: `AUTH-${item.id}-${Date.now()}`,
+      providerRequestRef: `AUTH-${escapeHtml(item.id)}-${Date.now()}`,
       facilityRef: 'facility-wuse',
       patientRef: item.patient.replace(/\s+/g, '-').toLowerCase(),
       payerRef: item.hmo,
@@ -3235,7 +3235,7 @@ function dispatch(action, target, domEvent) {
     case 'select-desk-patient': {
       const pt = state.patientList.find(p => p.id === id);
       if (pt) {
-        state.patient = { name: pt.name, welliId: pt.id, hmo: `${pt.hmo} — ${pt.plan}` };
+        state.patient = { name: pt.name, welliId: pt.id, hmo: `${escapeHtml(pt.hmo)} — ${escapeHtml(pt.plan)}` };
         state.payer = pt.hmo === 'Self-Pay' ? 'patient' : 'hmo';
         resetPayment(false);
         state.modal = null;
@@ -3249,7 +3249,7 @@ function dispatch(action, target, domEvent) {
     case 'bill-patient': {
       const pt = state.patientList.find(p => p.id === id);
       if (pt) {
-        state.patient = { name: pt.name, welliId: pt.id, hmo: `${pt.hmo} — ${pt.plan}` };
+        state.patient = { name: pt.name, welliId: pt.id, hmo: `${escapeHtml(pt.hmo)} — ${escapeHtml(pt.plan)}` };
         state.payer = pt.hmo === 'Self-Pay' ? 'patient' : 'hmo';
         resetPayment(false);
         state.modal = null;
@@ -3361,7 +3361,7 @@ function dispatch(action, target, domEvent) {
     case 'view-payment-receipt': {
       const p = state.paymentList.find(item=>item.id===id);
       if (p) {
-        state.modal = { type: 'receipt', invoice: { id: p.id, patient: p.patient, patientId: 'Patient Ref', branch: p.branch, amount: p.amount, paid: p.amount, status: 'Payment Successful', date: 'Sep 27, 2026', payer: p.channel, items: [{ desc: `Settlement for Invoice ${p.inv}`, amt: p.amount }] } };
+        state.modal = { type: 'receipt', invoice: { id: p.id, patient: p.patient, patientId: 'Patient Ref', branch: p.branch, amount: p.amount, paid: p.amount, status: 'Payment Successful', date: 'Sep 27, 2026', payer: p.channel, items: [{ desc: `Settlement for Invoice ${escapeHtml(p.inv)}`, amt: p.amount }] } };
         render();
       }
       break;
@@ -3434,7 +3434,7 @@ function dispatch(action, target, domEvent) {
       const seq = Number(target.dataset.seq);
       const plan = state.livePaymentPlans.find(p => p.planId === id);
       const invoice = plan ? state.invoiceList.find(i => i.live && i.invoiceId === plan.invoiceId) : null;
-      payLivePlanInstallment(id, seq, invoice ? `${invoice.patient} · ${invoice.id}` : id);
+      payLivePlanInstallment(id, seq, invoice ? `${escapeHtml(invoice.patient)} · ${escapeHtml(invoice.id)}` : id);
       break;
     }
 
@@ -3696,7 +3696,7 @@ document.addEventListener('submit', async event => {
       lastVisit: 'Today'
     };
     state.patientList.unshift(newPt);
-    state.patient = { name: newPt.name, welliId: newPt.id, hmo: `${newPt.hmo} — ${newPt.plan}` };
+    state.patient = { name: newPt.name, welliId: newPt.id, hmo: `${escapeHtml(newPt.hmo)} — ${escapeHtml(newPt.plan)}` };
     state.payer = newPt.hmo === 'Self-Pay' ? 'patient' : 'hmo';
     resetPayment(false);
     state.modal = null;

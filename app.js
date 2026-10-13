@@ -1084,10 +1084,12 @@ function renderRefunds() {
   const refundTiles = SHOW_SAMPLE_DATA
     ? [['₦35,000','Refunded This Month','Settled'],[String(pendingCount),'Pending Approval','Queue'],['4.1 hrs','Avg Approval Time','SLA'],[money(state.settings.threshold),'Dual Approval Threshold','Security Rule']]
     : [[money(approvedTotal),'Approved refunds, all time','Refunded'],[String(pendingCount),'Pending Approval','Queue'],[String(refundRows.length),'Refund requests','Total'],[money(state.settings.threshold),'Dual Approval Threshold','Security Rule']];
+  const owedTotal = refundRows.filter(r => r.recovery === 'OWED').reduce((sum, r) => sum + r.amount, 0);
   return `<div class="page">
     ${renderBranchBanner()}
     ${pageHeading('Claims & Payers', 'Refund Engine', 'Full, partial and disputed payment refunds with enforced dual-approval controls.')}
     ${metricGrid(refundTiles)}
+    ${owedTotal > 0 ? card('Owed to Wellinovate', `<p style="margin:0;font-size:12px;">Approved refunds on card and transfer payments are paid from Wellinovate's Paystack balance, because the original payment settled to your account. Your organisation owes Wellinovate <strong>${money(owedTotal)}</strong> for these refunds. Wellinovate will contact you to settle it.</p>`) : ''}
     ${card('Dual Approval Policy', `
       <p style="margin:0;font-size:12px;">Refund requests exceeding <strong>${money(state.settings.threshold)}</strong> require dual-key verification from both the <strong>Finance Manager</strong> and the <strong>Medical Director</strong> before bank reversal release.</p>
     `)}
@@ -1103,7 +1105,7 @@ function renderRefunds() {
                 <td><strong>${money(r.amount)}</strong></td>
                 <td>${escapeHtml(r.requester)}</td>
                 <td>${escapeHtml(r.reason)}</td>
-                <td>${tag(r.status, r.status === 'Approved' || r.status === 'Settled' ? 'neutral' : 'accent')}</td>
+                <td>${tag(r.status, r.status === 'Approved' || r.status === 'Settled' ? 'neutral' : 'accent')}${r.recovery === 'OWED' ? ' ' + tag('Owed to Wellinovate', 'outline') : ''}</td>
                 <td>
                   ${r.deciding ? tag('Processing…', 'outline') : r.status.includes('Pending') ? `
                     <button class="btn btn-secondary" data-action="approve-refund-item" data-id="${escapeHtml(r.id)}" style="font-size:11px;padding:4px 8px;">Approve</button>
@@ -2475,6 +2477,7 @@ async function syncRefundsFromApi() {
         date: new Date(item.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }),
         status: REFUND_STATUS_LABEL[item.status] || item.status,
         dualApproval: item.amountMinor >= toMinor(state.settings.threshold),
+        recovery: item.recoveryStatus || null,
         live: true,
       };
     });

@@ -382,6 +382,7 @@ const state = {
   checkupsSynced: false,
   checkupsError: '',
   resultsByBooking: {},
+  smsEnabled: null,
   patientsSyncing: false,
   paymentsSynced: false,
   paymentsSyncing: false,
@@ -875,6 +876,7 @@ function renderInvoices() {
                 <td>
                   <button class="btn btn-secondary" data-action="view-invoice-modal" data-id="${escapeHtml(inv.id)}" style="font-size:11px;padding:4px 8px;">View Receipt</button>
                   ${inv.live && inv.invoiceId && inv.status !== 'Paid' ? `<button class="btn btn-primary" data-action="open-paystack-pay" data-id="${escapeHtml(inv.id)}" style="font-size:11px;padding:4px 8px;">Pay online</button> <button class="btn btn-secondary" data-action="open-record-payment" data-id="${escapeHtml(inv.id)}" style="font-size:11px;padding:4px 8px;">Record payment</button>` : ''}
+                  ${inv.live && inv.invoiceId && inv.status !== 'Paid' ? `<button class="btn btn-secondary" data-action="open-pay-link" data-id="${escapeHtml(inv.id)}" style="font-size:11px;padding:4px 8px;">Payment link</button>` : ''}
                   <button class="btn btn-ghost" data-action="send-invoice-sms" data-id="${escapeHtml(inv.id)}" style="font-size:11px;padding:4px 8px;">Send SMS</button>
                 </td>
               </tr>
@@ -1638,7 +1640,7 @@ function renderBookings() {
               <td>${b.kind === 'IMAGING' ? 'Scan at the centre' : escapeHtml(BOOKING_TYPE_LABEL[b.type] || b.type)}</td>
               <td>${escapeHtml([b.address, b.notes].filter(Boolean).join(' · ') || '—')}</td>
               <td>${b.invoiceId ? (linked ? `${escapeHtml(linked.id)}<br>${tag(escapeHtml(linked.status), linked.status === 'Paid' ? 'neutral' : linked.status === 'Unpaid' ? 'accent' : 'outline')}` : 'Linked') : `<button class="btn btn-ghost" data-action="open-link-invoice" data-id="${escapeHtml(b.bookingId)}">Link invoice</button>`}</td>
-              <td>${tag(bookingStatusLabel(b), b.status === 'READY' ? 'neutral' : 'outline')}</td>
+              <td>${tag(bookingStatusLabel(b), b.status === 'READY' ? 'neutral' : 'outline')}${b.reminderSentAt ? `<br><small style="color:var(--muted)">Reminded ${escapeHtml(formatWhen(b.reminderSentAt))}</small>` : ''}</td>
               <td>${next ? `<button class="btn btn-secondary" data-action="advance-booking" data-id="${escapeHtml(b.bookingId)}" data-status="${next[0]}">${next[1]}</button>` : ''}${['SAMPLE_COLLECTED', 'PROCESSING', 'READY'].includes(b.status) ? ` <button class="btn btn-secondary" data-action="open-results" data-id="${escapeHtml(b.bookingId)}">${b.kind === 'IMAGING' ? 'Report' : 'Results'}</button>` : ''}${b.status === 'BOOKED' ? ` <button class="btn btn-secondary" data-action="open-reminder" data-id="${escapeHtml(b.bookingId)}">Remind</button> <button class="btn btn-ghost" data-action="advance-booking" data-id="${escapeHtml(b.bookingId)}" data-status="CANCELLED">Cancel</button>` : ''}</td>
             </tr>`;
           }).join('')}</tbody></table></div>`
@@ -1663,6 +1665,24 @@ function syncBookings() {
       .finally(() => { bookingsPromise = null; if (state.active === 'bookings') render(); });
   }
   return bookingsPromise;
+}
+
+function payLinkUrl(token) { return `${location.origin}/pay.html?t=${encodeURIComponent(token)}`; }
+
+async function openPayLink(invoiceRef, rotate) {
+  const inv = state.invoiceList.find(i => i.id === invoiceRef && i.live);
+  if (!inv) return;
+  state.modal = { type: 'pay-link', invoiceRef, token: '', busy: true };
+  render();
+  try {
+    const res = await wellipayApi.createPayLink(inv.invoiceId, { rotate: !!rotate });
+    state.modal = { type: 'pay-link', invoiceRef, token: res.payToken, busy: false };
+    if (rotate) showToast('New link made', 'The old link no longer works.');
+  } catch (err) {
+    state.modal = null;
+    showToast('Link not made', err.message);
+  }
+  render();
 }
 
 function bookingById(id) { return state.bookings.find(b => b.bookingId === id); }
@@ -1717,6 +1737,22 @@ function phoneDigits(raw) {
   if (d.startsWith('234')) return d;
   if (d.startsWith('0')) return '234' + d.slice(1);
   return d;
+}
+
+async function sendReminderSms(id) {
+  const msg = document.querySelector('#reminder-form textarea[name="msg"]').value.trim();
+  const btn = document.getElementById('remind-send');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  try {
+    const updated = await wellipayApi.sendBookingReminder(id, { message: msg });
+    state.bookings = state.bookings.map(b => b.bookingId === id ? updated : b);
+    state.modal = null;
+    showToast('SMS sent', patientNameFor(updated.patientRef));
+    render();
+  } catch (err) {
+    showToast('SMS not sent', err.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Send SMS now'; }
+  }
 }
 
 function reminderText(b) {
@@ -3171,6 +3207,27 @@ function renderModal() {
     </div>`;
   }
 
+  if (state.modal.type === 'pay-link') {
+    const m = state.modal;
+    const inv = state.invoiceList.find(i => i.id === m.invoiceRef);
+    const url = m.token ? payLinkUrl(m.token) : '';
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="paylink-title">
+        <h2 id="paylink-title">Payment link · ${escapeHtml(m.invoiceRef)}</h2>
+        <p>Anyone with this link can pay this bill on Paystack without an account. Send it only to the patient or their payer.</p>
+        ${m.busy ? '<p class="empty-state">Making the link…</p>' : `<form id="paylink-form" class="form-grid">
+          <div class="form-group"><label>Link</label><input class="input" name="url" readonly value="${escapeHtml(url)}" onclick="this.select()"></div>
+          <div class="modal-actions">
+            <button class="btn btn-ghost" type="button" data-action="paylink-rotate" data-id="${escapeHtml(m.invoiceRef)}">Make a new link</button>
+            <button class="btn btn-secondary" type="button" data-action="paylink-copy">Copy</button>
+            <button class="btn btn-primary" type="button" data-action="paylink-whatsapp">Send on WhatsApp</button>
+          </div>
+        </form>`}
+        <div class="modal-actions"><button class="btn btn-secondary" type="button" data-action="close-modal">Close</button></div>
+      </section>
+    </div>`;
+  }
+
   if (state.modal.type === 'booking-results') {
     const b = bookingById(state.modal.bookingId);
     if (!b) return '';
@@ -3225,8 +3282,9 @@ function renderModal() {
           <div class="modal-actions">
             <button class="btn btn-secondary" type="button" data-action="close-modal">Close</button>
             <button class="btn btn-secondary" type="button" data-action="remind-copy">Copy</button>
+            ${state.smsEnabled && digits ? `<button class="btn btn-primary" type="button" data-action="remind-send" data-id="${escapeHtml(b.bookingId)}" id="remind-send">Send SMS now</button>` : ''}
             <button class="btn btn-secondary" type="button" data-action="remind-sms" data-phone="${escapeHtml(digits)}" ${digits ? '' : 'disabled'}>Open SMS</button>
-            <button class="btn btn-primary" type="button" data-action="remind-whatsapp" data-phone="${escapeHtml(digits)}" ${digits ? '' : 'disabled'}>Open WhatsApp</button>
+            <button class="btn ${state.smsEnabled && digits ? 'btn-secondary' : 'btn-primary'}" type="button" data-action="remind-whatsapp" data-phone="${escapeHtml(digits)}" ${digits ? '' : 'disabled'}>Open WhatsApp</button>
           </div>
         </form>
       </section>
@@ -5071,6 +5129,22 @@ function dispatch(action, target, domEvent) {
     case 'edit-price-item': state.modal={type:'price-item',itemId:String(id)};render();break;
     case 'toggle-price-item': togglePriceItem(String(id)); break;
     case 'open-catalogue': openCatalogue(); break;
+    case 'open-pay-link': openPayLink(String(id), false); break;
+    case 'paylink-rotate': openPayLink(String(id), true); break;
+    case 'paylink-copy': {
+      const url = document.querySelector('#paylink-form input[name="url"]').value;
+      (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(() => showToast('Copied', 'Paste it into any app.'), () => showToast('Not copied', 'Select the link and copy it.'));
+      break;
+    }
+    case 'paylink-whatsapp': {
+      const url = document.querySelector('#paylink-form input[name="url"]').value;
+      const inv = state.invoiceList.find(i => i.id === state.modal.invoiceRef);
+      const patient = inv && state.patientList.find(p => p.id === inv.patientId);
+      const digits = phoneDigits(patient && patient.phone);
+      const text = `Your bill from ${orgName()} (${state.modal.invoiceRef}) is ready. Pay securely here: ${url}`;
+      window.open(`https://wa.me/${digits}?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
+      break;
+    }
     case 'print-price-sheet': printPriceSheet(); break;
     case 'print-brochure': printBrochure(); break;
     case 'open-results': openBookingResults(String(id)); break;
@@ -5087,7 +5161,12 @@ function dispatch(action, target, domEvent) {
       break;
     }
     case 'save-result': saveResult(String(id), target.dataset.ready === '1'); break;
-    case 'open-reminder': state.modal = { type: 'booking-reminder', bookingId: String(id) }; render(); break;
+    case 'open-reminder':
+      state.modal = { type: 'booking-reminder', bookingId: String(id) };
+      render();
+      if (state.smsEnabled === null) wellipayApi.getSmsStatus().then(r => { state.smsEnabled = !!r.enabled; render(); }).catch(() => { state.smsEnabled = false; });
+      break;
+    case 'remind-send': sendReminderSms(String(id)); break;
     case 'remind-copy': {
       const msg = document.querySelector('#reminder-form textarea[name="msg"]').value;
       (navigator.clipboard ? navigator.clipboard.writeText(msg) : Promise.reject()).then(() => showToast('Copied', 'Paste it into any app.'), () => showToast('Not copied', 'Select the text and copy it.'));

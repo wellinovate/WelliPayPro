@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>Pay a bill | WelliPay</title>
+    <style>
+      :root { --ink:#101828; --muted:#5b6575; --line:#d9dde3; --bg:#f6f7f9; --card:#fff; --accent:#0b6e4f; --accent-ink:#fff; --warn:#8a4b00; --err:#a1261b; }
+      @media (prefers-color-scheme: dark) { :root { --ink:#eef0f3; --muted:#a5adba; --line:#2d333d; --bg:#0f1218; --card:#171b22; --accent:#35b88a; --accent-ink:#06130d; --warn:#f0b35a; --err:#ff8b80; } }
+      * { box-sizing: border-box; }
+      body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+      main { max-width:480px; margin:0 auto; padding:20px 16px 40px; }
+      h1 { font-size:20px; margin:0 0 4px; }
+      .brand { font-size:13px; color:var(--muted); margin:0 0 16px; }
+      .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin:0 0 14px; }
+      .row { display:flex; justify-content:space-between; gap:12px; padding:4px 0; }
+      .row span:first-child { color:var(--muted); }
+      .big { font-size:28px; font-weight:700; margin:6px 0 0; }
+      label { display:block; font-size:14px; font-weight:600; margin:12px 0 4px; }
+      input { width:100%; padding:12px; font-size:16px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); }
+      button { width:100%; margin-top:16px; padding:14px; font-size:16px; font-weight:700; border:0; border-radius:8px; background:var(--accent); color:var(--accent-ink); cursor:pointer; }
+      button.secondary { background:transparent; color:var(--ink); border:1px solid var(--line); margin-top:10px; }
+      button:disabled { opacity:.6; cursor:default; }
+      .note { font-size:13px; color:var(--muted); }
+      .err { color:var(--err); font-size:14px; margin-top:10px; }
+      .ok { color:var(--accent); font-weight:700; }
+      .warn { color:var(--warn); font-weight:700; }
+      .code { font:700 24px/1.2 ui-monospace, Menlo, monospace; letter-spacing:2px; margin:8px 0; word-break:break-all; }
+      small { color:var(--muted); }
+      @media print { button { display:none; } body { background:#fff; color:#000; } }
+    </style>
+  </head>
+  <body>
+    <main id="root" aria-live="polite"><p>Loading…</p></main>
+    <script>
+      (function () {
+        var API = window.WELLIPAY_API_BASE || 'https://wellipay-api.onrender.com';
+        var qs = new URLSearchParams(location.search);
+        var token = qs.get('t');
+        var ref = qs.get('reference') || qs.get('trxref');
+        var root = document.getElementById('root');
+        var naira = function (minor) { return '₦' + (minor / 100).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+
+        function el(tag, attrs, kids) {
+          var n = document.createElement(tag);
+          Object.keys(attrs || {}).forEach(function (k) { if (k === 'text') n.textContent = attrs[k]; else if (k === 'class') n.className = attrs[k]; else n.setAttribute(k, attrs[k]); });
+          (kids || []).forEach(function (c) { if (c) n.appendChild(c); });
+          return n;
+        }
+        function row(label, value) { return el('div', { class: 'row' }, [el('span', { text: label }), el('strong', { text: value })]); }
+        function show() { root.replaceChildren.apply(root, arguments); }
+        function head(sub) { return [el('h1', { text: 'Pay a bill' }), el('p', { class: 'brand', text: sub || 'WelliPay · secure checkout by Paystack' })]; }
+        function message(text, cls) { return el('div', { class: 'card' }, [el('p', { class: cls || '', text: text })]); }
+
+        function api(path, opts) {
+          return fetch(API + path, opts).then(function (r) {
+            return r.text().then(function (t) {
+              var data = t ? JSON.parse(t) : {};
+              if (!r.ok) throw new Error(data.detail || data.title || 'Something went wrong.');
+              return data;
+            });
+          });
+        }
+
+        if (!token) {
+          if (qs.get('done')) {
+            show.apply(null, head().concat([message('Your payment was sent to Paystack. Return to the WelliPay app. The bill shows as paid once the payment is confirmed.')]));
+          } else {
+            show.apply(null, head().concat([message('This payment link is not complete. Ask the provider to send it again.', 'err')]));
+          }
+          return;
+        }
+
+        function summary(bill) {
+          var kids = [
+            row('Provider', bill.providerName),
+            row('Bill', bill.invoiceRef),
+            bill.patientFirstName ? row('For', bill.patientFirstName) : null,
+            row('Description', bill.description),
+          ];
+          (bill.lines || []).forEach(function (l) {
+            kids.push(row('· ' + l.description + (l.quantity > 1 ? ' × ' + l.quantity : ''), naira(l.quantity * l.unitPriceMinor)));
+          });
+          kids.push(row('Total', naira(bill.amountMinor)));
+          if (bill.paidAmountMinor > 0) kids.push(row('Paid so far', naira(bill.paidAmountMinor)));
+          kids.push(el('p', { class: 'big', text: naira(bill.balanceMinor) }));
+          kids.push(el('small', { text: 'Balance to pay' }));
+          return el('div', { class: 'card' }, kids);
+        }
+
+        function receipt(bill, c, attempt) {
+          var cls = c.status === 'SUCCESS' ? 'ok' : c.status === 'FAILED' ? 'err' : 'warn';
+          var title = c.status === 'SUCCESS' ? 'Payment received' : c.status === 'FAILED' ? 'Payment failed' : 'Confirming your payment…';
+          var kids = [
+            el('p', { class: cls, text: title }),
+            row('Amount', naira(c.amountMinor)),
+            row('Provider', c.providerName),
+            row('Bill', c.invoiceRef),
+            row('Reference', c.reference),
+          ];
+          if (c.paidAt) kids.push(row('Paid on', new Date(c.paidAt).toLocaleString('en-NG')));
+          if (c.failureReason) kids.push(el('p', { class: 'err', text: c.failureReason }));
+          if (c.claimCode) {
+            kids.push(el('p', { class: 'note', text: 'Want this payment in your WelliPay profile? Open the WelliPay app, choose Add a guest payment and enter this code. Keep it private.' }));
+            kids.push(el('p', { class: 'code', text: c.claimCode }));
+          }
+          var out = [el('div', { class: 'card' }, kids)];
+          if (c.status === 'SUCCESS') {
+            var print = el('button', { type: 'button', class: 'secondary', text: 'Print receipt' });
+            print.addEventListener('click', function () { window.print(); });
+            out.push(print);
+          }
+          if (c.status === 'FAILED') {
+            var again = el('button', { type: 'button', text: 'Try again' });
+            again.addEventListener('click', function () { location.href = location.pathname + '?t=' + encodeURIComponent(token); });
+            out.push(again);
+          }
+          show.apply(null, head().concat([summary(bill)], out));
+          if (c.status === 'PENDING' && attempt < 20) setTimeout(function () { poll(bill, attempt + 1); }, 3000);
+          if (c.status === 'PENDING' && attempt >= 20) out[0].appendChild(el('p', { class: 'note', text: 'This is taking longer than usual. Your bank may still be confirming. Keep the reference above and check again shortly.' }));
+        }
+
+        function poll(bill, attempt) {
+          api('/public/pay/' + encodeURIComponent(token) + '/charges/' + encodeURIComponent(ref))
+            .then(function (c) { receipt(bill, c, attempt); })
+            .catch(function (e) { show.apply(null, head().concat([summary(bill), message(e.message, 'err')])); });
+        }
+
+        function form(bill) {
+          var email = el('input', { id: 'email', type: 'email', required: 'required', autocomplete: 'email', placeholder: 'you@example.com' });
+          var phone = el('input', { id: 'phone', type: 'tel', autocomplete: 'tel', placeholder: '0803 123 4567' });
+          var amount = el('input', { id: 'amount', type: 'number', min: '1', step: 'any', placeholder: (bill.balanceMinor / 100).toFixed(2) });
+          var err = el('p', { class: 'err', role: 'alert' });
+          var btn = el('button', { type: 'submit', text: 'Pay ' + naira(bill.balanceMinor) });
+          var f = el('form', { class: 'card' }, [
+            el('label', { for: 'email', text: 'Email for your receipt' }), email,
+            el('label', { for: 'phone', text: 'Phone (optional)' }), phone,
+            el('label', { for: 'amount', text: 'Amount in naira (leave empty to pay the full balance)' }), amount,
+            err, btn,
+            el('p', { class: 'note', text: 'You pay on Paystack’s secure page. WelliPay never sees your card details. You do not need an account.' }),
+          ]);
+          f.addEventListener('submit', function (ev) {
+            ev.preventDefault();
+            err.textContent = '';
+            var body = { email: email.value.trim() };
+            if (phone.value.trim()) body.phone = phone.value.trim();
+            if (amount.value) {
+              var kobo = Math.round(Number(amount.value) * 100);
+              if (!(kobo >= 100) || kobo > bill.balanceMinor) { err.textContent = 'Enter an amount from ₦1 up to ' + naira(bill.balanceMinor) + '.'; return; }
+              body.amountMinor = kobo;
+            }
+            btn.disabled = true; btn.textContent = 'Opening checkout…';
+            api('/public/pay/' + encodeURIComponent(token) + '/charge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+              .then(function (c) { location.href = c.authorizationUrl; })
+              .catch(function (e) { err.textContent = e.message; btn.disabled = false; btn.textContent = 'Pay ' + naira(bill.balanceMinor); });
+          });
+          return f;
+        }
+
+        api('/public/pay/' + encodeURIComponent(token))
+          .then(function (bill) {
+            if (ref) { show.apply(null, head().concat([summary(bill), message('Checking your payment…')])); poll(bill, 0); return; }
+            if (bill.status === 'PAID' || bill.balanceMinor <= 0) { show.apply(null, head().concat([summary(bill), message('This bill is paid in full.', 'ok')])); return; }
+            if (bill.status === 'CANCELLED') { show.apply(null, head().concat([summary(bill), message('This bill was cancelled. Contact the provider.', 'err')])); return; }
+            show.apply(null, head().concat([summary(bill), form(bill)]));
+          })
+          .catch(function (e) { show.apply(null, head().concat([message(e.message, 'err')])); });
+      })();
+    </script>
+  </body>
+</html>

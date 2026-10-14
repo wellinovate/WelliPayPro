@@ -137,3 +137,8 @@ No photographic or icon assets are used. All visual marks are flat CSS (colored 
 ## Payout status per payment
 
 Settlements page, card "Online payments and payout status". It lists each online payment from the last 90 days with its fee, the amount you receive and whether Paystack has paid it into your bank account (Awaiting payout, Processing, Paid to bank, Payout failed). "Check with Paystack" asks the API to read your payouts and update the list. Wallet credit held for patients shows under the table. Needs the matching API release.
+## Guest payment page
+
+`pay.html` is a public page that lets anyone pay one invoice without an account. On an unpaid live invoice, press Payment link, then copy the link or send it on WhatsApp. The link holds an unguessable token. Press Make a new link to stop the old one working.
+
+On the API (Render), set `PAY_PAGE_URL` to this site's `pay.html` address, for example `https://wellipaypro.onrender.com/pay.html`. Guests then return to that page after Paystack checkout. The page shows the receipt once Paystack's webhook confirms the payment, and prints a code the patient can enter in the WelliPay app to add the payment to a profile.

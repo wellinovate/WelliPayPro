@@ -196,6 +196,7 @@ function toQueryString(params) {
 }
 
 export const wellipayApi = {
+  createPayLink: (invoiceId, body) => apiRequest(`/provider/invoices/${encodeURIComponent(invoiceId)}/pay-link`, { method: 'POST', body }),
   createInvoice: (body) => apiRequest('/provider/invoices', { method: 'POST', body, idempotent: 'inv' }),
   getInvoice: (invoiceId) => apiRequest(`/provider/invoices/${encodeURIComponent(invoiceId)}`),
   listInvoices: (query) => apiRequest(`/provider/invoices${toQueryString(query)}`),
@@ -213,6 +214,8 @@ export const wellipayApi = {
   listBookings: (query) => apiRequest(`/provider/bookings${toQueryString(query)}`),
   createBooking: (body) => apiRequest('/provider/bookings', { method: 'POST', body }),
   updateBooking: (id, body) => apiRequest(`/provider/bookings/${encodeURIComponent(id)}`, { method: 'PATCH', body }),
+  getSmsStatus: () => apiRequest('/provider/sms-status'),
+  sendBookingReminder: (id, body) => apiRequest(`/provider/bookings/${encodeURIComponent(id)}/reminder`, { method: 'POST', body }),
   listBookingResults: (id) => apiRequest(`/provider/bookings/${encodeURIComponent(id)}/results`),
   addBookingResults: (id, body) => apiRequest(`/provider/bookings/${encodeURIComponent(id)}/results`, { method: 'POST', body }),
   updateBookingResult: (id, body) => apiRequest(`/provider/booking-results/${encodeURIComponent(id)}`, { method: 'PATCH', body }),

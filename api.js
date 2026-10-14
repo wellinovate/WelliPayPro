@@ -58,12 +58,35 @@ export function onSessionExpired(handler) {
   sessionExpiredHandler = handler;
 }
 
+// Network state. A fetch that cannot reach the API (no connection, DNS, the
+// server down) throws a TypeError; every request below goes through apiFetch so
+// the console can show an offline banner and give the person a plain message.
+const networkHandlers = new Set();
+let networkReachable = true;
+export function onNetworkChange(handler) { networkHandlers.add(handler); return () => networkHandlers.delete(handler); }
+export function reportNetwork(reachable) {
+  if (reachable === networkReachable) return;
+  networkReachable = reachable;
+  networkHandlers.forEach(h => h(reachable));
+}
+async function apiFetch(url, init) {
+  let res;
+  try {
+    res = await fetch(url, init);
+  } catch (err) {
+    reportNetwork(false);
+    throw new Error('Cannot reach WelliPay. Check your internet connection and try again.');
+  }
+  reportNetwork(true);
+  return res;
+}
+
 export function getStaffSession() {
   return staffSession;
 }
 
 export async function loginStaff(email, password) {
-  const res = await fetch(`${API_BASE}/staff/login`, {
+  const res = await apiFetch(`${API_BASE}/staff/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
@@ -90,7 +113,7 @@ export function getTenant() {
 
 // Public calls a provider makes before it has an account. No token.
 async function publicRequest(path, { method = 'GET', body } = {}) {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await apiFetch(`${API_BASE}${path}`, {
     method,
     headers: body ? { 'Content-Type': 'application/json' } : {},
     body: body ? JSON.stringify(body) : undefined,
@@ -165,7 +188,7 @@ async function apiRequest(path, { method = 'GET', body, idempotent } = {}) {
   if (body) headers['Content-Type'] = 'application/json';
   if (idempotent) headers['Idempotency-Key'] = idempotencyKey(idempotent);
 
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await apiFetch(`${API_BASE}${path}`, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
@@ -184,7 +207,7 @@ async function apiRequest(path, { method = 'GET', body, idempotent } = {}) {
 // Fetches a file (a photo or a CSV) with the staff token and returns it as a Blob.
 async function blobRequest(path) {
   const token = await getActiveToken();
-  const res = await fetch(`${API_BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await apiFetch(`${API_BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) {
     const payload = await res.json().catch(() => null);
     throw new Error((payload && (payload.detail || payload.title)) || `Request failed (HTTP ${res.status})`);

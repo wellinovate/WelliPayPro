@@ -512,7 +512,7 @@ const modalRoot = document.querySelector('#modal-root');
 
 function icon(name) { return `<svg viewBox="0 0 24 24" aria-hidden="true">${iconPaths[name] || ''}</svg>`; }
 function renderNav() {
-  nav.innerHTML = groups.map(group => `<div class="nav-group"><div class="nav-label">${group.name}</div>${group.items.map(([id,label,iconName]) => `<a class="nav-link" href="#${id}" ${state.active === id ? 'aria-current="page"' : ''}><span class="nav-icon">${icon(iconName)}</span><span>${label}</span></a>`).join('')}</div>`).join('');
+  nav.innerHTML = groups.map(group => `<div class="nav-group"><div class="nav-label">${group.name}</div>${group.items.filter(([id]) => SHOW_SAMPLE_DATA || id !== 'branches').map(([id,label,iconName]) => `<a class="nav-link" href="#${id}" ${state.active === id ? 'aria-current="page"' : ''}><span class="nav-icon">${icon(iconName)}</span><span>${label}</span></a>`).join('')}</div>`).join('');
 }
 function card(kicker, body, className='') { return `<section class="card elev-sm ${className}"><div class="card-kicker">${kicker}</div>${body}</section>`; }
 function stat(value, label, kicker='') { return `<section class="card elev-sm stat-card"><span class="card-kicker">${kicker || label}</span><strong class="stat-value">${value}</strong><span class="stat-label">${label}</span></section>`; }
@@ -598,7 +598,7 @@ function renderDashboard() {
       ${card('Revenue trend · last 7 days (sample data)',`<div class="chart-summary" style="margin-bottom:12px;"><strong>₦2.45M</strong><span>+8.4% vs last week</span></div><div style="height:160px;position:relative"><canvas id="revenueTrendChart"></canvas></div>`,'trend-card')}
       ${card('Payer mix · this month (sample data)', `<div class="chart-summary" style="margin-bottom:12px;"><strong>₦6.2M</strong><span>collected by payer</span></div><div style="height:160px;position:relative"><canvas id="payerMixChart"></canvas></div>`, 'mix-card')}
     </div>` : ''}
-    ${card('Branch revenue', branchRevenueBody)}
+    ${SHOW_SAMPLE_DATA ? card('Branch revenue', branchRevenueBody) : ''}
     <div class="grid two-col">
       ${card('<div class="section-heading"><span>Receivables & ageing</span><a href="#receivables">View all →</a></div>', receivablesCardBody)}
       ${SHOW_SAMPLE_DATA ? card('<div class="section-heading"><span>Smart Reconciliation Centre (sample data)</span><a href="#reconciliation">Open workspace →</a></div>',`<div class="mini-metrics"><div class="mini-metric"><strong>${state.matched.toLocaleString()}</strong><span>Matched</span></div><div class="mini-metric"><strong style="color:var(--color-accent-700)">${state.unmatched.length}</strong><span>Unmatched</span></div><div class="mini-metric"><strong>${state.exceptions}</strong><span>Exceptions</span></div><div class="mini-metric"><strong>${state.duplicates}</strong><span>Duplicate</span></div></div><div class="row-list">${unmatchedMarkup}</div>`) : ''}
@@ -664,13 +664,13 @@ function renderPatients() {
       </div>
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>Patient & WelliID</th><th>HMO & Plan</th><th>Branch</th><th>Balance Due</th><th>Sponsors</th><th>Status</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Patient & WelliID</th><th>HMO & Plan</th>${SHOW_SAMPLE_DATA ? '<th>Branch</th>' : ''}<th>Balance Due</th><th>Sponsors</th><th>Status</th><th>Actions</th></tr></thead>
           <tbody>
             ${filtered.map(p => `
               <tr>
                 <td><strong>${escapeHtml(p.name)}</strong><br><small style="color:var(--muted)">${escapeHtml(p.id)} · ${escapeHtml(p.phone)}</small></td>
                 <td>${escapeHtml(p.hmo)} <small style="color:var(--muted)">(${escapeHtml(p.plan)})</small></td>
-                <td>${escapeHtml(p.branch)}</td>
+                ${SHOW_SAMPLE_DATA ? `<td>${escapeHtml(p.branch)}</td>` : ''}
                 <td><strong>${money(p.balance)}</strong>${p.live ? ' <small style="color:var(--muted)">(Live)</small>' : ''}</td>
                 <td>${p.sponsors.length ? p.sponsors.join(', ') : '—'}</td>
                 <td>${tag(p.status, p.balance > 0 ? 'accent' : 'neutral')}</td>
@@ -724,7 +724,7 @@ function renderInvoices() {
             ${filtered.map(inv => `
               <tr>
                 <td><strong>${escapeHtml(inv.id)}</strong></td>
-                <td>${escapeHtml(inv.patient)}<br><small style="color:var(--muted)">${escapeHtml(inv.patientId)} · ${escapeHtml(inv.branch)}</small></td>
+                <td>${escapeHtml(inv.patient)}<br><small style="color:var(--muted)">${escapeHtml(inv.patientId)}${SHOW_SAMPLE_DATA ? ' · ' + escapeHtml(inv.branch) : ''}</small></td>
                 <td>${escapeHtml(inv.date)}</td>
                 <td><strong>${money(inv.amount)}</strong></td>
                 <td>${money(inv.paid)}</td>
@@ -766,14 +766,14 @@ function renderPayments() {
       </div>
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>Reference</th><th>Channel</th><th>Patient & Invoice</th><th>Branch</th><th>Amount</th><th>Time</th><th>Status</th><th>Action</th></tr></thead>
+          <thead><tr><th>Reference</th><th>Channel</th><th>Patient & Invoice</th>${SHOW_SAMPLE_DATA ? '<th>Branch</th>' : ''}<th>Amount</th><th>Time</th><th>Status</th><th>Action</th></tr></thead>
           <tbody>
             ${filtered.map(p => `
               <tr>
                 <td><strong>${escapeHtml(p.id)}</strong><br><small style="color:var(--muted)">${escapeHtml(p.ref)}</small></td>
                 <td>${escapeHtml(p.channel)}</td>
                 <td>${escapeHtml(p.patient)}<br><small style="color:var(--muted)">${escapeHtml(p.inv)}</small></td>
-                <td>${escapeHtml(p.branch)}</td>
+                ${SHOW_SAMPLE_DATA ? `<td>${escapeHtml(p.branch)}</td>` : ''}
                 <td><strong>${money(p.amount)}</strong></td>
                 <td>${escapeHtml(p.time)}</td>
                 <td>${tag(p.status, 'neutral')}</td>
@@ -1065,17 +1065,17 @@ function renderSettlements() {
     ${renderBranchBanner()}
     ${pageHeading('Settlements','Gateway payouts & branch settlement','Follow gateway payout status and branch-level settlement totals.')}
     ${card('Paystack payouts (live)', renderPaystackPayouts())}
-    ${card('Payout timeline (illustrative)',events.map(([time,text])=>`<div class="timeline-line"><time>${time}</time><span>${text}</span></div>`).join(''))}
+    ${SHOW_SAMPLE_DATA ? card('Payout timeline (illustrative)',events.map(([time,text])=>`<div class="timeline-line"><time>${time}</time><span>${text}</span></div>`).join('')) : ''}
     ${card('<div class="section-heading"><span>Live settlement batches</span><span></span></div>', `
       <p style="margin:0 0 12px;font-size:12px;color:var(--muted);">There's no real payment gateway behind this service — payments are recorded directly, not via a Paystack/Flutterwave webhook — so "Create settlement" batches a branch's unsettled successful payments in wellipay-api, and "Confirm Settled" records that a human verified the funds landed. Neither is a real bank payout.</p>
       <div class="toolbar" style="margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-        ${Object.entries(FACILITY_BRANCH).map(([ref, label]) => `<button class="btn btn-secondary" data-action="create-settlement" data-facility="${ref}" data-label="${label}" style="font-size:11px;padding:6px 10px;">Settle ${label}</button>`).join('')}
+        ${(SHOW_SAMPLE_DATA ? Object.entries(FACILITY_BRANCH) : [[MAIN_FACILITY_REF, orgName()]]).map(([ref, label]) => `<button class="btn btn-secondary" data-action="create-settlement" data-facility="${ref}" data-label="${label}" style="font-size:11px;padding:6px 10px;">Settle ${label}</button>`).join('')}
       </div>
       ${liveRows
         ? `<div class="table-wrap"><table class="table"><thead><tr><th>Branch</th><th>Amount</th><th>Payments</th><th>Status</th><th></th></tr></thead><tbody>${liveRows}</tbody></table></div>`
         : `<p style="color:var(--muted);font-size:12px;">${state.settlementsSynced ? 'No settlement batches created yet.' : 'Loading live settlements…'}</p>`}
     `)}
-    ${card('<div class="section-heading"><span>Per-branch settlement (illustrative)</span><button class="btn btn-secondary" data-action="export-settlements">Export CSV</button></div>',`<div class="table-wrap"><table class="table"><thead><tr><th>Branch</th><th>Settled</th><th>Pending</th></tr></thead><tbody>${rows.map(([branch,settled,pending])=>`<tr><td><strong>${branch}</strong></td><td>${money(settled)}</td><td>${money(pending)}</td></tr>`).join('')}</tbody></table></div>`)}
+    ${SHOW_SAMPLE_DATA ? card('<div class="section-heading"><span>Per-branch settlement (illustrative)</span><button class="btn btn-secondary" data-action="export-settlements">Export CSV</button></div>',`<div class="table-wrap"><table class="table"><thead><tr><th>Branch</th><th>Settled</th><th>Pending</th></tr></thead><tbody>${rows.map(([branch,settled,pending])=>`<tr><td><strong>${branch}</strong></td><td>${money(settled)}</td><td>${money(pending)}</td></tr>`).join('')}</tbody></table></div>`) : ''}
   </div>`;
 }
 
@@ -1696,6 +1696,8 @@ function render() {
   if (!labels[state.active]) state.active = 'dashboard';
   renderNav();
   document.querySelector('#page-title').textContent = labels[state.active];
+  const branchPicker = document.querySelector('.branch-picker');
+  if (branchPicker) branchPicker.style.display = SHOW_SAMPLE_DATA ? '' : 'none';
   const branchSelect = document.querySelector('#branch-select');
   if (branchSelect && branchSelect.value !== state.branch) branchSelect.value = state.branch;
 
@@ -2367,8 +2369,13 @@ function updateClaim(id, status) {
 // prepended, tagged `live: true` so a re-sync can replace them without
 // touching the original mock rows.
 
-// A provider with a single site bills against this reference.
+// A provider with a single site bills against this reference. Multi-branch
+// sample data still uses the per-branch references.
 const MAIN_FACILITY_REF = 'facility-main';
+function currentFacilityRef() {
+  if (!SHOW_SAMPLE_DATA) return MAIN_FACILITY_REF;
+  return state.branch === 'All branches' ? 'facility-wuse' : `facility-${state.branch.toLowerCase()}`;
+}
 function branchLabel(ref) { return ref === MAIN_FACILITY_REF ? orgName() : (FACILITY_BRANCH[ref] || 'Other facility'); }
 const FACILITY_BRANCH = { 'facility-wuse': 'Wuse', 'facility-maitama': 'Maitama', 'facility-garki': 'Garki', 'facility-kaduna': 'Kaduna', 'facility-lagos': 'Lagos' };
 const PAYMENT_CHANNEL_LABEL = { card: 'Card (Live)', bank_transfer: 'Bank Transfer (Live)', ussd: 'USSD (Live)', cash: 'Cash (Live)', hmo_direct: 'HMO Direct (Live)', wellipass: 'WelliPass (Live)' };
@@ -3024,7 +3031,7 @@ async function syncReferralsFromApi() {
 
 async function createLiveReferral(partnerId, patientRef, description, partnerLabel) {
   try {
-    const facilityRef = state.branch === 'All branches' ? 'facility-wuse' : `facility-${state.branch.toLowerCase()}`;
+    const facilityRef = currentFacilityRef();
     const created = await wellipayApi.createReferral({ partnerId, facilityRef, patientRef, description });
     state.liveReferrals.unshift(created);
     logAudit('Referral Sent', `${patientRef} → ${partnerLabel || partnerId}: ${description}`);
@@ -3273,7 +3280,7 @@ async function ensureDeskInvoice() {
   if (state.deskInvoiceId) return state.deskInvoiceId;
   const created = await wellipayApi.createInvoice({
     providerInvoiceRef: `DESK-${escapeHtml(state.patient.welliId)}-${Date.now()}`,
-    facilityRef: state.branch === 'All branches' ? 'facility-wuse' : `facility-${state.branch.toLowerCase()}`,
+    facilityRef: currentFacilityRef(),
     patientRef: state.patient.welliId,
     description: 'Consultation + ECG + Full Blood Count',
     amountMinor: toMinor(58000),
@@ -3288,7 +3295,7 @@ async function syncDeskEligibilityCheck() {
     await ensureDeskInvoice();
     await wellipayApi.createEligibilityCheck({
       providerRequestRef: `DESK-ELIG-${Date.now()}`,
-      facilityRef: state.branch === 'All branches' ? 'facility-wuse' : `facility-${state.branch.toLowerCase()}`,
+      facilityRef: currentFacilityRef(),
       patientRef: state.patient.welliId,
       payerRef: state.patient.hmo.split(' — ')[0],
       serviceCodes: ['CONSULT-GEN', 'ECG', 'LAB-FBC'],
@@ -3306,7 +3313,7 @@ async function syncDeskConsent() {
     const invoiceId = await ensureDeskInvoice();
     await wellipayApi.createFinancialConsent({
       providerConsentRef: `DESK-CONSENT-${Date.now()}`,
-      facilityRef: state.branch === 'All branches' ? 'facility-wuse' : `facility-${state.branch.toLowerCase()}`,
+      facilityRef: currentFacilityRef(),
       patientRef: state.patient.welliId,
       invoiceId,
       estimateRevision: 'rev-1',
@@ -3525,7 +3532,7 @@ function dispatch(action, target, domEvent) {
     }
     case 'view-patient': state.modal={type:'patient-profile', id};render();break;
     case 'view-desk-receipt': {
-      const deskInv = { id: 'RCT-' + Math.floor(1000 + Math.random() * 9000), patient: state.patient.name, patientId: state.patient.welliId, branch: state.branch === 'All branches' ? 'Wuse' : state.branch, amount: 58000, paid: 58000, status: 'Paid in Full', date: 'Sep 27, 2026', payer: state.payer === 'hmo' ? `HMO 80% (₦46,400) · Patient (₦11,600)` : `Paid via ${state.payer}` };
+      const deskInv = { id: 'RCT-' + Math.floor(1000 + Math.random() * 9000), patient: state.patient.name, patientId: state.patient.welliId, branch: SHOW_SAMPLE_DATA ? (state.branch === 'All branches' ? 'Wuse' : state.branch) : orgName(), amount: 58000, paid: 58000, status: 'Paid in Full', date: 'Sep 27, 2026', payer: state.payer === 'hmo' ? `HMO 80% (₦46,400) · Patient (₦11,600)` : `Paid via ${state.payer}` };
       state.modal = { type: 'receipt', invoice: deskInv };
       render();
       break;

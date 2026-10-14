@@ -406,6 +406,7 @@ const state = {
   liveReconciliationSummary: null,
   staffSynced: false,
   livePreAuths: [], preAuthsSynced: false, preAuthsSyncing: false, preAuthsError: '',
+  accountSaving: false, account: null, accountSynced: false, accountSyncing: false, accountError: '', banks: [],
   webhooks: [], webhooksSynced: false, webhooksSyncing: false, webhooksError: '',
   staffSyncing: false,
   liveStaff: [],
@@ -1430,7 +1431,7 @@ function renderRefunds() {
   const pendingCount = refundRows.filter(r => r.status.includes('Pending')).length;
   const refundTiles = SHOW_SAMPLE_DATA
     ? [['₦35,000','Refunded This Month','Settled'],[String(pendingCount),'Pending Approval','Queue'],['4.1 hrs','Avg Approval Time','SLA'],[money(state.settings.threshold),'Dual Approval Threshold','Security Rule']]
-    : [[money(approvedTotal),'Approved refunds, all time','Refunded'],[String(pendingCount),'Pending Approval','Queue'],[String(refundRows.length),'Refund requests','Total'],[money(state.settings.threshold),'Dual Approval Threshold','Security Rule']];
+    : [[money(approvedTotal),'Approved refunds, all time','Refunded'],[String(pendingCount),'Pending Approval','Queue'],[String(refundRows.length),'Refund requests','Total'],[refundLimitTile(),'Two-approver limit','Security Rule']];
   const owedTotal = refundRows.filter(r => r.recovery === 'OWED').reduce((sum, r) => sum + r.amount, 0);
   return `<div class="page">
     ${renderBranchBanner()}
@@ -1438,7 +1439,9 @@ function renderRefunds() {
     ${metricGrid(refundTiles)}
     ${owedTotal > 0 ? card('Owed to Wellinovate', `<p style="margin:0;font-size:12px;">Approved refunds on card and transfer payments are paid from Wellinovate's Paystack balance, because the original payment settled to your account. Your organisation owes Wellinovate <strong>${money(owedTotal)}</strong> for these refunds. Wellinovate will contact you to settle it.</p>`) : ''}
     ${card('Dual Approval Policy', `
-      <p style="margin:0;font-size:12px;">Refund requests exceeding <strong>${money(state.settings.threshold)}</strong> require dual-key verification from both the <strong>Finance Manager</strong> and the <strong>Medical Director</strong> before bank reversal release.</p>
+      ${SHOW_SAMPLE_DATA
+        ? `<p style="margin:0;font-size:12px;">Refund requests exceeding <strong>${money(state.settings.threshold)}</strong> require dual-key verification from both the <strong>Finance Manager</strong> and the <strong>Medical Director</strong> before bank reversal release.</p>`
+        : `<p style="margin:0;font-size:12px;">${escapeHtml(refundLimitSentence())}</p>`}
     `)}
     ${card('<div class="section-heading"><span>Refund Requests Queue</span><button class="btn btn-primary" data-action="open-request-refund">Request Refund</button></div>', `
       <div class="table-wrap">
@@ -1455,8 +1458,9 @@ function renderRefunds() {
                 <td>${tag(r.status, r.status === 'Approved' || r.status === 'Settled' ? 'neutral' : 'accent')}${r.recovery === 'OWED' ? ' ' + tag('Owed to Wellinovate', 'outline') : ''}${r.gateway ? '<br>' + tag(GATEWAY_REFUND_LABEL[r.gateway] || `Paystack: ${escapeHtml(r.gateway)}`, r.gateway === 'processed' ? 'neutral' : (r.gateway === 'failed' || r.gateway === 'needs-attention') ? 'accent' : 'outline') : ''}${r.gateway === 'failed' || r.gateway === 'needs-attention' ? `<br><small style="color:var(--color-accent-700)">The patient has not been paid. Contact Paystack support about this refund.</small>` : ''}</td>
                 <td>
                   ${r.deciding ? tag('Processing…', 'outline') : r.status.includes('Pending') ? `
-                    <button class="btn btn-secondary" data-action="approve-refund-item" data-id="${escapeHtml(r.id)}" style="font-size:11px;padding:4px 8px;">Approve</button>
-                    <button class="btn btn-ghost" data-action="reject-refund-item" data-id="${escapeHtml(r.id)}" style="font-size:11px;padding:4px 8px;">Reject</button>
+                    ${r.firstApprovedBy ? `<small style="display:block;color:var(--muted);margin-bottom:4px;">First approval: ${escapeHtml(r.firstApprovedBy.replace(/ \[[^\]]*\]$/, ''))}. A different person must approve.</small>` : ''}
+                    ${!SHOW_SAMPLE_DATA && !canDecideRefund() ? '' : `<button class="btn btn-secondary" data-action="approve-refund-item" data-id="${escapeHtml(r.id)}" style="font-size:11px;padding:4px 8px;">${r.firstApprovedBy ? 'Give second approval' : 'Approve'}</button>
+                    <button class="btn btn-ghost" data-action="reject-refund-item" data-id="${escapeHtml(r.id)}" style="font-size:11px;padding:4px 8px;">Reject</button>`}
                   ` : tag('Recorded', 'outline')}
                 </td>
               </tr>
@@ -2346,7 +2350,7 @@ function renderAiInsights() {
 }
 
 /* 24. Settings */
-function renderSettings() {
+function renderSettingsSample() {
   const thresholdCard = card('Refund approval threshold', `<div class="field"><label for="refund-threshold">Amount above which refunds need Finance Manager + Owner approval</label><input class="input" id="refund-threshold" type="number" min="0" step="5000" value="${state.settings.threshold}"></div>`);
   const approvalCard = card(`<div class="section-heading"><span>Second approval on bank-detail change</span><button class="btn btn-secondary" data-action="toggle-setting">${state.settings.secondApproval ? 'Enabled' : 'Disabled'}</button></div>`, `<p>When enabled, a change to the settlement bank account needs a second approver before it takes effect.</p>`);
   const controlsCard = card('Organization controls', `${dataRow('Settlement account', 'GTBank ••4471', 'Verified')}${dataRow('Refund approval limit', `> ${money(state.settings.threshold)} needs 2 approvers`, 'Configured', 'outline')}${dataRow('Bank-detail change', 'Requires second approval', state.settings.secondApproval ? 'Enabled' : 'Disabled', 'outline')}`);
@@ -2509,6 +2513,90 @@ async function savePreAuthStatus(id, status, notes) {
     m.busy = false;
     showToast('Not updated', err.message);
   }
+  render();
+}
+
+/* Settings: the refund approval limit and the settlement account, both held by the API. */
+function canSeeAccount() {
+  const level = authState.user?.accessLevel;
+  return !level || !ACCESS_LEVELS[level] || ['ADMIN', 'FINANCE'].includes(level);
+}
+function canDecideRefund() { return canSeeAccount(); }
+// Live limit in naira: a number, null when no limit is set, undefined while unknown.
+function refundLimitNaira() {
+  if (SHOW_SAMPLE_DATA) return state.settings.threshold;
+  if (!state.accountSynced) return undefined;
+  const minor = state.account.refundApprovalLimitMinor;
+  return minor === null ? null : fromMinor(minor);
+}
+function refundLimitSentence() {
+  const limit = refundLimitNaira();
+  if (limit === undefined) return 'Refunds above the limit set by an administrator need two different approvers.';
+  if (limit === null) return 'No refund limit is set. One approver is enough.';
+  return `Refunds above ${money(limit)} need two different approvers.`;
+}
+function refundLimitTile() {
+  const limit = refundLimitNaira();
+  return limit === undefined ? '—' : limit === null ? 'None' : money(limit);
+}
+
+async function syncAccount() {
+  if (state.accountSyncing) return;
+  state.accountSyncing = true;
+  try {
+    state.account = await wellipayApi.getAccount();
+    state.accountSynced = true;
+    state.accountError = '';
+    if (!state.banks.length) { try { state.banks = (await fetchBanks()).items || []; } catch { /* the bank code is shown instead */ } }
+  } catch (err) {
+    state.accountError = `Account details not loaded: ${err.message}`;
+  } finally {
+    state.accountSyncing = false;
+    if (state.active === 'settings' || state.active === 'refunds') render();
+  }
+}
+
+function renderSettings() {
+  if (SHOW_SAMPLE_DATA) return renderSettingsSample();
+  const a = state.account;
+  const limit = refundLimitNaira();
+  const limitBody = state.accountError
+    ? `<p class="empty-state">${escapeHtml(state.accountError)} <button class="btn btn-secondary" data-action="retry-account">Try again</button></p>`
+    : !state.accountSynced ? '<p class="empty-state">Loading…</p>'
+    : `<p>${escapeHtml(refundLimitSentence())} The first approval is recorded and the refund stays pending until a different Finance or Admin user approves it. A rejection needs one person.</p>
+      <form id="refund-limit-form" class="form-grid">
+        <div class="form-group"><label for="refund-limit-input">Limit (₦)</label><input class="input" id="refund-limit-input" name="limit" type="number" min="1" step="1" required value="${limit === null ? '' : escapeHtml(String(limit))}" placeholder="e.g. 100000"></div>
+        <div class="modal-actions">
+          ${limit === null ? '' : '<button class="btn btn-secondary" type="button" data-action="remove-refund-limit">Remove limit</button>'}
+          <button class="btn btn-primary" type="submit" ${state.accountSaving ? 'disabled' : ''}>${state.accountSaving ? 'Saving…' : 'Save limit'}</button>
+        </div>
+      </form>`;
+  let settlementBody = '<p class="empty-state">Loading…</p>';
+  if (state.accountSynced) {
+    const st = a.settlement;
+    const bank = state.banks.find(b => b.code === st.bankCode);
+    settlementBody = st.hasPayoutAccount
+      ? `${dataRow('Account name', escapeHtml(st.accountName || '—'), 'Payout account', 'outline')}${dataRow('Bank', escapeHtml(bank ? bank.name : (st.bankCode ? `Bank code ${st.bankCode}` : '—')), '', 'outline', '<span></span>')}${dataRow('Account number', st.accountNumberLast4 ? `••••${escapeHtml(st.accountNumberLast4)}` : '—', '', 'outline', '<span></span>')}<p style="color:var(--muted);font-size:0.85em;">Online payments settle here. WelliPay has no screen to change it. Contact Wellinovate to change it.</p>`
+      : '<p class="empty-state">No payout account is set up. Contact Wellinovate to add one.</p>';
+  }
+  return `<div class="page settings-narrow">${renderBranchBanner()}${pageHeading('Settings', 'Approval rules & organization', 'Controls for refunds and the account that receives your online payments.')}
+    ${card('Refund approval limit', limitBody)}
+    ${card('Settlement account', settlementBody)}
+  </div>`;
+}
+
+async function saveRefundLimit(limitNaira) {
+  if (state.accountSaving) return;
+  state.accountSaving = true; render();
+  try {
+    state.account = await wellipayApi.setRefundLimit({ limitMinor: limitNaira === null ? null : toMinor(limitNaira) });
+    state.accountSynced = true;
+    logAudit('Refund Limit Changed', limitNaira === null ? 'Limit removed' : `Limit set to ${money(limitNaira)}`);
+    showToast('Refund limit saved', limitNaira === null ? 'One approver is enough for any refund.' : `Refunds above ${money(limitNaira)} now need two approvers.`);
+  } catch (err) {
+    showToast('Not saved', err.message);
+  }
+  state.accountSaving = false;
   render();
 }
 
@@ -2798,6 +2886,7 @@ function render() {
   if ((state.active === 'refunds' || state.active === 'dashboard') && !state.refundsSynced) syncRefundsFromApi();
   if (state.active === 'reconciliation' && !state.reconciliationSynced) syncReconciliationFromApi();
   if ((state.active === 'staff' || state.active === 'branches') && !state.staffSynced) syncStaffFromApi();
+  if (!SHOW_SAMPLE_DATA && (state.active === 'settings' || state.active === 'refunds') && canSeeAccount() && !state.accountSynced && !state.accountError) syncAccount();
   if (state.active === 'api-developers' && !SHOW_SAMPLE_DATA && !state.webhooksSynced && !state.webhooksError) syncWebhooks();
   if (state.active === 'payment-plans' && !state.paymentPlansSynced) syncPaymentPlansFromApi();
   if (state.active === 'payment-plans' && !state.invoicesSynced) syncInvoicesFromApi();
@@ -3758,7 +3847,7 @@ function renderModal() {
     return `<div class="modal-backdrop" data-action="dismiss-modal">
       <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="req-ref-title">
         <h2 id="req-ref-title">Initiate Payment Refund</h2>
-        <p>Refunds above ${money(state.settings.threshold)} will automatically trigger a dual-approval rule.</p>
+        <p>${SHOW_SAMPLE_DATA ? `Refunds above ${money(state.settings.threshold)} will automatically trigger a dual-approval rule.` : escapeHtml(refundLimitSentence())}</p>
         ${!livePayments.length && state.paymentsSyncing ? '<p style="margin:0 0 8px;font-size:12px;color:var(--muted);">Loading live payments…</p>' : ''}
         <form id="request-refund-form" class="form-grid">
           <div class="form-group"><label>Select Payment *</label>
@@ -4236,6 +4325,7 @@ async function syncRefundsFromApi() {
         dualApproval: item.amountMinor >= toMinor(state.settings.threshold),
         recovery: item.recoveryStatus || null,
         gateway: item.gatewayStatus || null,
+        firstApprovedBy: item.firstApprovedBy || null,
         live: true,
       };
     });
@@ -4266,6 +4356,12 @@ async function decideLiveRefund(refundId, apiDecision, decisionLabel) {
       actor: currentActorName(),
     });
     const row = state.refundList.find(r => r.id === refundId);
+    if (result.awaitingSecondApproval) {
+      if (row) { row.firstApprovedBy = result.firstApprovedBy || null; row.deciding = false; }
+      logAudit('Refund First Approval', `${result.providerRefundRef} for ${money(fromMinor(result.amountMinor))}`);
+      showToast('First approval recorded', 'A different Finance or Admin user must approve it too.');
+      return;
+    }
     if (row) {
       row.status = REFUND_STATUS_LABEL[result.status] || result.status;
       row.deciding = false;
@@ -5482,6 +5578,8 @@ function dispatch(action, target, domEvent) {
     /* Staff */
     case 'open-preauth-status': state.modal={type:'preauth-status', id:String(id)};render();break;
     case 'retry-preauths': state.preAuthsError='';render();break;
+    case 'retry-account': state.accountError='';render();break;
+    case 'remove-refund-limit': saveRefundLimit(null);break;
     case 'open-add-webhook': state.modal={type:'add-webhook'};render();break;
     case 'deactivate-webhook': deactivateWebhook(id);break;
     case 'retry-webhooks': state.webhooksError='';render();break;
@@ -6308,6 +6406,12 @@ document.addEventListener('submit', async event => {
     event.preventDefault();
     const fd = new FormData(event.target);
     savePreAuthStatus(state.modal.id, fd.get('status').toString(), fd.get('notes').toString().trim());
+  }
+  if (event.target.id === 'refund-limit-form') {
+    event.preventDefault();
+    const limit = Number(new FormData(event.target).get('limit'));
+    if (!(limit >= 1)) { showToast('Check the limit', 'Enter an amount of ₦1 or more, or use Remove limit.'); return; }
+    saveRefundLimit(limit);
   }
   if (event.target.id === 'add-webhook-form') {
     event.preventDefault();

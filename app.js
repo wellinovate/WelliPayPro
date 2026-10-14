@@ -56,6 +56,26 @@ const PROVIDER_TYPE_LABEL = {
   INDEPENDENT_PRACTITIONER: 'Independent practitioner',
 };
 
+// What a provider bills for, by type. Drives the wording on the invoice form,
+// the sidebar and the catalogue page. Unknown or missing types use the hospital
+// wording.
+const BILLING_COPY = {
+  HOSPITAL: { desk: 'Hospital Desk', catalogue: 'Services & Pricing', itemLabel: 'Service or item', itemPlaceholder: 'e.g. Consultation', catalogueNote: 'Enter each service and its price when you create an invoice.' },
+  DIAGNOSTIC_LAB: { desk: 'Lab Desk', catalogue: 'Tests & Pricing', itemLabel: 'Test or investigation', itemPlaceholder: 'e.g. Full blood count', requestedBy: true, catalogueNote: 'Enter each test and its price when you create an invoice.' },
+  PHARMACY: { desk: 'Pharmacy Desk', catalogue: 'Drugs & Pricing', itemLabel: 'Drug or item', itemPlaceholder: 'e.g. Amoxicillin 500mg capsules', quantity: true, catalogueNote: 'Enter each drug, the quantity and the unit price when you create an invoice.' },
+  INDEPENDENT_PRACTITIONER: { desk: 'Practice Desk', catalogue: 'Services & Pricing', itemLabel: 'Consultation or procedure', itemPlaceholder: 'e.g. Follow-up consultation', catalogueNote: 'Enter each service and its price when you create an invoice.' },
+};
+function billingCopy() {
+  return BILLING_COPY[getTenant()?.providerType] || BILLING_COPY.HOSPITAL;
+}
+// Sidebar and page-title wording that depends on the provider type.
+function navLabel(id, label) {
+  if (SHOW_SAMPLE_DATA) return label;
+  if (id === 'hospital-desk') return billingCopy().desk;
+  if (id === 'services-pricing') return billingCopy().catalogue;
+  return label;
+}
+
 // The signed-in provider's own name. Falls back to a neutral label for a
 // session saved before the login response carried the tenant.
 function orgName() {
@@ -512,7 +532,7 @@ const modalRoot = document.querySelector('#modal-root');
 
 function icon(name) { return `<svg viewBox="0 0 24 24" aria-hidden="true">${iconPaths[name] || ''}</svg>`; }
 function renderNav() {
-  nav.innerHTML = groups.map(group => `<div class="nav-group"><div class="nav-label">${group.name}</div>${group.items.filter(([id]) => SHOW_SAMPLE_DATA || id !== 'branches').map(([id,label,iconName]) => `<a class="nav-link" href="#${id}" ${state.active === id ? 'aria-current="page"' : ''}><span class="nav-icon">${icon(iconName)}</span><span>${label}</span></a>`).join('')}</div>`).join('');
+  nav.innerHTML = groups.map(group => `<div class="nav-group"><div class="nav-label">${group.name}</div>${group.items.filter(([id]) => SHOW_SAMPLE_DATA || id !== 'branches').map(([id,label,iconName]) => `<a class="nav-link" href="#${id}" ${state.active === id ? 'aria-current="page"' : ''}><span class="nav-icon">${icon(iconName)}</span><span>${navLabel(id, label)}</span></a>`).join('')}</div>`).join('');
 }
 function card(kicker, body, className='') { return `<section class="card elev-sm ${className}"><div class="card-kicker">${kicker}</div>${body}</section>`; }
 function stat(value, label, kicker='') { return `<section class="card elev-sm stat-card"><span class="card-kicker">${kicker || label}</span><strong class="stat-value">${value}</strong><span class="stat-label">${label}</span></section>`; }
@@ -789,6 +809,13 @@ function renderPayments() {
 
 /* 6. Services & Pricing */
 function renderServicesPricing() {
+  if (!SHOW_SAMPLE_DATA) {
+    const copy = billingCopy();
+    return `<div class="page">
+    ${pageHeading('Revenue Cycle', copy.catalogue, 'Your price list.')}
+    ${card('Price list', `<p class="empty-state">A saved price list is not available yet. ${escapeHtml(copy.catalogueNote)}</p>`)}
+  </div>`;
+  }
   const filtered = state.servicesList.filter(s => {
     const matchesFilter = state.serviceFilter === 'All' || s.cat.toLowerCase() === state.serviceFilter.toLowerCase();
     const matchesSearch = !state.serviceSearch || s.name.toLowerCase().includes(state.serviceSearch.toLowerCase());
@@ -1695,7 +1722,7 @@ function initializeCharts() {
 function render() {
   if (!labels[state.active]) state.active = 'dashboard';
   renderNav();
-  document.querySelector('#page-title').textContent = labels[state.active];
+  document.querySelector('#page-title').textContent = navLabel(state.active, labels[state.active]);
   const branchPicker = document.querySelector('.branch-picker');
   if (branchPicker) branchPicker.style.display = SHOW_SAMPLE_DATA ? '' : 'none';
   const branchSelect = document.querySelector('#branch-select');
@@ -2050,15 +2077,18 @@ function renderModal() {
                 <option value="Wuse">Wuse</option><option value="Maitama">Maitama</option><option value="Garki">Garki</option><option value="Kaduna">Kaduna</option><option value="Lagos">Lagos</option>
               </select>
             </div>` : '';
+    const copy = billingCopy();
     const serviceField = SHOW_SAMPLE_DATA
       ? `<div class="form-group"><label>Primary Service Item</label>
             <select name="serviceItem" id="inv-service-picker">
               ${state.servicesList.map(s => `<option value="${escapeHtml(s.cash)}" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)} — ${money(s.cash)}</option>`).join('')}
             </select>
           </div>`
-      : `<div class="form-grid two-col">
-            <div class="form-group"><label>Service or item *</label><input class="input" name="serviceName" required maxlength="200" placeholder="e.g. Full blood count"></div>
-            <div class="form-group"><label>Amount (₦) *</label><input class="input" type="number" name="serviceAmount" required min="1" step="any" placeholder="e.g. 8600"></div>
+      : `<div class="form-group"><label>${escapeHtml(copy.itemLabel)} *</label><input class="input" name="serviceName" required maxlength="200" placeholder="${escapeHtml(copy.itemPlaceholder)}"></div>
+          <div class="form-grid two-col">
+            ${copy.quantity ? `<div class="form-group"><label>Quantity *</label><input class="input" type="number" name="quantity" required min="1" step="1" value="1"></div>` : ''}
+            <div class="form-group"><label>${copy.quantity ? 'Unit price (₦) *' : 'Amount (₦) *'}</label><input class="input" type="number" name="serviceAmount" required min="1" step="any" placeholder="e.g. 8600"></div>
+            ${copy.requestedBy ? `<div class="form-group"><label>Requested by (optional)</label><input class="input" name="requestedBy" maxlength="120" placeholder="Doctor or referring facility"></div>` : ''}
           </div>`;
     return `<div class="modal-backdrop" data-action="dismiss-modal">
       <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="create-inv-title">
@@ -4006,7 +4036,11 @@ document.addEventListener('submit', async event => {
     if (!pt) { showToast('Choose a patient', 'Pick a patient from the list.'); return; }
     const srvSelect = document.querySelector('#inv-service-picker');
     const srvName = SHOW_SAMPLE_DATA ? (srvSelect.selectedOptions[0]?.dataset.name || 'Clinical Care') : fd.get('serviceName').toString().trim();
-    const srvAmt = SHOW_SAMPLE_DATA ? (Number(fd.get('serviceItem')) || 25000) : Number(fd.get('serviceAmount'));
+    const quantity = SHOW_SAMPLE_DATA ? 1 : (billingCopy().quantity ? Math.max(1, Math.floor(Number(fd.get('quantity')) || 1)) : 1);
+    const srvAmt = SHOW_SAMPLE_DATA ? (Number(fd.get('serviceItem')) || 25000) : Number(fd.get('serviceAmount')) * quantity;
+    const requestedBy = SHOW_SAMPLE_DATA ? '' : (fd.get('requestedBy') || '').toString().trim();
+    const itemText = quantity > 1 ? `${srvName} × ${quantity}` : srvName;
+    const invoiceText = requestedBy ? `${itemText} (requested by ${requestedBy})` : itemText;
     if (!srvName || !(srvAmt > 0)) { showToast('Check the invoice', 'Enter the service and an amount above zero.'); return; }
     const extra = Number(fd.get('extraFee')) || 0;
     const totalAmt = srvAmt + extra;
@@ -4019,7 +4053,7 @@ document.addEventListener('submit', async event => {
       paid: 0,
       status: 'Unpaid',
       date: new Date().toISOString().slice(0, 10),
-      items: [{ desc: srvName, amt: srvAmt }, ...(extra ? [{ desc: 'Supplemental Diagnostics / Labs', amt: extra }] : [])],
+      items: [{ desc: invoiceText, amt: srvAmt }, ...(extra ? [{ desc: 'Supplemental Diagnostics / Labs', amt: extra }] : [])],
       payer: fd.get('payerDetail').toString()
     };
     state.invoiceList.unshift(newInv);
@@ -4032,7 +4066,7 @@ document.addEventListener('submit', async event => {
         providerInvoiceRef: newInv.id,
         facilityRef: SHOW_SAMPLE_DATA ? `facility-${newInv.branch.toLowerCase()}` : MAIN_FACILITY_REF,
         patientRef: pt.id,
-        description: srvName,
+        description: extra ? `${invoiceText} + additional fee` : invoiceText,
         amountMinor: toMinor(totalAmt),
         currency: 'NGN',
       });

@@ -1305,7 +1305,7 @@ function renderPaymentSettlement() {
   if (ps?.error) body += `<p style="color:var(--color-accent);font-size:12px;">${escapeHtml(ps.error)}</p>`;
   if (ps?.notice) body += `<p style="color:var(--muted);font-size:12px;">${escapeHtml(ps.notice)}</p>`;
   if (ps?.data) {
-    const d = ps.data;
+    const d = { hasPayoutAccount: true, ...ps.data, summary: { awaitingMinor: 0, processingMinor: 0, settledMinor: 0, failedMinor: 0, ...(ps.data.summary || {}) }, items: ps.data.items || [] };
     if (!d.hasPayoutAccount) body += '<p style="font-size:12px;color:var(--color-accent);">No payout account is set up yet. Payments go to the main Paystack account until one is added in onboarding.</p>';
     body += metricGrid([
       [money(fromMinor(d.summary.awaitingMinor)), 'Awaiting payout', 'awaiting'],

@@ -175,6 +175,7 @@ async function showApplyScreen() {
           <div class="form-group"><label for="ap-bank">Bank</label>
             <select class="input" id="ap-bank" required><option value="">Loading banks…</option></select></div>
           <div class="form-group"><label for="ap-account">Account number (10 digits)</label><input class="input" id="ap-account" inputmode="numeric" pattern="\\d{10}" maxlength="10" required></div>
+          <p id="apply-fee" style="display:none;margin:0;font-size:12px;"></p>
           <button type="submit" class="btn btn-primary" style="width:100%;height:44px;font-size:15px;margin-top:4px;" id="apply-submit">Submit application</button>
         </form>
         <p style="margin-top:16px;font-size:12px;text-align:center;"><a href="#" id="apply-back">Back to sign in</a></p>
@@ -182,6 +183,13 @@ async function showApplyScreen() {
     </div>`;
 
   root.querySelector('#apply-back').addEventListener('click', e => { e.preventDefault(); showAuthScreen(); });
+
+  fetchApplicationTerms().then(({ platformFeePercent }) => {
+    if (!(platformFeePercent > 0)) return;
+    const feeEl = root.querySelector('#apply-fee');
+    feeEl.textContent = `Fees: Paystack charges its own fee on each payment. WelliPay keeps ${platformFeePercent}% of each payment. You receive the rest in your bank account.`;
+    feeEl.style.display = 'block';
+  }).catch(() => { /* the fee line is optional */ });
 
   const bankSelect = root.querySelector('#ap-bank');
   try {
@@ -267,7 +275,7 @@ function openProfileDropdown() {
   }, 50);
 }
 
-import { wellipayApi, toMinor, fromMinor, loginStaff, logoutStaff, getStaffSession, getTenant, fetchBanks, submitProviderApplication, onSessionExpired } from './api.js';
+import { wellipayApi, toMinor, fromMinor, loginStaff, logoutStaff, getStaffSession, getTenant, fetchBanks, fetchApplicationTerms, submitProviderApplication, onSessionExpired } from './api.js';
 
 const groups = [
   { name: 'Overview', items: [['dashboard', 'Dashboard', 'grid'], ['hospital-desk', 'Hospital Desk', 'wallet'], ['ai-insights', 'AI Insights', 'spark'], ['notifications', 'Notifications', 'bell']] },

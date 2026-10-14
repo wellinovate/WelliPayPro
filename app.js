@@ -360,6 +360,9 @@ const state = {
   // navigating back and forth doesn't re-fire the request every render.
   patientsSynced: false,
   patientRecordsSynced: false,
+  priceList: [],
+  priceListSynced: false,
+  priceListError: '',
   patientsSyncing: false,
   paymentsSynced: false,
   paymentsSyncing: false,
@@ -831,9 +834,24 @@ function renderPayments() {
 function renderServicesPricing() {
   if (!SHOW_SAMPLE_DATA) {
     const copy = billingCopy();
+    const items = state.priceList;
+    const body = !state.priceListSynced
+      ? `<p class="empty-state">${state.priceListError ? escapeHtml(state.priceListError) : 'Loading price list…'}</p>`
+      : items.length
+        ? `<div class="table-wrap"><table class="table">
+            <thead><tr><th>${escapeHtml(copy.itemLabel)}</th><th>Category</th><th>Price</th><th>Status</th><th></th></tr></thead>
+            <tbody>${items.map(it => `<tr>
+              <td><strong>${escapeHtml(it.name)}</strong></td>
+              <td>${it.category ? escapeHtml(it.category) : '—'}</td>
+              <td>${money(fromMinor(it.unitPriceMinor))}</td>
+              <td>${tag(it.active ? 'Active' : 'Off', it.active ? 'neutral' : 'outline')}</td>
+              <td><button class="btn btn-secondary" data-action="edit-price-item" data-id="${escapeHtml(it.serviceItemId)}">Edit</button>
+                  <button class="btn btn-secondary" data-action="toggle-price-item" data-id="${escapeHtml(it.serviceItemId)}">${it.active ? 'Switch off' : 'Switch on'}</button></td>
+            </tr>`).join('')}</tbody></table></div>`
+        : `<p class="empty-state">No items yet. Use Add item to save the first one.</p>`;
     return `<div class="page">
-    ${pageHeading('Revenue Cycle', copy.catalogue, 'Your price list.')}
-    ${card('Price list', `<p class="empty-state">A saved price list is not available yet. ${escapeHtml(copy.catalogueNote)}</p>`)}
+    ${pageHeading('Revenue Cycle', copy.catalogue, 'Your price list. Pick from it when you create an invoice.')}
+    ${card('<div class="section-heading"><span>Price list</span><button class="btn btn-primary" data-action="open-price-item">Add item</button></div>', body)}
   </div>`;
   }
   const filtered = state.servicesList.filter(s => {
@@ -1784,6 +1802,7 @@ function render() {
   if ((state.active === 'patients' || state.active === 'invoices' || state.active === 'desk') && !state.patientRecordsSynced) ensurePatientRecords().then(() => render());
   if (state.active === 'patients' && !state.patientsSynced) syncPatientsFromApi();
   if (state.active === 'payments' && !state.paymentsSynced) syncPaymentsFromApi();
+  if ((state.active === 'services-pricing' || state.active === 'invoices' || state.active === 'desk') && !SHOW_SAMPLE_DATA && !state.priceListSynced) syncPriceList();
   if (state.active === 'invoices' && !state.invoicesSynced) syncInvoicesFromApi();
   if ((state.active === 'claims' || state.active === 'hmo-insurance' || state.active === 'reports' || state.active === 'ai-insights') && !state.claimsSynced) syncClaimsFromApi();
   if ((state.active === 'dashboard' || state.active === 'reports' || state.active === 'branches') && !state.dashboardSynced) syncDashboardFromApi();
@@ -2104,7 +2123,11 @@ function renderModal() {
               ${state.servicesList.map(s => `<option value="${escapeHtml(s.cash)}" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)} — ${money(s.cash)}</option>`).join('')}
             </select>
           </div>`
-      : `<div class="form-group"><label>${escapeHtml(copy.itemLabel)} *</label><input class="input" name="serviceName" required maxlength="200" placeholder="${escapeHtml(copy.itemPlaceholder)}"></div>
+      : `${state.priceList.some(x => x.active) ? `<div class="form-group"><label>From price list (optional)</label>
+            <select id="inv-price-pick"><option value="">Choose a saved item, or type below</option>
+              ${state.priceList.filter(x => x.active).map(x => `<option value="${escapeHtml(x.serviceItemId)}">${escapeHtml(x.name)} — ${money(fromMinor(x.unitPriceMinor))}</option>`).join('')}
+            </select></div>` : ''}
+          <div class="form-group"><label>${escapeHtml(copy.itemLabel)} *</label><input class="input" name="serviceName" required maxlength="200" placeholder="${escapeHtml(copy.itemPlaceholder)}"></div>
           <div class="form-grid two-col">
             ${copy.quantity ? `<div class="form-group"><label>Quantity *</label><input class="input" type="number" name="quantity" required min="1" step="1" value="1"></div>` : ''}
             <div class="form-group"><label>${copy.quantity ? 'Unit price (₦) *' : 'Amount (₦) *'}</label><input class="input" type="number" name="serviceAmount" required min="1" step="any" placeholder="e.g. 8600"></div>
@@ -2234,6 +2257,28 @@ function renderModal() {
           <button class="btn btn-secondary" data-action="close-modal">Close</button>
           <button class="btn btn-primary" data-action="bill-patient" data-id="${escapeHtml(p.id)}">Load into Hospital Desk</button>
         </div>
+      </section>
+    </div>`;
+  }
+
+  if (state.modal.type === 'price-item') {
+    const copy = billingCopy();
+    const it = state.modal.itemId ? state.priceList.find(x => x.serviceItemId === state.modal.itemId) : null;
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="price-item-title">
+        <h2 id="price-item-title">${it ? 'Edit item' : 'Add item'}</h2>
+        <p>Saved prices are copied onto an invoice when you create it. Changing a price later does not change old invoices.</p>
+        <form id="price-item-form" class="form-grid" data-id="${it ? escapeHtml(it.serviceItemId) : ''}">
+          <div class="form-group"><label>${escapeHtml(copy.itemLabel)} *</label><input class="input" name="name" required minlength="2" maxlength="120" value="${it ? escapeHtml(it.name) : ''}" placeholder="${escapeHtml(copy.itemPlaceholder)}"></div>
+          <div class="form-grid two-col">
+            <div class="form-group"><label>${copy.quantity ? 'Unit price (₦) *' : 'Price (₦) *'}</label><input class="input" type="number" name="price" required min="1" step="any" value="${it ? it.unitPriceMinor / 100 : ''}" placeholder="e.g. 8600"></div>
+            <div class="form-group"><label>Category (optional)</label><input class="input" name="category" maxlength="60" value="${it && it.category ? escapeHtml(it.category) : ''}" placeholder="e.g. Haematology"></div>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
+            <button class="btn btn-primary" type="submit" id="price-item-submit">Save</button>
+          </div>
+        </form>
       </section>
     </div>`;
   }
@@ -2465,6 +2510,31 @@ function patientFromRecord(item) {
     lastVisit: '—',
     registered: true,
   };
+}
+
+async function togglePriceItem(itemId) {
+  const item = state.priceList.find(x => x.serviceItemId === itemId);
+  if (!item) return;
+  try {
+    const updated = await wellipayApi.updateServiceItem(itemId, { active: !item.active });
+    state.priceList = state.priceList.map(x => x.serviceItemId === itemId ? updated : x);
+    render();
+  } catch (err) {
+    showToast('Item not changed', err.message);
+  }
+}
+
+let priceListPromise = null;
+// Loads the saved price list, including switched-off items so they can be
+// switched back on. Create Invoice only offers the active ones.
+function syncPriceList() {
+  if (!priceListPromise) {
+    priceListPromise = wellipayApi.listServiceItems({ includeInactive: 'true' })
+      .then(data => { state.priceList = data.items; state.priceListSynced = true; state.priceListError = ''; })
+      .catch(err => { state.priceListError = `Price list not loaded: ${err.message}`; showToast('API Sync Failed', state.priceListError); })
+      .finally(() => { priceListPromise = null; render(); });
+  }
+  return priceListPromise;
 }
 
 let patientRecordsPromise = null;
@@ -3730,6 +3800,9 @@ function dispatch(action, target, domEvent) {
     /* Services & Pricing */
     case 'filter-services': state.serviceFilter=target.dataset.filter;render();break;
     case 'search-services': state.serviceSearch=target.value;render();break;
+    case 'open-price-item': state.modal={type:'price-item'};render();break;
+    case 'edit-price-item': state.modal={type:'price-item',itemId:String(id)};render();break;
+    case 'toggle-price-item': togglePriceItem(String(id)); break;
     case 'open-add-service': state.modal={type:'add-service'};render();break;
 
     /* Refunds */
@@ -4021,6 +4094,14 @@ document.addEventListener('change', event => {
   if (event.target.name === 'filter') { state.filter = event.target.value; render(); }
   if (event.target.name === 'payer') { state.payer = event.target.value; resetPayment(); render(); }
   if (event.target.id === 'refund-threshold') { state.settings.threshold = Math.max(0, Number(event.target.value) || 0); }
+  if (event.target.id === 'inv-price-pick') {
+    const item = state.priceList.find(x => x.serviceItemId === event.target.value);
+    const form = event.target.closest('form');
+    if (item && form) {
+      form.elements.serviceName.value = item.name;
+      form.elements.serviceAmount.value = item.unitPriceMinor / 100;
+    }
+  }
   if (event.target.id === 'branch-select') {
     state.branch = event.target.value;
     logAudit('Branch Filter Changed', `Console scoped to ${state.branch}`);
@@ -4138,6 +4219,33 @@ document.addEventListener('submit', async event => {
       render();
     } catch (err) {
       showToast('API Sync Failed', `${newInv.id} saved locally only: ${err.message}`);
+    }
+  }
+  if (event.target.id === 'price-item-form') {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    const itemId = event.target.dataset.id;
+    const btn = document.getElementById('price-item-submit');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    const category = fd.get('category').toString().trim();
+    const body = {
+      name: fd.get('name').toString().trim(),
+      unitPriceMinor: toMinor(Number(fd.get('price'))),
+    };
+    try {
+      if (itemId) {
+        const updated = await wellipayApi.updateServiceItem(itemId, { ...body, category: category || null });
+        state.priceList = state.priceList.map(x => x.serviceItemId === itemId ? updated : x);
+      } else {
+        const created = await wellipayApi.createServiceItem(category ? { ...body, category } : body);
+        state.priceList = [...state.priceList, created].sort((a, b) => a.name.localeCompare(b.name));
+      }
+      state.modal = null;
+      showToast('Price list saved', `${body.name} saved.`);
+      render();
+    } catch (err) {
+      showToast('Item not saved', err.message);
+      if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
     }
   }
   if (event.target.id === 'add-service-form') {

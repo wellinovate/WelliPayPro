@@ -199,6 +199,7 @@ export const wellipayApi = {
   createInvoice: (body) => apiRequest('/provider/invoices', { method: 'POST', body, idempotent: 'inv' }),
   getInvoice: (invoiceId) => apiRequest(`/provider/invoices/${encodeURIComponent(invoiceId)}`),
   listInvoices: (query) => apiRequest(`/provider/invoices${toQueryString(query)}`),
+  listFamilyFundingRequests: (query) => apiRequest(`/provider/family-funding-requests${toQueryString(query)}`),
   createFamilyFundingRequest: (body) =>
     apiRequest('/provider/family-funding-requests', { method: 'POST', body, idempotent: 'fund' }),
   createEligibilityCheck: (body) =>

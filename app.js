@@ -299,7 +299,7 @@ import { wellipayApi, toMinor, fromMinor, loginStaff, logoutStaff, getStaffSessi
 
 const groups = [
   { name: 'Overview', items: [['dashboard', 'Dashboard', 'grid'], ['hospital-desk', 'Hospital Desk', 'wallet'], ['ai-insights', 'AI Insights', 'spark'], ['notifications', 'Notifications', 'bell']] },
-  { name: 'Revenue Cycle', items: [['patients', 'Patients', 'users'], ['invoices', 'Invoices', 'file'], ['payments', 'Payments', 'credit'], ['services-pricing', 'Services & Pricing', 'list']] },
+  { name: 'Revenue Cycle', items: [['patients', 'Patients', 'users'], ['invoices', 'Invoices', 'file'], ['payments', 'Payments', 'credit'], ['services-pricing', 'Services & Pricing', 'list'], ['bookings', 'Bookings & Collection', 'calendar'], ['corporate-accounts', 'Corporate Accounts', 'building']] },
   { name: 'Claims & Payers', items: [['claims', 'Claims', 'claim'], ['hmo-insurance', 'HMO / Insurance', 'shield'], ['authorization', 'Authorization Centre', 'check'], ['family-sponsors', 'Family / Sponsors', 'users'], ['wellipass', 'WelliPass', 'qr'], ['receivables', 'Receivables', 'receipt'], ['reconciliation', 'Reconciliation', 'refresh'], ['settlements', 'Settlements', 'bank'], ['refunds', 'Refunds', 'undo']] },
   { name: 'Growth', items: [['financing', 'Financing', 'trend'], ['payment-plans', 'Payment Plans', 'calendar'], ['referrals', 'Referrals', 'share'], ['partners', 'Providers / Partners', 'link']] },
   { name: 'Operations', items: [['reports', 'Reports', 'chart'], ['branches', 'Branches', 'building'], ['staff', 'Staff', 'users'], ['integrations', 'Integrations', 'plug'], ['api-developers', 'API & Developers', 'code']] },
@@ -361,6 +361,13 @@ const state = {
   patientsSynced: false,
   patientRecordsSynced: false,
   fundingList: [],
+  bookings: [],
+  bookingsSynced: false,
+  bookingsError: '',
+  bookingFilter: 'All',
+  corporateAccounts: [],
+  corporateSynced: false,
+  corporateError: '',
   fundingSynced: false,
   priceList: [],
   priceListSynced: false,
@@ -544,8 +551,19 @@ const nav = document.querySelector('#navigation');
 const modalRoot = document.querySelector('#modal-root');
 
 function icon(name) { return `<svg viewBox="0 0 24 24" aria-hidden="true">${iconPaths[name] || ''}</svg>`; }
+// Which provider types use each page. Sample mode never shows the new pages.
+function providerTypeOrDefault() { return getTenant()?.providerType || 'HOSPITAL'; }
+function isLab() { return !SHOW_SAMPLE_DATA && providerTypeOrDefault() === 'DIAGNOSTIC_LAB'; }
+function usesCorporate() { return !SHOW_SAMPLE_DATA && ['DIAGNOSTIC_LAB', 'HOSPITAL'].includes(providerTypeOrDefault()); }
+function navVisible(id) {
+  if (id === 'branches') return SHOW_SAMPLE_DATA;
+  if (id === 'bookings') return isLab();
+  if (id === 'corporate-accounts') return usesCorporate();
+  return true;
+}
+
 function renderNav() {
-  nav.innerHTML = groups.map(group => `<div class="nav-group"><div class="nav-label">${group.name}</div>${group.items.filter(([id]) => SHOW_SAMPLE_DATA || id !== 'branches').map(([id,label,iconName]) => `<a class="nav-link" href="#${id}" ${state.active === id ? 'aria-current="page"' : ''}><span class="nav-icon">${icon(iconName)}</span><span>${navLabel(id, label)}</span></a>`).join('')}</div>`).join('');
+  nav.innerHTML = groups.map(group => `<div class="nav-group"><div class="nav-label">${group.name}</div>${group.items.filter(([id]) => navVisible(id)).map(([id,label,iconName]) => `<a class="nav-link" href="#${id}" ${state.active === id ? 'aria-current="page"' : ''}><span class="nav-icon">${icon(iconName)}</span><span>${navLabel(id, label)}</span></a>`).join('')}</div>`).join('');
 }
 function card(kicker, body, className='') { return `<section class="card elev-sm ${className}"><div class="card-kicker">${kicker}</div>${body}</section>`; }
 function stat(value, label, kicker='') { return `<section class="card elev-sm stat-card"><span class="card-kicker">${kicker || label}</span><strong class="stat-value">${value}</strong><span class="stat-label">${label}</span></section>`; }
@@ -612,6 +630,33 @@ function liveChartCards(snapshot) {
 }
 
 /* 1. Dashboard */
+// Start of the period picked with the Today / Week / Month / Quarter buttons.
+function periodStart(filter, now = new Date()) {
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (filter === 'Today') return d;
+  if (filter === 'Week') { d.setDate(d.getDate() - 6); return d; }
+  if (filter === 'Quarter') return new Date(now.getFullYear(), now.getMonth() - 2, 1);
+  return new Date(now.getFullYear(), now.getMonth(), 1); // Month
+}
+
+// The four figures at the top of a diagnostic centre's dashboard.
+function renderLabTiles() {
+  const loaded = state.paymentsSynced && state.invoicesSynced;
+  const payments = state.paymentList.filter(p => p.live && p.status === 'Success' && p.occurredAt);
+  const start = periodStart(state.filter);
+  const inPeriod = payments.filter(p => new Date(p.occurredAt) >= start);
+  const today = payments.filter(p => sameLocalDay(p.occurredAt));
+  const owing = state.invoiceList.filter(i => i.live && i.status !== 'Cancelled' && i.amount - i.paid > 0);
+  const activeServices = state.priceList.filter(x => x.active).length;
+  if (!loaded) return metricGrid([['…', 'Payments received', 'Loading'], ['…', 'Outstanding bills', 'Loading'], ['…', 'Active services', 'Loading'], ['…', 'Transactions today', 'Loading']]);
+  return metricGrid([
+    [money(inPeriod.reduce((sum, p) => sum + p.amount, 0)), 'Payments received', `${state.filter}`],
+    [money(owing.reduce((sum, i) => sum + (i.amount - i.paid), 0)), 'Outstanding bills', `${owing.length} invoice${owing.length === 1 ? '' : 's'} awaiting settlement`],
+    [state.priceListSynced ? String(activeServices) : '…', 'Active services', 'Published catalogue'],
+    [String(today.length), 'Transactions today', 'All payment channels'],
+  ]);
+}
+
 function renderDashboard() {
   const sampleTiles = [['₦2,450,000','This period','Revenue'],['₦1,950,000','This period','Collected'],['₦500,000','This period','Outstanding'],['₦1,200,000','Owed to facility','HMO receivables'],['₦750,000','Awaiting HMO decision','Pending claims'],['₦450,000','In gateway pipeline','Pending settlements'],['124','This period','Patients served'],['₦35,000','This period','Refunds']];
   // These figures are sample data. Mark them so nobody reads them as live.
@@ -635,7 +680,8 @@ function renderDashboard() {
     : (state.dashboardSyncing ? '<p class="empty-state">Loading live figures…</p>' : '<p class="empty-state">No successful payments recorded yet.</p>');
   return `<div class="page">
     ${renderBranchBanner()}
-    <div class="page-heading"><div><h1>${greetingForNow()}, ${(authState.user?.name || 'there').split(' ')[0]}</h1><p>${new Date().toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · ${escapeHtml(orgName())}${state.branch === 'All branches' ? '' : ', ' + escapeHtml(state.branch) + ' Branch'}</p></div><div class="seg" role="group" aria-label="Date range">${['Today','Week','Month','Quarter'].map(value=>`<label class="seg-opt"><input type="radio" name="filter" value="${value}" ${state.filter===value?'checked':''}><span>${value}</span></label>`).join('')}</div></div>
+    <div class="page-heading"><div>${isLab() ? '<span class="eyebrow">Diagnostic centre workspace</span>' : ''}<h1>${greetingForNow()}, ${(authState.user?.name || 'there').split(' ')[0]}</h1>${isLab() ? '<p>Your facility\'s services, bills and payments in one place.</p>' : ''}<p>${new Date().toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · ${escapeHtml(orgName())}${state.branch === 'All branches' ? '' : ', ' + escapeHtml(state.branch) + ' Branch'}</p></div><div class="seg" role="group" aria-label="Date range">${['Today','Week','Month','Quarter'].map(value=>`<label class="seg-opt"><input type="radio" name="filter" value="${value}" ${state.filter===value?'checked':''}><span>${value}</span></label>`).join('')}</div></div>
+    ${isLab() ? renderLabTiles() : ''}
     ${snapshotCard}
     ${SHOW_SAMPLE_DATA ? metricGrid(tiles) : ''}
     ${!SHOW_SAMPLE_DATA && snapshot ? liveChartCards(snapshot) : ''}
@@ -871,6 +917,12 @@ function renderPayments() {
 }
 
 /* 6. Services & Pricing */
+// Names of the items inside a package, in the order they were chosen.
+function packageContents(item) {
+  const byId = new Map(state.priceList.map(x => [x.serviceItemId, x.name]));
+  return (item.componentIds || []).map(id => byId.get(id) || 'Removed item');
+}
+
 function renderServicesPricing() {
   if (!SHOW_SAMPLE_DATA) {
     const copy = billingCopy();
@@ -881,10 +933,10 @@ function renderServicesPricing() {
         ? `<div class="table-wrap"><table class="table">
             <thead><tr><th>${escapeHtml(copy.itemLabel)}</th><th>Category</th><th>Price</th><th>Status</th><th></th></tr></thead>
             <tbody>${items.map(it => `<tr>
-              <td><strong>${escapeHtml(it.name)}</strong></td>
+              <td><strong>${escapeHtml(it.name)}</strong>${it.isPackage ? `<br><small style="color:var(--muted)">Package: ${escapeHtml(packageContents(it).join(', '))}</small>` : ''}</td>
               <td>${it.category ? escapeHtml(it.category) : '—'}</td>
               <td>${money(fromMinor(it.unitPriceMinor))}</td>
-              <td>${tag(it.active ? 'Active' : 'Off', it.active ? 'neutral' : 'outline')}</td>
+              <td>${tag(it.active ? 'Active' : 'Off', it.active ? 'neutral' : 'outline')}${it.isPackage ? ' ' + tag('Package', 'accent') : ''}</td>
               <td><button class="btn btn-secondary" data-action="edit-price-item" data-id="${escapeHtml(it.serviceItemId)}">Edit</button>
                   <button class="btn btn-secondary" data-action="toggle-price-item" data-id="${escapeHtml(it.serviceItemId)}">${it.active ? 'Switch off' : 'Switch on'}</button></td>
             </tr>`).join('')}</tbody></table></div>`
@@ -1411,6 +1463,145 @@ function renderLiveReports() {
   </div>`;
 }
 
+const BOOKING_STATUS_LABEL = { BOOKED: 'Booked', SAMPLE_COLLECTED: 'Sample collected', PROCESSING: 'Processing', READY: 'Ready', CANCELLED: 'Cancelled' };
+const BOOKING_TYPE_LABEL = { CENTRE_VISIT: 'At the centre', HOME_COLLECTION: 'Home collection' };
+// The one step a booking can take next, with the button text for it.
+const BOOKING_NEXT = { BOOKED: ['SAMPLE_COLLECTED', 'Mark collected'], SAMPLE_COLLECTED: ['PROCESSING', 'Start processing'], PROCESSING: ['READY', 'Mark ready'] };
+
+function formatWhen(iso) {
+  return new Date(iso).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+function renderBookings() {
+  const nameByRef = new Map(state.patientList.map(p => [p.id, p.name]));
+  const all = state.bookings;
+  const rows = all.filter(b => state.bookingFilter === 'All' || b.status === state.bookingFilter);
+  const todayCount = all.filter(b => b.status !== 'CANCELLED' && sameLocalDay(b.scheduledAt)).length;
+  const metrics = [
+    [String(todayCount), 'Booked for today', 'Today'],
+    [String(all.filter(b => b.type === 'HOME_COLLECTION' && b.status === 'BOOKED').length), 'Home collections waiting', 'Collection'],
+    [String(all.filter(b => b.status === 'PROCESSING').length), 'In processing', 'Lab'],
+    [String(all.filter(b => b.status === 'READY').length), 'Ready', 'Results'],
+  ];
+  const table = !state.bookingsSynced
+    ? `<p class="empty-state">${state.bookingsError ? escapeHtml(state.bookingsError) : 'Loading bookings…'}</p>`
+    : rows.length
+      ? `<div class="table-wrap"><table class="table">
+          <thead><tr><th>When</th><th>Patient</th><th>Type</th><th>Address or notes</th><th>Status</th><th></th></tr></thead>
+          <tbody>${rows.map(b => {
+            const next = BOOKING_NEXT[b.status];
+            return `<tr>
+              <td>${escapeHtml(formatWhen(b.scheduledAt))}</td>
+              <td><strong>${escapeHtml(nameByRef.get(b.patientRef) || b.patientRef)}</strong></td>
+              <td>${escapeHtml(BOOKING_TYPE_LABEL[b.type] || b.type)}</td>
+              <td>${escapeHtml([b.address, b.notes].filter(Boolean).join(' · ') || '—')}</td>
+              <td>${tag(BOOKING_STATUS_LABEL[b.status] || b.status, b.status === 'READY' ? 'neutral' : 'outline')}</td>
+              <td>${next ? `<button class="btn btn-secondary" data-action="advance-booking" data-id="${escapeHtml(b.bookingId)}" data-status="${next[0]}">${next[1]}</button>` : ''}${b.status === 'BOOKED' ? ` <button class="btn btn-ghost" data-action="advance-booking" data-id="${escapeHtml(b.bookingId)}" data-status="CANCELLED">Cancel</button>` : ''}</td>
+            </tr>`;
+          }).join('')}</tbody></table></div>`
+      : `<p class="empty-state">${all.length ? 'No bookings with this status.' : 'No bookings yet. Use New booking to add the first one.'}</p>`;
+  return `<div class="page">
+    ${pageHeading('Revenue Cycle', 'Bookings & Collection', 'Sample collections and visits, from booking to results ready.')}
+    ${metricGrid(state.bookingsSynced ? metrics : metrics.map(([, label, kicker]) => ['…', label, kicker]))}
+    ${card('<div class="section-heading"><span>Bookings</span><button class="btn btn-primary" data-action="open-new-booking">New booking</button></div>', `
+      <div class="filter-bar"><div class="filter-group">
+        ${['All', 'BOOKED', 'SAMPLE_COLLECTED', 'PROCESSING', 'READY', 'CANCELLED'].map(f => `<button class="filter-btn ${state.bookingFilter === f ? 'active' : ''}" data-action="filter-bookings" data-filter="${f}">${f === 'All' ? 'All' : BOOKING_STATUS_LABEL[f]}</button>`).join('')}
+      </div></div>${table}`)}
+  </div>`;
+}
+
+let bookingsPromise = null;
+function syncBookings() {
+  if (!bookingsPromise) {
+    bookingsPromise = ensurePatientRecords()
+      .then(() => wellipayApi.listBookings({ limit: 200 }))
+      .then(data => { state.bookings = data.items; state.bookingsSynced = true; state.bookingsError = ''; })
+      .catch(err => { state.bookingsError = `Bookings not loaded: ${err.message}`; showToast('API Sync Failed', state.bookingsError); })
+      .finally(() => { bookingsPromise = null; if (state.active === 'bookings') render(); });
+  }
+  return bookingsPromise;
+}
+
+async function advanceBooking(id, status) {
+  try {
+    const updated = await wellipayApi.updateBooking(id, { status });
+    state.bookings = state.bookings.map(b => b.bookingId === id ? updated : b);
+    logAudit('Booking Updated', `${id} · ${BOOKING_STATUS_LABEL[status]}`);
+    render();
+  } catch (err) {
+    showToast('Booking not changed', err.message);
+  }
+}
+
+function renderCorporateAccounts() {
+  const rows = state.corporateAccounts;
+  const body = !state.corporateSynced
+    ? `<p class="empty-state">${state.corporateError ? escapeHtml(state.corporateError) : 'Loading accounts…'}</p>`
+    : rows.length
+      ? `<div class="table-wrap"><table class="table">
+          <thead><tr><th>Account</th><th>Contact</th><th>Invoices</th><th>Billed</th><th>Paid</th><th>Owing</th><th>Status</th><th></th></tr></thead>
+          <tbody>${rows.map(a => `<tr>
+            <td><strong>${escapeHtml(a.name)}</strong></td>
+            <td>${escapeHtml([a.contactName, a.phone, a.email].filter(Boolean).join(' · ') || '—')}</td>
+            <td>${a.invoiceCount || 0}</td>
+            <td>${money(fromMinor(a.billedMinor || 0))}</td>
+            <td>${money(fromMinor(a.paidMinor || 0))}</td>
+            <td>${money(fromMinor(a.outstandingMinor || 0))}</td>
+            <td>${tag(a.active ? 'Active' : 'Off', a.active ? 'neutral' : 'outline')}</td>
+            <td><button class="btn btn-secondary" data-action="open-corporate-statement" data-id="${escapeHtml(a.accountId)}">Statement</button>
+                <button class="btn btn-secondary" data-action="edit-corporate-account" data-id="${escapeHtml(a.accountId)}">Edit</button>
+                <button class="btn btn-ghost" data-action="toggle-corporate-account" data-id="${escapeHtml(a.accountId)}">${a.active ? 'Switch off' : 'Switch on'}</button></td>
+          </tr>`).join('')}</tbody></table></div>`
+      : '<p class="empty-state">No accounts yet. Use Add account for a company you bill directly.</p>';
+  const billed = rows.reduce((sum, a) => sum + (a.billedMinor || 0), 0);
+  const paid = rows.reduce((sum, a) => sum + (a.paidMinor || 0), 0);
+  const metrics = state.corporateSynced
+    ? [[String(rows.filter(a => a.active).length), 'Active accounts', 'Companies'], [money(fromMinor(billed)), 'Billed to accounts', 'All time'], [money(fromMinor(paid)), 'Paid by accounts', 'All time'], [money(fromMinor(billed - paid)), 'Owing from accounts', 'Open']]
+    : [['…', 'Active accounts', 'Loading'], ['…', 'Billed to accounts', 'Loading'], ['…', 'Paid by accounts', 'Loading'], ['…', 'Owing from accounts', 'Loading']];
+  return `<div class="page">
+    ${pageHeading('Revenue Cycle', 'Corporate Accounts', 'Companies you bill on account. Choose one under Bill to when you create an invoice.')}
+    ${metricGrid(metrics)}
+    ${card('<div class="section-heading"><span>Accounts</span><button class="btn btn-primary" data-action="open-corporate-account">Add account</button></div>', body)}
+  </div>`;
+}
+
+let corporatePromise = null;
+function syncCorporate() {
+  if (!corporatePromise) {
+    corporatePromise = wellipayApi.listCorporateAccounts()
+      .then(data => { state.corporateAccounts = data.items; state.corporateSynced = true; state.corporateError = ''; })
+      .catch(err => { state.corporateError = `Accounts not loaded: ${err.message}`; showToast('API Sync Failed', state.corporateError); })
+      .finally(() => { corporatePromise = null; render(); });
+  }
+  return corporatePromise;
+}
+
+async function openCorporateStatement(id) {
+  const account = state.corporateAccounts.find(a => a.accountId === id);
+  if (!account) return;
+  state.modal = { type: 'corporate-statement', account, statement: null };
+  render();
+  try {
+    await ensurePatientRecords();
+    const statement = await wellipayApi.getCorporateStatement(id);
+    if (state.modal && state.modal.type === 'corporate-statement' && state.modal.account.accountId === id) { state.modal.statement = statement; render(); }
+  } catch (err) {
+    showToast('Statement not loaded', err.message);
+  }
+}
+
+async function toggleCorporateAccount(id) {
+  const account = state.corporateAccounts.find(a => a.accountId === id);
+  if (!account) return;
+  try {
+    await wellipayApi.updateCorporateAccount(id, { active: !account.active });
+    state.corporateSynced = false;
+    await syncCorporate();
+  } catch (err) {
+    showToast('Account not changed', err.message);
+  }
+}
+
 function renderReports() {
   if (!SHOW_SAMPLE_DATA) return renderLiveReports();
   return `<div class="page">
@@ -1898,6 +2089,8 @@ function render() {
     invoices: renderInvoices,
     payments: renderPayments,
     'services-pricing': renderServicesPricing,
+    bookings: renderBookings,
+    'corporate-accounts': renderCorporateAccounts,
     claims: renderClaims,
     'hmo-insurance': renderHmoInsurance,
     authorization: renderAuthorization,
@@ -1924,11 +2117,18 @@ function render() {
   modalRoot.innerHTML = renderModal();
   content.focus({ preventScroll: true });
 
-  if ((state.active === 'patients' || state.active === 'invoices' || state.active === 'hospital-desk') && !state.patientRecordsSynced) ensurePatientRecords().then(() => render());
+  if ((state.active === 'patients' || state.active === 'invoices' || state.active === 'hospital-desk' || state.active === 'bookings') && !state.patientRecordsSynced) ensurePatientRecords().then(() => render());
   if (state.active === 'patients' && !state.patientsSynced) syncPatientsFromApi();
   if (state.active === 'payments' && !state.paymentsSynced) syncPaymentsFromApi();
+  if (isLab() && state.active === 'dashboard') {
+    if (!state.paymentsSynced) syncPaymentsFromApi();
+    if (!state.invoicesSynced) syncInvoicesFromApi();
+  }
+  if (isLab() && (state.active === 'dashboard' || state.active === 'bookings') && !state.priceListSynced && !state.priceListError) syncPriceList();
+  if (isLab() && state.active === 'bookings' && !state.bookingsSynced && !state.bookingsError) syncBookings();
+  if (usesCorporate() && (state.active === 'corporate-accounts' || state.active === 'invoices' || state.active === 'hospital-desk') && !state.corporateSynced && !state.corporateError) syncCorporate();
   if (state.active === 'family-sponsors' && !SHOW_SAMPLE_DATA) { if (!state.invoicesSynced) syncInvoicesFromApi(); if (!state.fundingSynced) syncFundingFromApi(); }
-  if ((state.active === 'services-pricing' || state.active === 'invoices' || state.active === 'hospital-desk') && !SHOW_SAMPLE_DATA && !state.priceListSynced) syncPriceList();
+  if ((state.active === 'services-pricing' || state.active === 'invoices' || state.active === 'hospital-desk') && !SHOW_SAMPLE_DATA && !state.priceListSynced && !state.priceListError) syncPriceList();
   if (!SHOW_SAMPLE_DATA && (state.active === 'hospital-desk' || state.active === 'reports')) {
     if (!state.paymentsSynced) syncPaymentsFromApi();
     if (!state.invoicesSynced) syncInvoicesFromApi();
@@ -2256,7 +2456,7 @@ function renderModal() {
           </div>`
       : `${state.priceList.some(x => x.active) ? `<div class="form-group"><label>From price list (optional)</label>
             <select id="inv-price-pick"><option value="">Choose a saved item, or type below</option>
-              ${state.priceList.filter(x => x.active).map(x => `<option value="${escapeHtml(x.serviceItemId)}">${escapeHtml(x.name)} — ${money(fromMinor(x.unitPriceMinor))}</option>`).join('')}
+              ${state.priceList.filter(x => x.active).map(x => `<option value="${escapeHtml(x.serviceItemId)}">${escapeHtml(x.name)}${x.isPackage ? ' (package)' : ''} — ${money(fromMinor(x.unitPriceMinor))}</option>`).join('')}
             </select></div>` : ''}
           <div class="form-group"><label>${escapeHtml(copy.itemLabel)} *</label><input class="input" name="serviceName" required maxlength="200" placeholder="${escapeHtml(copy.itemPlaceholder)}"></div>
           <div class="form-grid two-col">
@@ -2277,6 +2477,10 @@ function renderModal() {
             </div>
             ${branchField}
           </div>
+          ${(!SHOW_SAMPLE_DATA && usesCorporate() && state.corporateAccounts.some(a => a.active)) ? `<div class="form-group"><label>Bill to</label>
+            <select name="corporateAccountId"><option value="">The patient</option>
+              ${state.corporateAccounts.filter(a => a.active).map(a => `<option value="${escapeHtml(a.accountId)}">${escapeHtml(a.name)} (corporate account)</option>`).join('')}
+            </select></div>` : ''}
           ${serviceField}
           <div class="form-grid two-col">
             <div class="form-group"><label>Additional Fee / Lab (Optional)</label>
@@ -2379,6 +2583,78 @@ function renderModal() {
     </div>`;
   }
 
+  if (state.modal.type === 'new-booking') {
+    const patients = state.patientList.filter(p => p.registered);
+    if (!patients.length) {
+      return `<div class="modal-backdrop" data-action="dismiss-modal"><section class="modal" role="dialog" aria-modal="true"><h2>New booking</h2><p>${state.patientRecordsSynced ? 'Register a patient before you add a booking.' : 'Loading patients…'}</p><div class="modal-actions"><button class="btn btn-primary" data-action="close-modal">Close</button></div></section></div>`;
+    }
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="new-booking-title">
+        <h2 id="new-booking-title">New booking</h2>
+        <p>A home collection needs an address.</p>
+        <form id="new-booking-form" class="form-grid">
+          <div class="form-group"><label>Patient *</label>
+            <select name="patientId" required>${patients.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)} (${escapeHtml(p.id)})</option>`).join('')}</select>
+          </div>
+          <div class="form-grid two-col">
+            <div class="form-group"><label>Type *</label>
+              <select name="type"><option value="CENTRE_VISIT">At the centre</option><option value="HOME_COLLECTION">Home collection</option></select>
+            </div>
+            <div class="form-group"><label>Date and time *</label><input class="input" type="datetime-local" name="when" required></div>
+          </div>
+          <div class="form-group"><label>Address (home collection)</label><input class="input" name="address" maxlength="240" placeholder="Street, area, landmark"></div>
+          <div class="form-group"><label>Notes (optional)</label><input class="input" name="notes" maxlength="500" placeholder="Tests requested, fasting, gate code"></div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
+            <button class="btn btn-primary" type="submit" id="new-booking-submit">Save booking</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+  }
+
+  if (state.modal.type === 'corporate-account') {
+    const a = state.modal.accountId ? state.corporateAccounts.find(x => x.accountId === state.modal.accountId) : null;
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="corp-title">
+        <h2 id="corp-title">${a ? 'Edit account' : 'Add account'}</h2>
+        <p>A company you bill on account instead of the patient.</p>
+        <form id="corporate-account-form" class="form-grid" data-id="${a ? escapeHtml(a.accountId) : ''}">
+          <div class="form-group"><label>Company name *</label><input class="input" name="name" required minlength="2" maxlength="120" value="${a ? escapeHtml(a.name) : ''}" placeholder="e.g. Zenith Staff Clinic"></div>
+          <div class="form-group"><label>Contact person (optional)</label><input class="input" name="contactName" maxlength="120" value="${a && a.contactName ? escapeHtml(a.contactName) : ''}"></div>
+          <div class="form-grid two-col">
+            <div class="form-group"><label>Email (optional)</label><input class="input" type="email" name="email" maxlength="160" value="${a && a.email ? escapeHtml(a.email) : ''}"></div>
+            <div class="form-group"><label>Phone (optional)</label><input class="input" name="phone" maxlength="30" value="${a && a.phone ? escapeHtml(a.phone) : ''}"></div>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
+            <button class="btn btn-primary" type="submit" id="corporate-account-submit">Save</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+  }
+
+  if (state.modal.type === 'corporate-statement') {
+    const m = state.modal;
+    const st = m.statement;
+    const nameByRef = new Map(state.patientList.map(p => [p.id, p.name]));
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="corp-st-title">
+        <h2 id="corp-st-title">Statement · ${escapeHtml(m.account.name)}</h2>
+        ${!st ? '<p>Loading…</p>' : `
+        <div class="mini-metrics"><div class="mini-metric"><strong>${money(fromMinor(st.billedMinor))}</strong><span>Billed</span></div><div class="mini-metric"><strong>${money(fromMinor(st.paidMinor))}</strong><span>Paid</span></div><div class="mini-metric"><strong>${money(fromMinor(st.outstandingMinor))}</strong><span>Owing</span></div></div>
+        ${st.invoices.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Invoice</th><th>Patient</th><th>Description</th><th>Amount</th><th>Paid</th><th>Status</th></tr></thead><tbody>
+          ${st.invoices.map(i => `<tr><td>${escapeHtml(i.providerInvoiceRef)}</td><td>${escapeHtml(nameByRef.get(i.patientRef) || i.patientRef)}</td><td>${escapeHtml(i.description)}</td><td>${money(fromMinor(i.amountMinor))}</td><td>${money(fromMinor(i.paidAmountMinor))}</td><td>${escapeHtml(INVOICE_STATUS_LABEL[i.status] || i.status)}</td></tr>`).join('')}
+        </tbody></table></div>` : '<p class="empty-state">No invoices billed to this account yet.</p>'}`}
+        <div class="modal-actions">
+          ${st && st.invoices.length ? '<button class="btn btn-secondary" data-action="export-corporate-statement">Download CSV</button>' : ''}
+          <button class="btn btn-primary" data-action="close-modal">Close</button>
+        </div>
+      </section>
+    </div>`;
+  }
+
   if (state.modal.type === 'receipt') {
     const inv = state.modal.invoice || state.invoiceList[0];
     return `<div class="modal-backdrop" data-action="dismiss-modal">
@@ -2455,6 +2731,14 @@ function renderModal() {
             <div class="form-group"><label>${copy.quantity ? 'Unit price (₦) *' : 'Price (₦) *'}</label><input class="input" type="number" name="price" required min="1" step="any" value="${it ? it.unitPriceMinor / 100 : ''}" placeholder="e.g. 8600"></div>
             <div class="form-group"><label>Category (optional)</label><input class="input" name="category" maxlength="60" value="${it && it.category ? escapeHtml(it.category) : ''}" placeholder="e.g. Haematology"></div>
           </div>
+          ${(() => {
+            const singles = state.priceList.filter(x => !x.isPackage && x.active && (!it || x.serviceItemId !== it.serviceItemId));
+            if (!singles.length) return '';
+            return `<fieldset class="form-group" style="border:1px solid var(--color-divider);padding:10px;max-height:180px;overflow:auto"><legend style="font-size:12px;padding:0 6px">Package contents (optional)</legend>
+              <p style="font-size:12px;color:var(--muted);margin:0 0 6px">Tick two or more items to make this a package or panel. The price above is the package price.</p>
+              ${singles.map(x => `<label style="display:block;font-size:13px;padding:2px 0"><input type="checkbox" name="component" value="${escapeHtml(x.serviceItemId)}" ${it && (it.componentIds || []).includes(x.serviceItemId) ? 'checked' : ''}> ${escapeHtml(x.name)} · ${money(fromMinor(x.unitPriceMinor))}</label>`).join('')}
+            </fieldset>`;
+          })()}
           <div class="modal-actions">
             <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
             <button class="btn btn-primary" type="submit" id="price-item-submit">Save</button>
@@ -2833,7 +3117,7 @@ async function syncPaymentsFromApi() {
     // Also re-render while the Request Refund modal is open (on any page)
     // so its "Select Payment" list picks up live payments as soon as this
     // finishes, not only when the Payments page itself is on screen.
-    if (state.active === 'payments' || state.active === 'hospital-desk' || state.active === 'reports' || (state.modal && state.modal.type === 'request-refund')) render();
+    if (state.active === 'payments' || state.active === 'dashboard' || state.active === 'hospital-desk' || state.active === 'reports' || (state.modal && state.modal.type === 'request-refund')) render();
   }
 }
 
@@ -2872,7 +3156,7 @@ async function syncInvoicesFromApi() {
     state.invoicesSyncing = false;
     // Also re-render while the reconciliation "match" modal is open, so its
     // invoice picker picks up live invoices as soon as this finishes.
-    if (state.active === 'invoices' || state.active === 'hospital-desk' || state.active === 'reports' || state.active === 'payment-plans' || state.active === 'financing' || (state.modal && (state.modal.type === 'match' || state.modal.type === 'new-payment-plan' || state.modal.type === 'new-financing-record'))) render();
+    if (state.active === 'invoices' || state.active === 'dashboard' || state.active === 'hospital-desk' || state.active === 'reports' || state.active === 'payment-plans' || state.active === 'financing' || (state.modal && (state.modal.type === 'match' || state.modal.type === 'new-payment-plan' || state.modal.type === 'new-financing-record'))) render();
   }
 }
 
@@ -4035,6 +4319,23 @@ function dispatch(action, target, domEvent) {
     /* Services & Pricing */
     case 'filter-services': state.serviceFilter=target.dataset.filter;render();break;
     case 'search-services': state.serviceSearch=target.value;render();break;
+    case 'filter-bookings': state.bookingFilter = target.dataset.filter; render(); break;
+    case 'open-new-booking': state.modal = { type: 'new-booking' }; render(); break;
+    case 'advance-booking': advanceBooking(String(id), target.dataset.status); break;
+    case 'open-corporate-account': state.modal = { type: 'corporate-account' }; render(); break;
+    case 'edit-corporate-account': state.modal = { type: 'corporate-account', accountId: String(id) }; render(); break;
+    case 'toggle-corporate-account': toggleCorporateAccount(String(id)); break;
+    case 'open-corporate-statement': openCorporateStatement(String(id)); break;
+    case 'export-corporate-statement': {
+      const st = state.modal && state.modal.statement;
+      if (!st) break;
+      downloadCsv(`statement_${st.account.name.replace(/[^A-Za-z0-9]+/g, '_')}.csv`, [
+        ['Invoice', 'Patient reference', 'Description', 'Amount (NGN)', 'Paid (NGN)', 'Status'],
+        ...st.invoices.map(i => [i.providerInvoiceRef, i.patientRef, i.description, fromMinor(i.amountMinor), fromMinor(i.paidAmountMinor), INVOICE_STATUS_LABEL[i.status] || i.status]),
+        ['Total', '', '', fromMinor(st.billedMinor), fromMinor(st.paidMinor), `Owing ${fromMinor(st.outstandingMinor)}`],
+      ]);
+      break;
+    }
     case 'open-price-item': state.modal={type:'price-item'};render();break;
     case 'edit-price-item': state.modal={type:'price-item',itemId:String(id)};render();break;
     case 'toggle-price-item': togglePriceItem(String(id)); break;
@@ -4333,7 +4634,7 @@ document.addEventListener('change', event => {
     const item = state.priceList.find(x => x.serviceItemId === event.target.value);
     const form = event.target.closest('form');
     if (item && form) {
-      form.elements.serviceName.value = item.name;
+      form.elements.serviceName.value = (item.isPackage ? `${item.name} (${packageContents(item).join(', ')})` : item.name).slice(0, 200);
       form.elements.serviceAmount.value = item.unitPriceMinor / 100;
     }
   }
@@ -4419,6 +4720,7 @@ document.addEventListener('submit', async event => {
     const invoiceText = requestedBy ? `${itemText} (requested by ${requestedBy})` : itemText;
     if (!srvName || !(srvAmt > 0)) { showToast('Check the invoice', 'Enter the service and an amount above zero.'); return; }
     const extra = Number(fd.get('extraFee')) || 0;
+    const corporateAccountId = (fd.get('corporateAccountId') || '').toString();
     const totalAmt = srvAmt + extra;
     const newInv = {
       id: 'INV-' + Math.floor(2100 + Math.random() * 900),
@@ -4445,8 +4747,10 @@ document.addEventListener('submit', async event => {
         description: extra ? `${invoiceText} + additional fee` : invoiceText,
         amountMinor: toMinor(totalAmt),
         currency: 'NGN',
+        ...(corporateAccountId ? { corporateAccountId } : {}),
       });
       newInv.apiInvoiceId = created.invoiceId;
+      if (corporateAccountId) state.corporateSynced = false;
       showToast('Synced to WelliPay API', `${newInv.id} recorded on the server as ${created.invoiceId}.`);
       // The ledger lists live invoices only, so reload it.
       state.invoicesSynced = false;
@@ -4456,6 +4760,59 @@ document.addEventListener('submit', async event => {
       showToast('API Sync Failed', `${newInv.id} saved locally only: ${err.message}`);
     }
   }
+  if (event.target.id === 'new-booking-form') {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    const type = fd.get('type').toString();
+    const address = fd.get('address').toString().trim();
+    const notes = fd.get('notes').toString().trim();
+    if (type === 'HOME_COLLECTION' && address.length < 5) { showToast('Address needed', 'Enter the address for a home collection.'); return; }
+    const when = new Date(fd.get('when').toString());
+    if (Number.isNaN(when.getTime())) { showToast('Check the date', 'Pick a date and time.'); return; }
+    const btn = document.getElementById('new-booking-submit');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    try {
+      const created = await wellipayApi.createBooking({
+        patientRef: fd.get('patientId').toString(),
+        type,
+        scheduledAt: when.toISOString(),
+        ...(address ? { address } : {}),
+        ...(notes ? { notes } : {}),
+      });
+      state.bookings = [...state.bookings, created].sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt));
+      logAudit('Booking Created', `${created.patientRef} · ${BOOKING_TYPE_LABEL[type]} · ${formatWhen(created.scheduledAt)}`);
+      state.modal = null;
+      showToast('Booking saved', formatWhen(created.scheduledAt));
+      render();
+    } catch (err) {
+      showToast('Booking not saved', err.message);
+      if (btn) { btn.disabled = false; btn.textContent = 'Save booking'; }
+    }
+  }
+  if (event.target.id === 'corporate-account-form') {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    const id = event.target.dataset.id;
+    const btn = document.getElementById('corporate-account-submit');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    const text = key => fd.get(key).toString().trim();
+    const body = { name: text('name') };
+    for (const key of ['contactName', 'email', 'phone']) {
+      if (id) body[key] = text(key) || null;
+      else if (text(key)) body[key] = text(key);
+    }
+    try {
+      if (id) await wellipayApi.updateCorporateAccount(id, body);
+      else await wellipayApi.createCorporateAccount(body);
+      state.modal = null;
+      state.corporateSynced = false;
+      showToast('Account saved', body.name);
+      await syncCorporate();
+    } catch (err) {
+      showToast('Account not saved', err.message);
+      if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+    }
+  }
   if (event.target.id === 'price-item-form') {
     event.preventDefault();
     const fd = new FormData(event.target);
@@ -4463,9 +4820,16 @@ document.addEventListener('submit', async event => {
     const btn = document.getElementById('price-item-submit');
     if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
     const category = fd.get('category').toString().trim();
+    const components = fd.getAll('component').map(String);
+    if (components.length === 1) {
+      showToast('Check the package', 'A package needs at least two items. Untick the item or tick another.');
+      if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+      return;
+    }
     const body = {
       name: fd.get('name').toString().trim(),
       unitPriceMinor: toMinor(Number(fd.get('price'))),
+      componentIds: components,
     };
     try {
       if (itemId) {

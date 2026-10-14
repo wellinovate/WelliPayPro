@@ -208,6 +208,8 @@ export const wellipayApi = {
     apiRequest('/provider/financial-consents', { method: 'POST', body, idempotent: 'consent' }),
   listPatientRecords: (query) => apiRequest(`/provider/patient-records${toQueryString(query)}`),
   createPatientRecord: (body) => apiRequest('/provider/patient-records', { method: 'POST', body }),
+  listHmoPolicies: (query) => apiRequest(`/provider/hmo-policies${toQueryString(query)}`),
+  createHmoPolicy: (body) => apiRequest('/provider/hmo-policies', { method: 'POST', body }),
   listBookings: (query) => apiRequest(`/provider/bookings${toQueryString(query)}`),
   createBooking: (body) => apiRequest('/provider/bookings', { method: 'POST', body }),
   updateBooking: (id, body) => apiRequest(`/provider/bookings/${encodeURIComponent(id)}`, { method: 'PATCH', body }),

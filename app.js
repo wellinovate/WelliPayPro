@@ -361,6 +361,9 @@ const state = {
   patientsSynced: false,
   patientRecordsSynced: false,
   fundingList: [],
+  hmoPolicies: [],
+  hmoPoliciesSynced: false,
+  hmoPoliciesError: '',
   bookings: [],
   bookingsSynced: false,
   bookingsError: '',
@@ -727,7 +730,7 @@ function renderLiveDesk() {
   const queue = !loaded
     ? '<p class="empty-state">Loading…</p>'
     : owing.length
-      ? `<div class="row-list">${owing.slice(0, 10).map(i => `<div class="queue-row"><strong>${escapeHtml(i.patient)}</strong><span>${escapeHtml(i.id)} · ${money(i.amount - i.paid)}</span>${tag(i.status, 'outline')}<button class="btn btn-secondary" data-action="open-paystack-pay" data-id="${escapeHtml(i.id)}">Pay online</button></div>`).join('')}</div>`
+      ? `<div class="row-list">${owing.slice(0, 10).map(i => `<div class="queue-row"><strong>${escapeHtml(i.patient)}</strong><span>${escapeHtml(i.id)} · ${money(i.amount - i.paid)}</span>${tag(i.status, 'outline')}<button class="btn btn-secondary" data-action="open-paystack-pay" data-id="${escapeHtml(i.id)}">Pay online</button><button class="btn btn-ghost" data-action="open-record-payment" data-id="${escapeHtml(i.id)}">Record payment</button></div>`).join('')}</div>`
       : '<p class="empty-state">Nothing owing. Create an invoice to start a bill.</p>';
   const recent = !loaded
     ? '<p class="empty-state">Loading…</p>'
@@ -858,11 +861,11 @@ function renderInvoices() {
                 <td><strong>${money(inv.amount)}</strong></td>
                 <td>${money(inv.paid)}</td>
                 <td><strong style="color:${inv.amount - inv.paid > 0 ? 'var(--color-accent-700)' : 'inherit'}">${money(inv.amount - inv.paid)}</strong></td>
-                <td><small>${escapeHtml(inv.payer)}</small></td>
+                <td><small>${escapeHtml(inv.payer)}</small>${inv.corporateAccountId ? `<br>${tag(escapeHtml((state.corporateAccounts.find(a => a.accountId === inv.corporateAccountId) || {}).name || 'Corporate account'), 'outline')}` : ''}</td>
                 <td>${tag(inv.status, inv.status === 'Paid' ? 'neutral' : inv.status === 'Unpaid' ? 'accent' : 'outline')}</td>
                 <td>
                   <button class="btn btn-secondary" data-action="view-invoice-modal" data-id="${escapeHtml(inv.id)}" style="font-size:11px;padding:4px 8px;">View Receipt</button>
-                  ${inv.live && inv.invoiceId && inv.status !== 'Paid' ? `<button class="btn btn-primary" data-action="open-paystack-pay" data-id="${escapeHtml(inv.id)}" style="font-size:11px;padding:4px 8px;">Pay online</button>` : ''}
+                  ${inv.live && inv.invoiceId && inv.status !== 'Paid' ? `<button class="btn btn-primary" data-action="open-paystack-pay" data-id="${escapeHtml(inv.id)}" style="font-size:11px;padding:4px 8px;">Pay online</button> <button class="btn btn-secondary" data-action="open-record-payment" data-id="${escapeHtml(inv.id)}" style="font-size:11px;padding:4px 8px;">Record payment</button>` : ''}
                   <button class="btn btn-ghost" data-action="send-invoice-sms" data-id="${escapeHtml(inv.id)}" style="font-size:11px;padding:4px 8px;">Send SMS</button>
                 </td>
               </tr>
@@ -1010,10 +1013,29 @@ function renderClaimItem(item, isLive) {
   const reason = item.reason;
   const prefix = isLive ? 'live-' : '';
   const simulateLabel = isLive ? '' : 'Simulate: ';
-  return `<div class="auth-item"><div class="auth-head"><div class="data-primary"><strong>${escapeHtml(ref)}</strong><span>${escapeHtml(hmo)} · ${money(amount)}${isLive ? ' <small style="color:var(--muted)">(Live)</small>' : ''}</span></div>${tag(escapeHtml(status),status==='Approved'?'neutral':status==='Rejected'?'accent':'outline')}</div>${reason?`<p class="claim-reason" style="color:var(--color-accent-700);margin:6px 0;"><strong>Rejection reason:</strong> ${escapeHtml(reason)}</p>`:''}<div class="toolbar" style="margin-top:8px;">${status==='Draft'?`<button class="btn btn-primary" data-action="${prefix}claim-submit" data-id="${escapeHtml(id)}">Submit claim</button>`:''}${status==='Submitted'?`<button class="btn btn-secondary" data-action="${prefix}claim-approve" data-id="${escapeHtml(id)}">${simulateLabel}approve</button><button class="btn btn-secondary" data-action="${prefix}claim-reject" data-id="${escapeHtml(id)}">${simulateLabel}reject</button>`:''}${status==='Rejected'?`<button class="btn btn-primary" data-action="${prefix}claim-resubmit" data-id="${escapeHtml(id)}">Resubmit claim</button>`:''}</div></div>`;
+  return `<div class="auth-item"><div class="auth-head"><div class="data-primary"><strong>${escapeHtml(ref)}</strong><span>${escapeHtml(hmo)} · ${money(amount)}${isLive && SHOW_SAMPLE_DATA ? ' <small style="color:var(--muted)">(Live)</small>' : ''}${isLive && item.approvedAmountMinor != null ? ` · approved ${money(fromMinor(item.approvedAmountMinor))}` : ''}</span></div>${tag(escapeHtml(status),status==='Approved'?'neutral':status==='Rejected'?'accent':'outline')}</div>${reason?`<p class="claim-reason" style="color:var(--color-accent-700);margin:6px 0;"><strong>Rejection reason:</strong> ${escapeHtml(reason)}</p>`:''}<div class="toolbar" style="margin-top:8px;">${status==='Draft'?`<button class="btn btn-primary" data-action="${prefix}claim-submit" data-id="${escapeHtml(id)}">Submit claim</button>`:''}${status==='Submitted'?(isLive && !SHOW_SAMPLE_DATA ? `<button class="btn btn-secondary" data-action="claim-decision" data-id="${escapeHtml(id)}">Record decision</button>` : `<button class="btn btn-secondary" data-action="${prefix}claim-approve" data-id="${escapeHtml(id)}">${simulateLabel}approve</button><button class="btn btn-secondary" data-action="${prefix}claim-reject" data-id="${escapeHtml(id)}">${simulateLabel}reject</button>`):''}${status==='Rejected'?`<button class="btn btn-primary" data-action="${prefix}claim-resubmit" data-id="${escapeHtml(id)}">Resubmit claim</button>`:''}</div></div>`;
+}
+
+function renderLiveClaims() {
+  const claims = state.liveClaims;
+  const sum = list => list.reduce((total, c) => total + c.amountMinor, 0);
+  const awaiting = claims.filter(c => c.status === 'SUBMITTED');
+  const approved = claims.filter(c => c.status === 'APPROVED' || c.status === 'PARTIALLY_APPROVED');
+  const approvedMinor = approved.reduce((total, c) => total + (c.approvedAmountMinor != null ? c.approvedAmountMinor : c.amountMinor), 0);
+  const metrics = state.claimsSynced
+    ? [[String(claims.length), 'Claims filed', 'All time'], [String(awaiting.length), `Awaiting decision · ${money(fromMinor(sum(awaiting)))}`, 'Submitted'], [money(fromMinor(approvedMinor)), 'Approved by payers', 'Approved'], [String(claims.filter(c => c.status === 'REJECTED').length), 'Rejected', 'Needs correction']]
+    : [['…', 'Claims filed', 'Loading'], ['…', 'Awaiting decision', 'Loading'], ['…', 'Approved by payers', 'Loading'], ['…', 'Rejected', 'Loading']];
+  return `<div class="page">
+    ${pageHeading('HMO Claims', 'Submission, tracking & resubmission', 'Claims to HMOs and insurers for ' + escapeHtml(orgName()) + '. Record each payer decision when it arrives.')}
+    ${metricGrid(metrics)}
+    ${card('<div class="section-heading"><span>Claims</span><button class="btn btn-primary" data-action="open-new-claim">New claim</button></div>', state.claimsSynced
+      ? (claims.length ? claims.map(item => renderClaimItem(item, true)).join('') : '<p class="empty-state">No claims yet. Use New claim to bill an HMO for an invoice.</p>')
+      : '<p class="empty-state">Loading claims…</p>')}
+  </div>`;
 }
 
 function renderClaims() {
+  if (!SHOW_SAMPLE_DATA) return renderLiveClaims();
   const rows = [...state.claims.map(item=>renderClaimItem(item,false)), ...state.liveClaims.map(item=>renderClaimItem(item,true))];
   return `<div class="page">
     ${renderBranchBanner()}
@@ -1023,7 +1045,48 @@ function renderClaims() {
 }
 
 /* 8. HMO / Insurance Directory */
+let hmoPoliciesPromise = null;
+function syncHmoPolicies() {
+  if (!hmoPoliciesPromise) {
+    hmoPoliciesPromise = ensurePatientRecords()
+      .then(() => wellipayApi.listHmoPolicies({ limit: 100 }))
+      .then(data => { state.hmoPolicies = data.items; state.hmoPoliciesSynced = true; state.hmoPoliciesError = ''; })
+      .catch(err => { state.hmoPoliciesError = `Policies not loaded: ${err.message}`; showToast('API Sync Failed', state.hmoPoliciesError); })
+      .finally(() => { hmoPoliciesPromise = null; if (state.active === 'hmo-insurance') render(); });
+  }
+  return hmoPoliciesPromise;
+}
+
+function renderLiveHmo() {
+  const byPayer = liveClaimsByPayer();
+  const nameByRef = new Map(state.patientList.map(p => [p.id, p.name]));
+  const policies = state.hmoPolicies;
+  const awaitingMinor = state.liveClaims.filter(c => c.status === 'SUBMITTED').reduce((total, c) => total + c.amountMinor, 0);
+  const approvedMinor = state.liveClaims.filter(c => c.status === 'APPROVED' || c.status === 'PARTIALLY_APPROVED').reduce((total, c) => total + (c.approvedAmountMinor != null ? c.approvedAmountMinor : c.amountMinor), 0);
+  const loaded = state.claimsSynced && state.hmoPoliciesSynced;
+  const metrics = loaded
+    ? [[String(byPayer.size), 'Payers with claims', 'HMOs'], [String(policies.filter(p => p.status === 'ACTIVE').length), 'Active patient policies', 'Policies'], [money(fromMinor(awaitingMinor)), 'Awaiting decision', 'Submitted claims'], [money(fromMinor(approvedMinor)), 'Approved by payers', 'Approved']]
+    : [['…', 'Payers with claims', 'Loading'], ['…', 'Active patient policies', 'Loading'], ['…', 'Awaiting decision', 'Loading'], ['…', 'Approved by payers', 'Loading']];
+  const payerBody = !state.claimsSynced ? '<p class="empty-state">Loading claims…</p>' : byPayer.size
+    ? `<div class="row-list">${[...byPayer.entries()].map(([name, stats]) => `<div class="data-row"><span>${escapeHtml(name)}</span><strong>${stats.count} claim${stats.count === 1 ? '' : 's'} · ${money(fromMinor(stats.submittedMinor))} claimed · ${money(fromMinor(stats.approvedMinor))} approved</strong></div>`).join('')}</div>`
+    : '<p class="empty-state">No claims yet. File one from the Claims page.</p>';
+  const policyBody = !state.hmoPoliciesSynced
+    ? `<p class="empty-state">${state.hmoPoliciesError ? escapeHtml(state.hmoPoliciesError) : 'Loading policies…'}</p>`
+    : policies.length
+      ? `<div class="table-wrap"><table class="table"><thead><tr><th>Patient</th><th>HMO</th><th>Policy no.</th><th>Plan</th><th>Co-pay</th><th>Annual limit</th><th>Used</th><th>Status</th></tr></thead><tbody>
+          ${policies.map(p => `<tr><td><strong>${escapeHtml(nameByRef.get(p.patientRef) || p.enrolleeName)}</strong></td><td>${escapeHtml(p.provider)}</td><td>${escapeHtml(p.policyNo)}</td><td>${escapeHtml(p.planTier)}</td><td>${p.coPayPercent}%</td><td>${money(fromMinor(p.annualLimit.amountMinor))}</td><td>${money(fromMinor(p.usedAmount.amountMinor))}</td><td>${tag(escapeHtml(p.status.charAt(0) + p.status.slice(1).toLowerCase()), p.status === 'ACTIVE' ? 'neutral' : 'outline')}</td></tr>`).join('')}
+        </tbody></table></div>`
+      : '<p class="empty-state">No policies recorded. Use Record policy when a patient shows an HMO card.</p>';
+  return `<div class="page">
+    ${pageHeading('Claims & Payers', 'HMO / Insurance', 'Patient HMO policies and how each payer is responding to your claims.')}
+    ${metricGrid(metrics)}
+    ${card('Claims by payer', payerBody)}
+    ${card('<div class="section-heading"><span>Patient policies</span><button class="btn btn-primary" data-action="open-new-policy">Record policy</button></div>', policyBody)}
+  </div>`;
+}
+
 function renderHmoInsurance() {
+  if (!SHOW_SAMPLE_DATA) return renderLiveHmo();
   const byPayer = liveClaimsByPayer();
   const knownNames = new Set(state.hmoList.map(hmo => hmo.name));
   return `<div class="page">
@@ -1467,6 +1530,11 @@ const BOOKING_STATUS_LABEL = { BOOKED: 'Booked', SAMPLE_COLLECTED: 'Sample colle
 const BOOKING_TYPE_LABEL = { CENTRE_VISIT: 'At the centre', HOME_COLLECTION: 'Home collection' };
 // The one step a booking can take next, with the button text for it.
 const BOOKING_NEXT = { BOOKED: ['SAMPLE_COLLECTED', 'Mark collected'], SAMPLE_COLLECTED: ['PROCESSING', 'Start processing'], PROCESSING: ['READY', 'Mark ready'] };
+// A scan has no sample. The same steps read as scan done, reporting and report ready.
+const BOOKING_STATUS_LABEL_IMAGING = { BOOKED: 'Booked', SAMPLE_COLLECTED: 'Scan done', PROCESSING: 'Reporting', READY: 'Report ready', CANCELLED: 'Cancelled' };
+const BOOKING_NEXT_IMAGING = { BOOKED: ['SAMPLE_COLLECTED', 'Mark scan done'], SAMPLE_COLLECTED: ['PROCESSING', 'Start reporting'], PROCESSING: ['READY', 'Report ready'] };
+function bookingStatusLabel(b) { return (b.kind === 'IMAGING' ? BOOKING_STATUS_LABEL_IMAGING : BOOKING_STATUS_LABEL)[b.status] || b.status; }
+const BOOKING_FILTER_LABEL = { All: 'All', BOOKED: 'Booked', SAMPLE_COLLECTED: 'Collected or scanned', PROCESSING: 'Processing or reporting', READY: 'Ready', CANCELLED: 'Cancelled' };
 
 function formatWhen(iso) {
   return new Date(iso).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -1480,22 +1548,24 @@ function renderBookings() {
   const metrics = [
     [String(todayCount), 'Booked for today', 'Today'],
     [String(all.filter(b => b.type === 'HOME_COLLECTION' && b.status === 'BOOKED').length), 'Home collections waiting', 'Collection'],
-    [String(all.filter(b => b.status === 'PROCESSING').length), 'In processing', 'Lab'],
-    [String(all.filter(b => b.status === 'READY').length), 'Ready', 'Results'],
+    [String(all.filter(b => b.status === 'PROCESSING').length), 'Processing or reporting', 'Lab and imaging'],
+    [String(all.filter(b => b.status === 'READY').length), 'Results or reports ready', 'Ready'],
   ];
   const table = !state.bookingsSynced
     ? `<p class="empty-state">${state.bookingsError ? escapeHtml(state.bookingsError) : 'Loading bookings…'}</p>`
     : rows.length
       ? `<div class="table-wrap"><table class="table">
-          <thead><tr><th>When</th><th>Patient</th><th>Type</th><th>Address or notes</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>When</th><th>Patient</th><th>Type</th><th>Address or notes</th><th>Invoice</th><th>Status</th><th></th></tr></thead>
           <tbody>${rows.map(b => {
-            const next = BOOKING_NEXT[b.status];
+            const next = (b.kind === 'IMAGING' ? BOOKING_NEXT_IMAGING : BOOKING_NEXT)[b.status];
+            const linked = b.invoiceId ? state.invoiceList.find(i => i.live && i.invoiceId === b.invoiceId) : null;
             return `<tr>
               <td>${escapeHtml(formatWhen(b.scheduledAt))}</td>
               <td><strong>${escapeHtml(nameByRef.get(b.patientRef) || b.patientRef)}</strong></td>
-              <td>${escapeHtml(BOOKING_TYPE_LABEL[b.type] || b.type)}</td>
+              <td>${b.kind === 'IMAGING' ? 'Scan at the centre' : escapeHtml(BOOKING_TYPE_LABEL[b.type] || b.type)}</td>
               <td>${escapeHtml([b.address, b.notes].filter(Boolean).join(' · ') || '—')}</td>
-              <td>${tag(BOOKING_STATUS_LABEL[b.status] || b.status, b.status === 'READY' ? 'neutral' : 'outline')}</td>
+              <td>${b.invoiceId ? (linked ? `${escapeHtml(linked.id)}<br>${tag(escapeHtml(linked.status), linked.status === 'Paid' ? 'neutral' : linked.status === 'Unpaid' ? 'accent' : 'outline')}` : 'Linked') : `<button class="btn btn-ghost" data-action="open-link-invoice" data-id="${escapeHtml(b.bookingId)}">Link invoice</button>`}</td>
+              <td>${tag(bookingStatusLabel(b), b.status === 'READY' ? 'neutral' : 'outline')}</td>
               <td>${next ? `<button class="btn btn-secondary" data-action="advance-booking" data-id="${escapeHtml(b.bookingId)}" data-status="${next[0]}">${next[1]}</button>` : ''}${b.status === 'BOOKED' ? ` <button class="btn btn-ghost" data-action="advance-booking" data-id="${escapeHtml(b.bookingId)}" data-status="CANCELLED">Cancel</button>` : ''}</td>
             </tr>`;
           }).join('')}</tbody></table></div>`
@@ -1505,7 +1575,7 @@ function renderBookings() {
     ${metricGrid(state.bookingsSynced ? metrics : metrics.map(([, label, kicker]) => ['…', label, kicker]))}
     ${card('<div class="section-heading"><span>Bookings</span><button class="btn btn-primary" data-action="open-new-booking">New booking</button></div>', `
       <div class="filter-bar"><div class="filter-group">
-        ${['All', 'BOOKED', 'SAMPLE_COLLECTED', 'PROCESSING', 'READY', 'CANCELLED'].map(f => `<button class="filter-btn ${state.bookingFilter === f ? 'active' : ''}" data-action="filter-bookings" data-filter="${f}">${f === 'All' ? 'All' : BOOKING_STATUS_LABEL[f]}</button>`).join('')}
+        ${['All', 'BOOKED', 'SAMPLE_COLLECTED', 'PROCESSING', 'READY', 'CANCELLED'].map(f => `<button class="filter-btn ${state.bookingFilter === f ? 'active' : ''}" data-action="filter-bookings" data-filter="${f}">${BOOKING_FILTER_LABEL[f]}</button>`).join('')}
       </div></div>${table}`)}
   </div>`;
 }
@@ -1526,7 +1596,7 @@ async function advanceBooking(id, status) {
   try {
     const updated = await wellipayApi.updateBooking(id, { status });
     state.bookings = state.bookings.map(b => b.bookingId === id ? updated : b);
-    logAudit('Booking Updated', `${id} · ${BOOKING_STATUS_LABEL[status]}`);
+    logAudit('Booking Updated', `${id} · ${bookingStatusLabel(updated)}`);
     render();
   } catch (err) {
     showToast('Booking not changed', err.message);
@@ -2073,6 +2143,33 @@ function initializeCharts() {
   }
 }
 
+// A background reload redraws the open dialog. Keep what the person has typed
+// or chosen in its form so the redraw does not wipe it.
+function captureModalInput() {
+  const form = modalRoot.querySelector('form[id]');
+  if (!form) return null;
+  const fields = {};
+  for (const el of form.elements) {
+    if (!el.name) continue;
+    if (el.type === 'checkbox') (fields[el.name] = fields[el.name] || []).push({ value: el.value, checked: el.checked });
+    else if (el.type !== 'radio' && el.type !== 'submit' && el.type !== 'button') fields[el.name] = el.value;
+  }
+  const active = document.activeElement;
+  return { id: form.id, fields, focus: active && form.contains(active) && active.name ? active.name : null };
+}
+function restoreModalInput(saved) {
+  if (!saved) return;
+  const form = modalRoot.querySelector('form[id]');
+  if (!form || form.id !== saved.id) return;
+  for (const el of form.elements) {
+    if (!el.name || !(el.name in saved.fields)) continue;
+    const value = saved.fields[el.name];
+    if (el.type === 'checkbox') { const hit = (value || []).find(v => v.value === el.value); if (hit) el.checked = hit.checked; }
+    else if (el.type !== 'radio' && el.type !== 'submit' && el.type !== 'button') el.value = value;
+  }
+  if (saved.focus) { const el = form.elements[saved.focus]; if (el && el.focus) el.focus({ preventScroll: true }); }
+}
+
 function render() {
   if (!labels[state.active]) state.active = 'dashboard';
   renderNav();
@@ -2114,10 +2211,12 @@ function render() {
     'mobile-app': renderMobileIntegration
   };
   content.innerHTML = (views[state.active] || renderStub)();
+  const typed = captureModalInput();
   modalRoot.innerHTML = renderModal();
+  restoreModalInput(typed);
   content.focus({ preventScroll: true });
 
-  if ((state.active === 'patients' || state.active === 'invoices' || state.active === 'hospital-desk' || state.active === 'bookings') && !state.patientRecordsSynced) ensurePatientRecords().then(() => render());
+  if ((state.active === 'patients' || state.active === 'invoices' || state.active === 'hospital-desk' || state.active === 'bookings' || state.active === 'hmo-insurance') && !state.patientRecordsSynced) ensurePatientRecords().then(() => render());
   if (state.active === 'patients' && !state.patientsSynced) syncPatientsFromApi();
   if (state.active === 'payments' && !state.paymentsSynced) syncPaymentsFromApi();
   if (isLab() && state.active === 'dashboard') {
@@ -2125,7 +2224,10 @@ function render() {
     if (!state.invoicesSynced) syncInvoicesFromApi();
   }
   if (isLab() && (state.active === 'dashboard' || state.active === 'bookings') && !state.priceListSynced && !state.priceListError) syncPriceList();
+  if (!SHOW_SAMPLE_DATA && state.active === 'hmo-insurance' && !state.hmoPoliciesSynced && !state.hmoPoliciesError) syncHmoPolicies();
+  if (!SHOW_SAMPLE_DATA && state.active === 'claims' && !state.invoicesSynced) syncInvoicesFromApi();
   if (isLab() && state.active === 'bookings' && !state.bookingsSynced && !state.bookingsError) syncBookings();
+  if (isLab() && state.active === 'bookings' && !state.invoicesSynced) syncInvoicesFromApi();
   if (usesCorporate() && (state.active === 'corporate-accounts' || state.active === 'invoices' || state.active === 'hospital-desk') && !state.corporateSynced && !state.corporateError) syncCorporate();
   if (state.active === 'family-sponsors' && !SHOW_SAMPLE_DATA) { if (!state.invoicesSynced) syncInvoicesFromApi(); if (!state.fundingSynced) syncFundingFromApi(); }
   if ((state.active === 'services-pricing' || state.active === 'invoices' || state.active === 'hospital-desk') && !SHOW_SAMPLE_DATA && !state.priceListSynced && !state.priceListError) syncPriceList();
@@ -2583,6 +2685,123 @@ function renderModal() {
     </div>`;
   }
 
+  if (state.modal.type === 'new-claim') {
+    const invoices = state.invoiceList.filter(i => i.live && i.invoiceId && i.status !== 'Cancelled');
+    if (!invoices.length) {
+      return `<div class="modal-backdrop" data-action="dismiss-modal"><section class="modal" role="dialog" aria-modal="true"><h2>New claim</h2><p>${state.invoicesSynced ? 'Create an invoice first. A claim bills an HMO for an invoice.' : 'Loading invoices…'}</p><div class="modal-actions"><button class="btn btn-primary" data-action="close-modal">Close</button></div></section></div>`;
+    }
+    const payers = [...new Set([...state.hmoPolicies.map(p => p.provider), ...state.liveClaims.map(c => c.payerRef)])];
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="new-claim-title">
+        <h2 id="new-claim-title">New claim</h2>
+        <p>The claim starts as a draft. Submit it when it is ready to send to the HMO.</p>
+        <form id="new-claim-form" class="form-grid">
+          <div class="form-group"><label>Invoice *</label>
+            <select name="invoiceId" id="claim-invoice" required>${invoices.map(i => `<option value="${escapeHtml(i.invoiceId)}" data-amount="${i.amount}">${escapeHtml(i.patient)} · ${escapeHtml(i.id)} · ${money(i.amount)}</option>`).join('')}</select>
+          </div>
+          <div class="form-grid two-col">
+            <div class="form-group"><label>HMO or insurer *</label><input class="input" name="payer" required maxlength="80" list="claim-payers" placeholder="e.g. Reliance HMO"><datalist id="claim-payers">${payers.map(n => `<option value="${escapeHtml(n)}">`).join('')}</datalist></div>
+            <div class="form-group"><label>Amount to claim (₦) *</label><input class="input" type="number" name="amount" id="claim-amount" required min="1" step="0.01" value="${invoices[0].amount}"></div>
+          </div>
+          <div class="modal-actions"><button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit" id="new-claim-submit">Create claim</button></div>
+        </form>
+      </section>
+    </div>`;
+  }
+
+  if (state.modal.type === 'claim-decision') {
+    const claim = state.liveClaims.find(c => c.claimId === state.modal.claimId);
+    if (!claim) return '';
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="claim-dec-title">
+        <h2 id="claim-dec-title">Record decision · ${escapeHtml(claim.providerClaimRef)}</h2>
+        <p>${escapeHtml(claim.payerRef)} · claimed ${money(fromMinor(claim.amountMinor))}. Enter what the payer decided.</p>
+        <form id="claim-decision-form" class="form-grid" data-id="${escapeHtml(claim.claimId)}" data-amount="${claim.amountMinor}">
+          <div class="form-group"><label>Decision *</label>
+            <select name="outcome"><option value="APPROVED">Approved in full</option><option value="PARTIALLY_APPROVED">Approved in part</option><option value="REJECTED">Rejected</option></select>
+          </div>
+          <div class="form-grid two-col">
+            <div class="form-group"><label>Approved amount (₦, for part approval)</label><input class="input" type="number" name="approved" min="1" step="0.01" max="${claim.amountMinor / 100}"></div>
+            <div class="form-group"><label>Reason (needed to reject)</label><input class="input" name="reason" maxlength="300" placeholder="Payer's stated reason"></div>
+          </div>
+          <div class="modal-actions"><button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit">Save decision</button></div>
+        </form>
+      </section>
+    </div>`;
+  }
+
+  if (state.modal.type === 'new-policy') {
+    const patients = state.patientList.filter(p => p.registered);
+    if (!patients.length) {
+      return `<div class="modal-backdrop" data-action="dismiss-modal"><section class="modal" role="dialog" aria-modal="true"><h2>Record policy</h2><p>${state.patientRecordsSynced ? 'Register a patient first.' : 'Loading patients…'}</p><div class="modal-actions"><button class="btn btn-primary" data-action="close-modal">Close</button></div></section></div>`;
+    }
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="new-pol-title">
+        <h2 id="new-pol-title">Record policy</h2>
+        <p>Copy the details from the patient's HMO card.</p>
+        <form id="new-policy-form" class="form-grid">
+          <div class="form-group"><label>Patient *</label><select name="patientId" required>${patients.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)} (${escapeHtml(p.id)})</option>`).join('')}</select></div>
+          <div class="form-grid two-col">
+            <div class="form-group"><label>HMO *</label><input class="input" name="provider" required maxlength="120" placeholder="e.g. Reliance HMO"></div>
+            <div class="form-group"><label>Policy number *</label><input class="input" name="policyNo" required maxlength="60"></div>
+          </div>
+          <div class="form-grid two-col">
+            <div class="form-group"><label>Name on the card *</label><input class="input" name="enrolleeName" required maxlength="120"></div>
+            <div class="form-group"><label>Plan *</label><input class="input" name="planTier" required maxlength="60" placeholder="e.g. Gold"></div>
+          </div>
+          <div class="form-grid two-col">
+            <div class="form-group"><label>Patient co-pay (%) *</label><input class="input" type="number" name="coPay" required min="0" max="100" step="1" value="10"></div>
+            <div class="form-group"><label>Annual limit (₦) *</label><input class="input" type="number" name="limit" required min="0" step="1"></div>
+          </div>
+          <div class="form-group"><label>Expiry date (optional)</label><input class="input" type="date" name="expiry"></div>
+          <div class="modal-actions"><button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit" id="new-policy-submit">Save policy</button></div>
+        </form>
+      </section>
+    </div>`;
+  }
+
+  if (state.modal.type === 'record-payment') {
+    const m = state.modal;
+    const inv = m.invoice;
+    const balance = inv.amount - inv.paid;
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="rec-pay-title">
+        <h2 id="rec-pay-title">Record payment · ${escapeHtml(inv.id)}</h2>
+        <p>${escapeHtml(inv.patient)} · balance ${money(balance)}. Use this for money already received at the desk. For card payments through Paystack, use Pay online instead.</p>
+        <form id="record-payment-form" class="form-grid">
+          <div class="form-grid two-col">
+            <div class="form-group"><label>Method *</label>
+              <select name="channel"><option value="cash">Cash</option><option value="bank_transfer">Bank transfer</option><option value="card">Card on a POS terminal</option></select>
+            </div>
+            <div class="form-group"><label>Amount (₦) *</label><input class="input" type="number" name="amount" required min="1" max="${balance}" step="0.01" value="${balance}"></div>
+          </div>
+          <div class="form-group"><label>Reference (optional)</label><input class="input" name="reference" maxlength="120" placeholder="Transfer reference or POS receipt number"></div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
+            <button class="btn btn-primary" type="submit" id="record-payment-submit" ${m.busy ? 'disabled' : ''}>${m.busy ? 'Saving…' : 'Record payment'}</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+  }
+
+  if (state.modal.type === 'link-booking-invoice') {
+    const booking = state.bookings.find(b => b.bookingId === state.modal.bookingId);
+    const options = booking ? state.invoiceList.filter(i => i.live && i.invoiceId && i.patientId === booking.patientRef && i.status !== 'Cancelled') : [];
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="link-inv-title">
+        <h2 id="link-inv-title">Link an invoice</h2>
+        ${options.length ? `<p>Choose the invoice for this booking. Only this patient's invoices are listed.</p>
+        <form id="link-booking-form" class="form-grid" data-id="${escapeHtml(state.modal.bookingId)}">
+          <div class="form-group"><label>Invoice *</label>
+            <select name="invoiceId" required>${options.map(i => `<option value="${escapeHtml(i.invoiceId)}">${escapeHtml(i.id)} · ${money(i.amount)} · ${escapeHtml(i.status)}</option>`).join('')}</select>
+          </div>
+          <div class="modal-actions"><button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit">Link invoice</button></div>
+        </form>` : `<p>${state.invoicesSynced ? 'This patient has no invoices yet. Create the invoice first, then link it.' : 'Loading invoices…'}</p><div class="modal-actions"><button class="btn btn-primary" data-action="close-modal">Close</button></div>`}
+      </section>
+    </div>`;
+  }
+
   if (state.modal.type === 'new-booking') {
     const patients = state.patientList.filter(p => p.registered);
     if (!patients.length) {
@@ -2597,11 +2816,18 @@ function renderModal() {
             <select name="patientId" required>${patients.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)} (${escapeHtml(p.id)})</option>`).join('')}</select>
           </div>
           <div class="form-grid two-col">
-            <div class="form-group"><label>Type *</label>
-              <select name="type"><option value="CENTRE_VISIT">At the centre</option><option value="HOME_COLLECTION">Home collection</option></select>
+            <div class="form-group"><label>What for *</label>
+              <select name="kind" id="booking-kind"><option value="LAB">Lab test (sample)</option><option value="IMAGING">Scan (imaging)</option></select>
             </div>
-            <div class="form-group"><label>Date and time *</label><input class="input" type="datetime-local" name="when" required></div>
+            <div class="form-group"><label>Where *</label>
+              <select name="type" id="booking-type"><option value="CENTRE_VISIT">At the centre</option><option value="HOME_COLLECTION">Home collection</option></select>
+            </div>
           </div>
+          <div class="form-group"><label>Date and time *</label><input class="input" type="datetime-local" name="when" required></div>
+          ${state.invoiceList.some(i => i.live && i.invoiceId && i.status !== 'Cancelled') ? `<div class="form-group"><label>Invoice (optional)</label>
+            <select name="invoiceId"><option value="">Link later</option>
+              ${state.invoiceList.filter(i => i.live && i.invoiceId && i.status !== 'Cancelled').map(i => `<option value="${escapeHtml(i.invoiceId)}" data-patient="${escapeHtml(i.patientId)}">${escapeHtml(i.patient)} · ${escapeHtml(i.id)} · ${money(i.amount)}</option>`).join('')}
+            </select></div>` : ''}
           <div class="form-group"><label>Address (home collection)</label><input class="input" name="address" maxlength="240" placeholder="Street, area, landmark"></div>
           <div class="form-group"><label>Notes (optional)</label><input class="input" name="notes" maxlength="500" placeholder="Tests requested, fasting, gate code"></div>
           <div class="modal-actions">
@@ -3139,6 +3365,7 @@ async function syncInvoicesFromApi() {
       paid: fromMinor(item.paidAmountMinor),
       branch: branchLabel(item.facilityRef),
       facilityRef: item.facilityRef,
+      corporateAccountId: item.corporateAccountId,
       knownBranch: Boolean(FACILITY_BRANCH[item.facilityRef]),
       // No payer-type field exists on Invoice (see receivables ageing) —
       // this column shows the invoice's real description instead of a
@@ -3156,7 +3383,7 @@ async function syncInvoicesFromApi() {
     state.invoicesSyncing = false;
     // Also re-render while the reconciliation "match" modal is open, so its
     // invoice picker picks up live invoices as soon as this finishes.
-    if (state.active === 'invoices' || state.active === 'dashboard' || state.active === 'hospital-desk' || state.active === 'reports' || state.active === 'payment-plans' || state.active === 'financing' || (state.modal && (state.modal.type === 'match' || state.modal.type === 'new-payment-plan' || state.modal.type === 'new-financing-record'))) render();
+    if (state.active === 'invoices' || state.active === 'claims' || state.active === 'bookings' || state.active === 'dashboard' || state.active === 'hospital-desk' || state.active === 'reports' || state.active === 'payment-plans' || state.active === 'financing' || (state.modal && (state.modal.type === 'match' || state.modal.type === 'new-payment-plan' || state.modal.type === 'new-financing-record'))) render();
   }
 }
 
@@ -4319,6 +4546,15 @@ function dispatch(action, target, domEvent) {
     /* Services & Pricing */
     case 'filter-services': state.serviceFilter=target.dataset.filter;render();break;
     case 'search-services': state.serviceSearch=target.value;render();break;
+    case 'open-new-claim': state.modal = { type: 'new-claim' }; if (!state.invoicesSynced) syncInvoicesFromApi(); if (!state.hmoPoliciesSynced && !state.hmoPoliciesError) syncHmoPolicies(); render(); break;
+    case 'claim-decision': state.modal = { type: 'claim-decision', claimId: String(id) }; render(); break;
+    case 'open-new-policy': state.modal = { type: 'new-policy' }; render(); break;
+    case 'open-record-payment': {
+      const inv = state.invoiceList.find(i => i.id === id && i.live && i.invoiceId);
+      if (inv) { state.modal = { type: 'record-payment', invoice: inv, busy: false }; render(); }
+      break;
+    }
+    case 'open-link-invoice': state.modal = { type: 'link-booking-invoice', bookingId: String(id) }; render(); break;
     case 'filter-bookings': state.bookingFilter = target.dataset.filter; render(); break;
     case 'open-new-booking': state.modal = { type: 'new-booking' }; render(); break;
     case 'advance-booking': advanceBooking(String(id), target.dataset.status); break;
@@ -4638,6 +4874,15 @@ document.addEventListener('change', event => {
       form.elements.serviceAmount.value = item.unitPriceMinor / 100;
     }
   }
+  if (event.target.id === 'claim-invoice') {
+    const amount = document.getElementById('claim-amount');
+    const opt = event.target.selectedOptions[0];
+    if (amount && opt) amount.value = opt.dataset.amount;
+  }
+  if (event.target.id === 'booking-kind') {
+    const type = document.getElementById('booking-type');
+    if (type) { if (event.target.value === 'IMAGING') type.value = 'CENTRE_VISIT'; type.disabled = event.target.value === 'IMAGING'; }
+  }
   if (event.target.id === 'branch-select') {
     state.branch = event.target.value;
     logAudit('Branch Filter Changed', `Console scoped to ${state.branch}`);
@@ -4760,10 +5005,126 @@ document.addEventListener('submit', async event => {
       showToast('API Sync Failed', `${newInv.id} saved locally only: ${err.message}`);
     }
   }
+  if (event.target.id === 'new-claim-form') {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    const btn = document.getElementById('new-claim-submit');
+    if (btn) { btn.disabled = true; btn.textContent = 'Creating…'; }
+    try {
+      const created = await wellipayApi.createClaim({
+        providerClaimRef: `CLM-${Date.now().toString().slice(-8)}`,
+        invoiceId: fd.get('invoiceId').toString(),
+        payerRef: fd.get('payer').toString().trim(),
+        amountMinor: toMinor(Number(fd.get('amount'))),
+        currency: 'NGN',
+      });
+      state.liveClaims = [created, ...state.liveClaims];
+      state.claimsSynced = true;
+      logAudit('Claim Created', `${created.providerClaimRef} · ${created.payerRef}`);
+      state.modal = null;
+      showToast('Claim created', `${created.providerClaimRef} is a draft. Submit it when ready.`);
+      render();
+    } catch (err) {
+      showToast('Claim not created', err.message);
+      if (btn) { btn.disabled = false; btn.textContent = 'Create claim'; }
+    }
+  }
+  if (event.target.id === 'claim-decision-form') {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    const id = event.target.dataset.id;
+    const claimMinor = Number(event.target.dataset.amount);
+    const outcome = fd.get('outcome').toString();
+    const reason = fd.get('reason').toString().trim();
+    const approved = Number(fd.get('approved'));
+    if (outcome === 'REJECTED' && !reason) { showToast('Reason needed', 'Enter the reason the payer gave for rejecting.'); return; }
+    if (outcome === 'PARTIALLY_APPROVED' && (!(approved > 0) || toMinor(approved) >= claimMinor)) { showToast('Check the amount', 'Enter an approved amount that is more than zero and less than the claim.'); return; }
+    state.modal = null;
+    await updateLiveClaimStatus(id, outcome, outcome === 'REJECTED' ? { reason } : outcome === 'PARTIALLY_APPROVED' ? { approvedAmountMinor: toMinor(approved) } : {});
+  }
+  if (event.target.id === 'new-policy-form') {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    const btn = document.getElementById('new-policy-submit');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    const text = key => fd.get(key).toString().trim();
+    const expiry = text('expiry');
+    try {
+      const created = await wellipayApi.createHmoPolicy({
+        patientRef: text('patientId'),
+        provider: text('provider'),
+        policyNo: text('policyNo'),
+        enrolleeName: text('enrolleeName'),
+        planTier: text('planTier'),
+        coPayPercent: Math.round(Number(fd.get('coPay'))),
+        annualLimitMinor: toMinor(Number(fd.get('limit'))),
+        currency: 'NGN',
+        ...(expiry ? { expiryDate: new Date(`${expiry}T00:00:00.000Z`).toISOString() } : {}),
+      });
+      state.hmoPolicies = [created, ...state.hmoPolicies];
+      state.hmoPoliciesSynced = true;
+      logAudit('HMO Policy Recorded', `${created.provider} · ${created.policyNo}`);
+      state.modal = null;
+      showToast('Policy saved', `${created.provider} ${created.policyNo}`);
+      render();
+    } catch (err) {
+      showToast('Policy not saved', err.message);
+      if (btn) { btn.disabled = false; btn.textContent = 'Save policy'; }
+    }
+  }
+  if (event.target.id === 'record-payment-form') {
+    event.preventDefault();
+    const m = state.modal;
+    if (!m || m.type !== 'record-payment' || m.busy) return;
+    const fd = new FormData(event.target);
+    const amount = Number(fd.get('amount'));
+    const balance = m.invoice.amount - m.invoice.paid;
+    if (!(amount > 0) || amount > balance + 0.001) { showToast('Check the amount', `Enter an amount between ₦1 and the balance of ${money(balance)}.`); return; }
+    const channel = fd.get('channel').toString();
+    const reference = fd.get('reference').toString().trim();
+    m.busy = true; render();
+    try {
+      await wellipayApi.createPayment({
+        providerPaymentRef: `${channel.toUpperCase()}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        invoiceId: m.invoice.invoiceId,
+        channel,
+        ...(reference ? { reference } : {}),
+        amountMinor: toMinor(amount),
+        currency: 'NGN',
+      });
+      logAudit('Payment Recorded', `${m.invoice.id} · ${money(amount)} · ${channel.replace('_', ' ')}`);
+      showToast('Payment recorded', `${money(amount)} recorded against ${m.invoice.id}.`);
+      state.modal = null;
+      state.invoicesSynced = false; state.paymentsSynced = false; state.receivablesSynced = false; state.dashboardSynced = false;
+      render();
+    } catch (err) {
+      m.busy = false;
+      showToast('Payment not recorded', err.message);
+      render();
+    }
+  }
+  if (event.target.id === 'link-booking-form') {
+    event.preventDefault();
+    const bookingId = event.target.dataset.id;
+    const invoiceId = new FormData(event.target).get('invoiceId').toString();
+    try {
+      const updated = await wellipayApi.updateBooking(bookingId, { invoiceId });
+      state.bookings = state.bookings.map(b => b.bookingId === bookingId ? updated : b);
+      state.modal = null;
+      showToast('Invoice linked', 'The booking now shows what was billed.');
+      render();
+    } catch (err) {
+      showToast('Invoice not linked', err.message);
+    }
+  }
   if (event.target.id === 'new-booking-form') {
     event.preventDefault();
     const fd = new FormData(event.target);
-    const type = fd.get('type').toString();
+    const kind = fd.get('kind').toString();
+    const type = kind === 'IMAGING' ? 'CENTRE_VISIT' : fd.get('type').toString();
+    const invoiceId = (fd.get('invoiceId') || '').toString();
+    const chosenInvoice = invoiceId ? state.invoiceList.find(i => i.live && i.invoiceId === invoiceId) : null;
+    if (chosenInvoice && chosenInvoice.patientId !== fd.get('patientId').toString()) { showToast('Check the invoice', 'That invoice belongs to a different patient.'); return; }
     const address = fd.get('address').toString().trim();
     const notes = fd.get('notes').toString().trim();
     if (type === 'HOME_COLLECTION' && address.length < 5) { showToast('Address needed', 'Enter the address for a home collection.'); return; }
@@ -4775,12 +5136,14 @@ document.addEventListener('submit', async event => {
       const created = await wellipayApi.createBooking({
         patientRef: fd.get('patientId').toString(),
         type,
+        kind,
+        ...(invoiceId ? { invoiceId } : {}),
         scheduledAt: when.toISOString(),
         ...(address ? { address } : {}),
         ...(notes ? { notes } : {}),
       });
       state.bookings = [...state.bookings, created].sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt));
-      logAudit('Booking Created', `${created.patientRef} · ${BOOKING_TYPE_LABEL[type]} · ${formatWhen(created.scheduledAt)}`);
+      logAudit('Booking Created', `${created.patientRef} · ${kind === 'IMAGING' ? 'Scan' : BOOKING_TYPE_LABEL[type]} · ${formatWhen(created.scheduledAt)}`);
       state.modal = null;
       showToast('Booking saved', formatWhen(created.scheduledAt));
       render();

@@ -587,6 +587,17 @@ function greetingForNow() {
 // not backed by wellipay-api stay hidden. Set to true only for a local demo.
 const SHOW_SAMPLE_DATA = false;
 
+// Revenue by day and payments by channel, from live payments.
+function liveChartCards(snapshot) {
+  const weekTotal = snapshot.days.reduce((sum, d) => sum + d.total, 0);
+  const channelTotal = snapshot.channelTotals.reduce((sum, c) => sum + c[1], 0);
+  const note = snapshot.paymentsCapped ? 'latest 100 payments' : 'all payments';
+  return `<div class="grid two-col">
+      ${card(`Revenue by day · last 7 days`, `<div class="chart-summary" style="margin-bottom:12px;"><strong>${money(weekTotal)}</strong><span>collected in 7 days · ${note}</span></div>${weekTotal > 0 ? '<div style="height:160px;position:relative"><canvas id="revenueTrendChart"></canvas></div>' : '<p class="empty-state">No successful payments in the last 7 days.</p>'}`, 'trend-card')}
+      ${card(`Payments by channel`, `<div class="chart-summary" style="margin-bottom:12px;"><strong>${money(channelTotal)}</strong><span>by how patients paid · ${note}</span></div>${channelTotal > 0 ? '<div style="height:160px;position:relative"><canvas id="payerMixChart"></canvas></div>' : '<p class="empty-state">No successful payments yet.</p>'}`, 'mix-card')}
+    </div>`;
+}
+
 /* 1. Dashboard */
 function renderDashboard() {
   const sampleTiles = [['₦2,450,000','This period','Revenue'],['₦1,950,000','This period','Collected'],['₦500,000','This period','Outstanding'],['₦1,200,000','Owed to facility','HMO receivables'],['₦750,000','Awaiting HMO decision','Pending claims'],['₦450,000','In gateway pipeline','Pending settlements'],['124','This period','Patients served'],['₦35,000','This period','Refunds']];
@@ -614,6 +625,7 @@ function renderDashboard() {
     <div class="page-heading"><div><h1>${greetingForNow()}, ${(authState.user?.name || 'there').split(' ')[0]}</h1><p>${new Date().toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · ${escapeHtml(orgName())}${state.branch === 'All branches' ? '' : ', ' + escapeHtml(state.branch) + ' Branch'}</p></div><div class="seg" role="group" aria-label="Date range">${['Today','Week','Month','Quarter'].map(value=>`<label class="seg-opt"><input type="radio" name="filter" value="${value}" ${state.filter===value?'checked':''}><span>${value}</span></label>`).join('')}</div></div>
     ${snapshotCard}
     ${SHOW_SAMPLE_DATA ? metricGrid(tiles) : ''}
+    ${!SHOW_SAMPLE_DATA && snapshot ? liveChartCards(snapshot) : ''}
     ${SHOW_SAMPLE_DATA ? `<div class="grid two-col">
       ${card('Revenue trend · last 7 days (sample data)',`<div class="chart-summary" style="margin-bottom:12px;"><strong>₦2.45M</strong><span>+8.4% vs last week</span></div><div style="height:160px;position:relative"><canvas id="revenueTrendChart"></canvas></div>`,'trend-card')}
       ${card('Payer mix · this month (sample data)', `<div class="chart-summary" style="margin-bottom:12px;"><strong>₦6.2M</strong><span>collected by payer</span></div><div style="height:160px;position:relative"><canvas id="payerMixChart"></canvas></div>`, 'mix-card')}
@@ -1654,10 +1666,10 @@ function initializeCharts() {
     chartInstances.push(new Chart(revenueCanvas, {
       type: 'bar',
       data: {
-        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        labels: SHOW_SAMPLE_DATA ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] : (state.liveSnapshot?.days || []).map(d => d.label),
         datasets: [{
-          label: 'Revenue (M)',
-          data: [1.8, 2.1, 1.6, 2.4, 2.0, 2.6, 2.45],
+          label: SHOW_SAMPLE_DATA ? 'Revenue (M)' : 'Revenue (₦)',
+          data: SHOW_SAMPLE_DATA ? [1.8, 2.1, 1.6, 2.4, 2.0, 2.6, 2.45] : (state.liveSnapshot?.days || []).map(d => d.total),
           backgroundColor: '#ec3013',
           borderRadius: 4
         }]
@@ -1680,10 +1692,10 @@ function initializeCharts() {
     chartInstances.push(new Chart(mixCanvas, {
       type: 'doughnut',
       data: {
-        labels: ['Patient', 'HMO', 'Insurance', 'Corporate'],
+        labels: SHOW_SAMPLE_DATA ? ['Patient', 'HMO', 'Insurance', 'Corporate'] : (state.liveSnapshot?.channelTotals || []).map(c => c[0]),
         datasets: [{
-          data: [40, 45, 10, 5],
-          backgroundColor: ['#d4d4d4', '#ec3013', '#7d190a', '#525252'],
+          data: SHOW_SAMPLE_DATA ? [40, 45, 10, 5] : (state.liveSnapshot?.channelTotals || []).map(c => c[1]),
+          backgroundColor: ['#ec3013', '#d4d4d4', '#7d190a', '#525252', '#a3a3a3', '#f58a78'],
           borderWidth: 0,
           hoverOffset: 4
         }]
@@ -2408,6 +2420,7 @@ function currentFacilityRef() {
 }
 function branchLabel(ref) { return ref === MAIN_FACILITY_REF ? orgName() : (FACILITY_BRANCH[ref] || 'Other facility'); }
 const FACILITY_BRANCH = { 'facility-wuse': 'Wuse', 'facility-maitama': 'Maitama', 'facility-garki': 'Garki', 'facility-kaduna': 'Kaduna', 'facility-lagos': 'Lagos' };
+const CHANNEL_SHORT_LABEL = { card: 'Card', bank_transfer: 'Bank transfer', ussd: 'USSD', cash: 'Cash', hmo_direct: 'HMO direct', wellipass: 'WelliPass' };
 const PAYMENT_CHANNEL_LABEL = { card: 'Card (Live)', bank_transfer: 'Bank Transfer (Live)', ussd: 'USSD (Live)', cash: 'Cash (Live)', hmo_direct: 'HMO Direct (Live)', wellipass: 'WelliPass (Live)' };
 const PAYMENT_STATUS_LABEL = { SUCCESS: 'Success', PENDING: 'Pending', FAILED: 'Failed' };
 const CLAIM_STATUS_LABEL = { DRAFT: 'Draft', SUBMITTED: 'Submitted', APPROVED: 'Approved', PARTIALLY_APPROVED: 'Partially Approved', REJECTED: 'Rejected' };
@@ -3155,7 +3168,27 @@ async function syncDashboardFromApi() {
       });
     const branchRevenue = Object.entries(branchTotals).sort((a, b) => b[1] - a[1]);
 
+    // Revenue per day for the last 7 days and totals per payment channel, from
+    // the successful payments loaded above (the latest 100).
+    const dayKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - (6 - i));
+      return { key: dayKey(d), label: d.toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric' }), total: 0 };
+    });
+    const channelTotals = {};
+    payments.items.filter(item => item.status === 'SUCCESS').forEach(item => {
+      const day = days.find(d => d.key === dayKey(new Date(item.occurredAt)));
+      if (day) day.total += fromMinor(item.amountMinor);
+      const label = CHANNEL_SHORT_LABEL[item.channel] || item.channel;
+      channelTotals[label] = (channelTotals[label] || 0) + fromMinor(item.amountMinor);
+    });
+
     state.liveSnapshot = {
+      days,
+      channelTotals: Object.entries(channelTotals).sort((a, b) => b[1] - a[1]),
+      paymentsCapped: payments.items.length >= 100,
       collected,
       pendingClaims,
       approvedClaims,

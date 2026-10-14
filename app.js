@@ -1147,7 +1147,7 @@ function renderRefunds() {
                 <td><strong>${money(r.amount)}</strong></td>
                 <td>${escapeHtml(r.requester)}</td>
                 <td>${escapeHtml(r.reason)}</td>
-                <td>${tag(r.status, r.status === 'Approved' || r.status === 'Settled' ? 'neutral' : 'accent')}${r.recovery === 'OWED' ? ' ' + tag('Owed to Wellinovate', 'outline') : ''}</td>
+                <td>${tag(r.status, r.status === 'Approved' || r.status === 'Settled' ? 'neutral' : 'accent')}${r.recovery === 'OWED' ? ' ' + tag('Owed to Wellinovate', 'outline') : ''}${r.gateway ? '<br>' + tag(GATEWAY_REFUND_LABEL[r.gateway] || `Paystack: ${escapeHtml(r.gateway)}`, r.gateway === 'processed' ? 'neutral' : (r.gateway === 'failed' || r.gateway === 'needs-attention') ? 'accent' : 'outline') : ''}${r.gateway === 'failed' || r.gateway === 'needs-attention' ? `<br><small style="color:var(--color-accent-700)">The patient has not been paid. Contact Paystack support about this refund.</small>` : ''}</td>
                 <td>
                   ${r.deciding ? tag('Processing…', 'outline') : r.status.includes('Pending') ? `
                     <button class="btn btn-secondary" data-action="approve-refund-item" data-id="${escapeHtml(r.id)}" style="font-size:11px;padding:4px 8px;">Approve</button>
@@ -2430,6 +2430,9 @@ const CLAIM_STATUS_LABEL = { DRAFT: 'Draft', SUBMITTED: 'Submitted', APPROVED: '
 // created), so CANCELLED is labelled plainly rather than forced into one
 // of those four buckets; it just won't highlight under any filter chip.
 const INVOICE_STATUS_LABEL = { OPEN: 'Unpaid', PARTIALLY_PAID: 'Part-paid', PAID: 'Paid', CANCELLED: 'Cancelled' };
+// Where Paystack stands on a refund it was asked to pay.
+const GATEWAY_REFUND_LABEL = { pending: 'Paystack: pending', processing: 'Paystack: processing', processed: 'Paystack: refunded', 'needs-attention': 'Paystack: needs attention', failed: 'Paystack: failed' };
+const GATEWAY_REFUND_DONE = new Set(['processed', 'failed']);
 const REFUND_STATUS_LABEL = { PENDING: 'Pending Approval', APPROVED: 'Approved', REJECTED: 'Rejected' };
 
 // The provider's own registered patients. Without SHOW_SAMPLE_DATA the demo
@@ -2574,6 +2577,20 @@ async function syncInvoicesFromApi() {
 // mock toggle. Payments and invoices are fetched alongside (rather than
 // reused from state) so this works even landing on Refunds directly,
 // before those other pages have synced.
+// Asks the API for Paystack's current status on refunds that are not final.
+// Runs once per page load, a few at a time. A failure leaves the saved status.
+async function refreshGatewayStatuses() {
+  const open = state.refundList.filter(r => r.live && r.gateway && !GATEWAY_REFUND_DONE.has(r.gateway)).slice(0, 10);
+  let changed = false;
+  for (const row of open) {
+    try {
+      const updated = await wellipayApi.refreshRefundGatewayStatus(row.id);
+      if (updated.gatewayStatus && updated.gatewayStatus !== row.gateway) { row.gateway = updated.gatewayStatus; changed = true; }
+    } catch { /* keep the saved status */ }
+  }
+  if (changed && state.active === 'refunds') render();
+}
+
 async function syncRefundsFromApi() {
   if (state.refundsSyncing) return;
   state.refundsSyncing = true;
@@ -2601,6 +2618,7 @@ async function syncRefundsFromApi() {
         status: REFUND_STATUS_LABEL[item.status] || item.status,
         dualApproval: item.amountMinor >= toMinor(state.settings.threshold),
         recovery: item.recoveryStatus || null,
+        gateway: item.gatewayStatus || null,
         live: true,
       };
     });
@@ -2612,6 +2630,7 @@ async function syncRefundsFromApi() {
     state.approvals = [...liveApprovalItems, ...state.approvals.filter(a => !a.live)];
 
     state.refundsSynced = true;
+    refreshGatewayStatuses();
   } catch (err) {
     showToast('API Sync Failed', `Live refunds not loaded: ${err.message}`);
   } finally {

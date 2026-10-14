@@ -218,6 +218,8 @@ export const wellipayApi = {
     apiRequest(`/provider/claims/${encodeURIComponent(claimId)}/status`, { method: 'PATCH', body }),
   createRefund: (body) => apiRequest('/provider/refunds', { method: 'POST', body, idempotent: 'ref' }),
   listRefunds: (query) => apiRequest(`/provider/refunds${toQueryString(query)}`),
+  refreshRefundGatewayStatus: (refundId) =>
+    apiRequest(`/provider/refunds/${encodeURIComponent(refundId)}/gateway-status`, { method: 'POST' }),
   decideRefund: (refundId, body) =>
     apiRequest(`/provider/refunds/${encodeURIComponent(refundId)}/decision`, { method: 'PATCH', body }),
   listUnmatchedTransactions: (query) => apiRequest(`/provider/unmatched-transactions${toQueryString(query)}`),

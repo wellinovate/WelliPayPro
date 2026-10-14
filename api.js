@@ -199,6 +199,7 @@ export const wellipayApi = {
   createInvoice: (body) => apiRequest('/provider/invoices', { method: 'POST', body, idempotent: 'inv' }),
   getInvoice: (invoiceId) => apiRequest(`/provider/invoices/${encodeURIComponent(invoiceId)}`),
   listInvoices: (query) => apiRequest(`/provider/invoices${toQueryString(query)}`),
+  listFamilyFundingRequests: (query) => apiRequest(`/provider/family-funding-requests${toQueryString(query)}`),
   createFamilyFundingRequest: (body) =>
     apiRequest('/provider/family-funding-requests', { method: 'POST', body, idempotent: 'fund' }),
   createEligibilityCheck: (body) =>
@@ -207,6 +208,9 @@ export const wellipayApi = {
     apiRequest('/provider/financial-consents', { method: 'POST', body, idempotent: 'consent' }),
   listPatientRecords: (query) => apiRequest(`/provider/patient-records${toQueryString(query)}`),
   createPatientRecord: (body) => apiRequest('/provider/patient-records', { method: 'POST', body }),
+  listServiceItems: (query) => apiRequest(`/provider/service-items${toQueryString(query)}`),
+  createServiceItem: (body) => apiRequest('/provider/service-items', { method: 'POST', body }),
+  updateServiceItem: (id, body) => apiRequest(`/provider/service-items/${encodeURIComponent(id)}`, { method: 'PATCH', body }),
   listPatients: (query) => apiRequest(`/provider/patients${toQueryString(query)}`),
   listPayments: (query) => apiRequest(`/provider/payments${toQueryString(query)}`),
   listPaystackSettlements: (query) => apiRequest(`/provider/paystack/settlements${toQueryString(query)}`),

@@ -360,6 +360,11 @@ const state = {
   // navigating back and forth doesn't re-fire the request every render.
   patientsSynced: false,
   patientRecordsSynced: false,
+  fundingList: [],
+  fundingSynced: false,
+  priceList: [],
+  priceListSynced: false,
+  priceListError: '',
   patientsSyncing: false,
   paymentsSynced: false,
   paymentsSyncing: false,
@@ -869,9 +874,24 @@ function renderPayments() {
 function renderServicesPricing() {
   if (!SHOW_SAMPLE_DATA) {
     const copy = billingCopy();
+    const items = state.priceList;
+    const body = !state.priceListSynced
+      ? `<p class="empty-state">${state.priceListError ? escapeHtml(state.priceListError) : 'Loading price list…'}</p>`
+      : items.length
+        ? `<div class="table-wrap"><table class="table">
+            <thead><tr><th>${escapeHtml(copy.itemLabel)}</th><th>Category</th><th>Price</th><th>Status</th><th></th></tr></thead>
+            <tbody>${items.map(it => `<tr>
+              <td><strong>${escapeHtml(it.name)}</strong></td>
+              <td>${it.category ? escapeHtml(it.category) : '—'}</td>
+              <td>${money(fromMinor(it.unitPriceMinor))}</td>
+              <td>${tag(it.active ? 'Active' : 'Off', it.active ? 'neutral' : 'outline')}</td>
+              <td><button class="btn btn-secondary" data-action="edit-price-item" data-id="${escapeHtml(it.serviceItemId)}">Edit</button>
+                  <button class="btn btn-secondary" data-action="toggle-price-item" data-id="${escapeHtml(it.serviceItemId)}">${it.active ? 'Switch off' : 'Switch on'}</button></td>
+            </tr>`).join('')}</tbody></table></div>`
+        : `<p class="empty-state">No items yet. Use Add item to save the first one.</p>`;
     return `<div class="page">
-    ${pageHeading('Revenue Cycle', copy.catalogue, 'Your price list.')}
-    ${card('Price list', `<p class="empty-state">A saved price list is not available yet. ${escapeHtml(copy.catalogueNote)}</p>`)}
+    ${pageHeading('Revenue Cycle', copy.catalogue, 'Your price list. Pick from it when you create an invoice.')}
+    ${card('<div class="section-heading"><span>Price list</span><button class="btn btn-primary" data-action="open-price-item">Add item</button></div>', body)}
   </div>`;
   }
   const filtered = state.servicesList.filter(s => {
@@ -999,7 +1019,9 @@ function renderAuthorization() {
 }
 
 /* 10. Family / Sponsors */
+const CONTRIBUTION_LABEL = { PENDING: 'Awaiting payment', PAID: 'Paid', FAILED: 'Failed' };
 function renderFamily() {
+  if (!SHOW_SAMPLE_DATA) return renderLiveFamily();
   const total = 1000000;
   const funded = state.family.filter(item => item.paid).reduce((sum, item) => sum + item.amount, 0);
   const remaining = total - funded;
@@ -1008,6 +1030,32 @@ function renderFamily() {
     ${pageHeading('Family / Sponsors','Multi-sponsor funding','Coordinate contributions toward a single treatment invoice.')}
     ${card(`<div class="section-heading"><span>Chidi O. — Treatment plan</span><strong>${money(total)}</strong></div>`,`${state.family.map(item=>`<div class="split-row"><span>${escapeHtml(item.name)}</span><strong>${money(item.amount)}</strong>${item.paid?tag('Paid'): `<button class="btn btn-secondary" data-action="contribute" data-name="${escapeHtml(item.name)}">Simulate pays</button>`}</div>`).join('')}<div class="progress-track"><div class="progress-fill" style="width:${funded/total*100}%"></div></div><div class="progress-meta"><span>Funded ${money(funded)}</span><span>Remaining ${money(remaining)}</span></div>${remaining===0?tag('Bill fully funded — settled to provider'):''}`,'funding-card')}
     ${card('Sponsor directory',`${dataRow('Femi O. — Invoice INV-2048','Sponsor: Brother (UK) — ₦58,000','Paid')}${dataRow('Blessing K. — Invoice INV-2061','Sponsor: Daughter — ₦23,500','Awaiting payment','outline')}${dataRow('Chidi O. — Treatment plan','3 sponsors — ₦1,000,000 total','Partially funded','outline')}`)}
+  </div>`;
+}
+
+function renderLiveFamily() {
+  const invoiceById = new Map(state.invoiceList.filter(i => i.live).map(i => [i.invoiceId, i]));
+  const body = !state.fundingSynced
+    ? '<p class="empty-state">Loading family funding…</p>'
+    : state.fundingList.length
+      ? state.fundingList.map(r => {
+          const inv = invoiceById.get(r.invoiceId);
+          const pledged = r.contributions.reduce((sum, c) => sum + c.amountMinor, 0);
+          const pct = pledged ? Math.min(100, Math.round(r.fundedAmountMinor / pledged * 100)) : 0;
+          const title = inv ? `${escapeHtml(inv.patient)} · ${escapeHtml(inv.id)}` : escapeHtml(r.providerRequestRef);
+          return `<div style="padding:12px 0;border-bottom:1px solid rgba(128,128,128,.25)">
+            <div class="section-heading"><span>${title}</span>${tag(r.status === 'FUNDED' ? 'Funded' : 'Open', r.status === 'FUNDED' ? 'neutral' : 'outline')}</div>
+            ${r.contributions.map(c => `<div class="split-row"><span>${escapeHtml(c.sponsorRef)}</span><strong>${money(fromMinor(c.amountMinor))}</strong>${c.status === 'PENDING'
+              ? `<button class="btn btn-secondary" data-action="open-family-pay" data-request="${escapeHtml(r.requestId)}" data-contribution="${escapeHtml(c.contributionId)}">Payment link</button>`
+              : tag(CONTRIBUTION_LABEL[c.status] || c.status, c.status === 'PAID' ? 'neutral' : 'outline')}</div>`).join('')}
+            <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
+            <div class="progress-meta"><span>Paid ${money(fromMinor(r.fundedAmountMinor))}</span><span>Pledged ${money(fromMinor(pledged))}</span></div>
+          </div>`;
+        }).join('')
+      : '<p class="empty-state">No family funding requests yet. Use New request to split an invoice between sponsors.</p>';
+  return `<div class="page">
+    ${pageHeading('Family / Sponsors', 'Multi-sponsor funding', 'Split one invoice between family members. Each sponsor pays their share online.')}
+    ${card('<div class="section-heading"><span>Funding requests</span><button class="btn btn-primary" data-action="open-family-request">New request</button></div>', body)}
   </div>`;
 }
 
@@ -1879,6 +1927,8 @@ function render() {
   if ((state.active === 'patients' || state.active === 'invoices' || state.active === 'hospital-desk') && !state.patientRecordsSynced) ensurePatientRecords().then(() => render());
   if (state.active === 'patients' && !state.patientsSynced) syncPatientsFromApi();
   if (state.active === 'payments' && !state.paymentsSynced) syncPaymentsFromApi();
+  if (state.active === 'family-sponsors' && !SHOW_SAMPLE_DATA) { if (!state.invoicesSynced) syncInvoicesFromApi(); if (!state.fundingSynced) syncFundingFromApi(); }
+  if ((state.active === 'services-pricing' || state.active === 'invoices' || state.active === 'hospital-desk') && !SHOW_SAMPLE_DATA && !state.priceListSynced) syncPriceList();
   if (!SHOW_SAMPLE_DATA && (state.active === 'hospital-desk' || state.active === 'reports')) {
     if (!state.paymentsSynced) syncPaymentsFromApi();
     if (!state.invoicesSynced) syncInvoicesFromApi();
@@ -2204,7 +2254,11 @@ function renderModal() {
               ${state.servicesList.map(s => `<option value="${escapeHtml(s.cash)}" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)} — ${money(s.cash)}</option>`).join('')}
             </select>
           </div>`
-      : `<div class="form-group"><label>${escapeHtml(copy.itemLabel)} *</label><input class="input" name="serviceName" required maxlength="200" placeholder="${escapeHtml(copy.itemPlaceholder)}"></div>
+      : `${state.priceList.some(x => x.active) ? `<div class="form-group"><label>From price list (optional)</label>
+            <select id="inv-price-pick"><option value="">Choose a saved item, or type below</option>
+              ${state.priceList.filter(x => x.active).map(x => `<option value="${escapeHtml(x.serviceItemId)}">${escapeHtml(x.name)} — ${money(fromMinor(x.unitPriceMinor))}</option>`).join('')}
+            </select></div>` : ''}
+          <div class="form-group"><label>${escapeHtml(copy.itemLabel)} *</label><input class="input" name="serviceName" required maxlength="200" placeholder="${escapeHtml(copy.itemPlaceholder)}"></div>
           <div class="form-grid two-col">
             ${copy.quantity ? `<div class="form-group"><label>Quantity *</label><input class="input" type="number" name="quantity" required min="1" step="1" value="1"></div>` : ''}
             <div class="form-group"><label>${copy.quantity ? 'Unit price (₦) *' : 'Amount (₦) *'}</label><input class="input" type="number" name="serviceAmount" required min="1" step="any" placeholder="e.g. 8600"></div>
@@ -2275,6 +2329,56 @@ function renderModal() {
     </div>`;
   }
 
+  if (state.modal.type === 'family-request') {
+    const open = state.invoiceList.filter(i => i.live && i.amount - i.paid > 0 && i.status !== 'Cancelled');
+    if (!open.length) {
+      return `<div class="modal-backdrop" data-action="dismiss-modal"><section class="modal" role="dialog" aria-modal="true"><h2>New funding request</h2><p>There are no invoices with a balance. Create an invoice first.</p><div class="modal-actions"><button class="btn btn-primary" data-action="close-modal">Close</button></div></section></div>`;
+    }
+    const row = n => `<div class="form-grid two-col"><div class="form-group"><label>Sponsor ${n}${n === 1 ? ' *' : ''}</label><input class="input" name="sponsor${n}" maxlength="100" ${n === 1 ? 'required' : ''} placeholder="Name or relationship"></div><div class="form-group"><label>Amount (₦)${n === 1 ? ' *' : ''}</label><input class="input" type="number" name="amount${n}" min="1" step="any" ${n === 1 ? 'required' : ''}></div></div>`;
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="fam-req-title">
+        <h2 id="fam-req-title">New funding request</h2>
+        <p>Choose an invoice and what each sponsor will pay. The total cannot be more than the invoice balance.</p>
+        <form id="family-request-form" class="form-grid">
+          <div class="form-group"><label>Invoice *</label>
+            <select name="invoice" required>${open.map(i => `<option value="${escapeHtml(i.invoiceId)}">${escapeHtml(i.patient)} · ${escapeHtml(i.id)} · balance ${money(i.amount - i.paid)}</option>`).join('')}</select>
+          </div>
+          ${[1, 2, 3, 4].map(row).join('')}
+          <div class="modal-actions">
+            <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
+            <button class="btn btn-primary" type="submit" id="family-request-submit">Create request</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+  }
+
+  if (state.modal.type === 'family-pay') {
+    const m = state.modal;
+    const charge = m.charge;
+    const statusText = !charge ? '' : charge.status === 'SUCCESS' ? 'Paid.' : charge.status === 'FAILED' ? `Failed${charge.failureReason ? ': ' + escapeHtml(charge.failureReason) : ''}.` : 'Waiting for the sponsor to complete checkout.';
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="fam-pay-title">
+        <h2 id="fam-pay-title">Payment link · ${escapeHtml(m.contribution.sponsorRef)}</h2>
+        <p>${money(fromMinor(m.contribution.amountMinor))}. The sponsor pays on Paystack's page. The request updates when Paystack confirms it.</p>
+        ${!charge ? `
+        <form id="family-pay-form" class="form-grid">
+          <div class="form-group"><label>Sponsor email *</label><input class="input" type="email" name="email" required placeholder="sponsor@example.com"></div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
+            <button class="btn btn-primary" type="submit" ${m.busy ? 'disabled' : ''}>${m.busy ? 'Creating…' : 'Create link'}</button>
+          </div>
+        </form>` : `
+        <p>${statusText}</p>
+        ${charge.status === 'PENDING' && charge.authorizationUrl ? `<p><a class="btn btn-primary" href="${escapeHtml(charge.authorizationUrl)}" target="_blank" rel="noopener noreferrer">Open Paystack checkout</a></p><p style="font-size:12px;color:var(--muted);word-break:break-all;">Or send this link to the sponsor: ${escapeHtml(charge.authorizationUrl)}</p>` : ''}
+        <div class="modal-actions">
+          ${charge.status === 'PENDING' ? `<button class="btn btn-secondary" data-action="check-family-charge" ${m.busy ? 'disabled' : ''}>${m.busy ? 'Checking…' : 'Check status'}</button>` : ''}
+          <button class="btn btn-primary" data-action="close-modal">Close</button>
+        </div>`}
+      </section>
+    </div>`;
+  }
+
   if (state.modal.type === 'receipt') {
     const inv = state.modal.invoice || state.invoiceList[0];
     return `<div class="modal-backdrop" data-action="dismiss-modal">
@@ -2334,6 +2438,28 @@ function renderModal() {
           <button class="btn btn-secondary" data-action="close-modal">Close</button>
           <button class="btn btn-primary" data-action="bill-patient" data-id="${escapeHtml(p.id)}">Load into Hospital Desk</button>
         </div>
+      </section>
+    </div>`;
+  }
+
+  if (state.modal.type === 'price-item') {
+    const copy = billingCopy();
+    const it = state.modal.itemId ? state.priceList.find(x => x.serviceItemId === state.modal.itemId) : null;
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="price-item-title">
+        <h2 id="price-item-title">${it ? 'Edit item' : 'Add item'}</h2>
+        <p>Saved prices are copied onto an invoice when you create it. Changing a price later does not change old invoices.</p>
+        <form id="price-item-form" class="form-grid" data-id="${it ? escapeHtml(it.serviceItemId) : ''}">
+          <div class="form-group"><label>${escapeHtml(copy.itemLabel)} *</label><input class="input" name="name" required minlength="2" maxlength="120" value="${it ? escapeHtml(it.name) : ''}" placeholder="${escapeHtml(copy.itemPlaceholder)}"></div>
+          <div class="form-grid two-col">
+            <div class="form-group"><label>${copy.quantity ? 'Unit price (₦) *' : 'Price (₦) *'}</label><input class="input" type="number" name="price" required min="1" step="any" value="${it ? it.unitPriceMinor / 100 : ''}" placeholder="e.g. 8600"></div>
+            <div class="form-group"><label>Category (optional)</label><input class="input" name="category" maxlength="60" value="${it && it.category ? escapeHtml(it.category) : ''}" placeholder="e.g. Haematology"></div>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
+            <button class="btn btn-primary" type="submit" id="price-item-submit">Save</button>
+          </div>
+        </form>
       </section>
     </div>`;
   }
@@ -2567,6 +2693,74 @@ function patientFromRecord(item) {
   };
 }
 
+let fundingPromise = null;
+function syncFundingFromApi() {
+  if (!fundingPromise) {
+    fundingPromise = wellipayApi.listFamilyFundingRequests({ limit: 100 })
+      .then(data => { state.fundingList = data.items; state.fundingSynced = true; })
+      .catch(err => { showToast('API Sync Failed', `Family funding not loaded: ${err.message}`); })
+      .finally(() => { fundingPromise = null; if (state.active === 'family-sponsors') render(); });
+  }
+  return fundingPromise;
+}
+
+async function startFamilyCharge(email) {
+  const m = state.modal;
+  if (!m || m.type !== 'family-pay') return;
+  m.busy = true; render();
+  try {
+    m.charge = await wellipayApi.createPaystackCharge({ invoiceId: m.request.invoiceId, email, fundingContributionId: m.contribution.contributionId });
+    logAudit('Sponsor Checkout Started', `${m.contribution.sponsorRef} · ${money(fromMinor(m.contribution.amountMinor))}`);
+  } catch (err) {
+    showToast('Checkout Failed', err.message);
+  } finally {
+    m.busy = false; render();
+  }
+}
+
+async function checkFamilyCharge() {
+  const m = state.modal;
+  if (!m || m.type !== 'family-pay' || !m.charge) return;
+  m.busy = true; render();
+  try {
+    m.charge = await wellipayApi.getPaystackCharge(m.charge.reference);
+    if (m.charge.status === 'SUCCESS') {
+      showToast('Payment Received', `${m.contribution.sponsorRef} has paid.`);
+      state.fundingSynced = false; state.invoicesSynced = false;
+      syncFundingFromApi(); syncInvoicesFromApi();
+    }
+  } catch (err) {
+    showToast('Check Failed', err.message);
+  } finally {
+    m.busy = false; render();
+  }
+}
+
+async function togglePriceItem(itemId) {
+  const item = state.priceList.find(x => x.serviceItemId === itemId);
+  if (!item) return;
+  try {
+    const updated = await wellipayApi.updateServiceItem(itemId, { active: !item.active });
+    state.priceList = state.priceList.map(x => x.serviceItemId === itemId ? updated : x);
+    render();
+  } catch (err) {
+    showToast('Item not changed', err.message);
+  }
+}
+
+let priceListPromise = null;
+// Loads the saved price list, including switched-off items so they can be
+// switched back on. Create Invoice only offers the active ones.
+function syncPriceList() {
+  if (!priceListPromise) {
+    priceListPromise = wellipayApi.listServiceItems({ includeInactive: 'true' })
+      .then(data => { state.priceList = data.items; state.priceListSynced = true; state.priceListError = ''; })
+      .catch(err => { state.priceListError = `Price list not loaded: ${err.message}`; showToast('API Sync Failed', state.priceListError); })
+      .finally(() => { priceListPromise = null; render(); });
+  }
+  return priceListPromise;
+}
+
 let patientRecordsPromise = null;
 // Loads the registered patients once. Other syncs wait on it so invoices,
 // payments and refunds can show a patient's name instead of the reference.
@@ -2660,6 +2854,7 @@ async function syncInvoicesFromApi() {
       amount: fromMinor(item.amountMinor),
       paid: fromMinor(item.paidAmountMinor),
       branch: branchLabel(item.facilityRef),
+      facilityRef: item.facilityRef,
       knownBranch: Boolean(FACILITY_BRANCH[item.facilityRef]),
       // No payer-type field exists on Invoice (see receivables ageing) —
       // this column shows the invoice's real description instead of a
@@ -3807,6 +4002,14 @@ function dispatch(action, target, domEvent) {
       break;
     }
     case 'check-paystack-charge': checkPaystackCharge(); break;
+    case 'open-family-request': state.modal={type:'family-request'}; if (!state.invoicesSynced) syncInvoicesFromApi(); render(); break;
+    case 'open-family-pay': {
+      const request = state.fundingList.find(r => r.requestId === target.dataset.request);
+      const contribution = request && request.contributions.find(c => c.contributionId === target.dataset.contribution);
+      if (contribution) { state.modal = { type: 'family-pay', request, contribution, charge: null, busy: false }; render(); }
+      break;
+    }
+    case 'check-family-charge': checkFamilyCharge(); break;
     case 'send-invoice-sms': {
       showToast('SMS Dispatched', `Digital payment link sent via Termii SMS gateway`);
       logAudit('SMS Link Sent', `Invoice ${id} payment link sent to patient`);
@@ -3832,6 +4035,9 @@ function dispatch(action, target, domEvent) {
     /* Services & Pricing */
     case 'filter-services': state.serviceFilter=target.dataset.filter;render();break;
     case 'search-services': state.serviceSearch=target.value;render();break;
+    case 'open-price-item': state.modal={type:'price-item'};render();break;
+    case 'edit-price-item': state.modal={type:'price-item',itemId:String(id)};render();break;
+    case 'toggle-price-item': togglePriceItem(String(id)); break;
     case 'open-add-service': state.modal={type:'add-service'};render();break;
 
     /* Refunds */
@@ -4123,6 +4329,14 @@ document.addEventListener('change', event => {
   if (event.target.name === 'filter') { state.filter = event.target.value; render(); }
   if (event.target.name === 'payer') { state.payer = event.target.value; resetPayment(); render(); }
   if (event.target.id === 'refund-threshold') { state.settings.threshold = Math.max(0, Number(event.target.value) || 0); }
+  if (event.target.id === 'inv-price-pick') {
+    const item = state.priceList.find(x => x.serviceItemId === event.target.value);
+    const form = event.target.closest('form');
+    if (item && form) {
+      form.elements.serviceName.value = item.name;
+      form.elements.serviceAmount.value = item.unitPriceMinor / 100;
+    }
+  }
   if (event.target.id === 'branch-select') {
     state.branch = event.target.value;
     logAudit('Branch Filter Changed', `Console scoped to ${state.branch}`);
@@ -4242,6 +4456,33 @@ document.addEventListener('submit', async event => {
       showToast('API Sync Failed', `${newInv.id} saved locally only: ${err.message}`);
     }
   }
+  if (event.target.id === 'price-item-form') {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    const itemId = event.target.dataset.id;
+    const btn = document.getElementById('price-item-submit');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    const category = fd.get('category').toString().trim();
+    const body = {
+      name: fd.get('name').toString().trim(),
+      unitPriceMinor: toMinor(Number(fd.get('price'))),
+    };
+    try {
+      if (itemId) {
+        const updated = await wellipayApi.updateServiceItem(itemId, { ...body, category: category || null });
+        state.priceList = state.priceList.map(x => x.serviceItemId === itemId ? updated : x);
+      } else {
+        const created = await wellipayApi.createServiceItem(category ? { ...body, category } : body);
+        state.priceList = [...state.priceList, created].sort((a, b) => a.name.localeCompare(b.name));
+      }
+      state.modal = null;
+      showToast('Price list saved', `${body.name} saved.`);
+      render();
+    } catch (err) {
+      showToast('Item not saved', err.message);
+      if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+    }
+  }
   if (event.target.id === 'add-service-form') {
     event.preventDefault();
     const fd = new FormData(event.target);
@@ -4308,6 +4549,42 @@ document.addEventListener('submit', async event => {
     state.modal = null;
     render();
     matchLiveTransaction(transactionId, invoiceId, invoiceLabel);
+  }
+  if (event.target.id === 'family-pay-form') {
+    event.preventDefault();
+    startFamilyCharge(new FormData(event.target).get('email').toString().trim());
+  }
+  if (event.target.id === 'family-request-form') {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    const inv = state.invoiceList.find(i => i.live && i.invoiceId === fd.get('invoice'));
+    const contributions = [1, 2, 3, 4]
+      .map(n => ({ sponsorRef: (fd.get('sponsor' + n) || '').toString().trim(), amount: Number(fd.get('amount' + n)) }))
+      .filter(c => c.sponsorRef || c.amount);
+    if (!inv) { showToast('Choose an invoice', 'Pick an invoice from the list.'); return; }
+    if (contributions.some(c => !c.sponsorRef || !(c.amount > 0))) { showToast('Check the sponsors', 'Each sponsor needs a name and an amount above zero.'); return; }
+    const total = contributions.reduce((sum, c) => sum + c.amount, 0);
+    if (total > inv.amount - inv.paid) { showToast('Total is too high', `The total is more than the invoice balance of ${money(inv.amount - inv.paid)}.`); return; }
+    const btn = document.getElementById('family-request-submit');
+    if (btn) { btn.disabled = true; btn.textContent = 'Creating…'; }
+    try {
+      await wellipayApi.createFamilyFundingRequest({
+        providerRequestRef: `FUND-${Date.now()}`,
+        invoiceId: inv.invoiceId,
+        patientRef: inv.patientId,
+        facilityRef: inv.facilityRef || MAIN_FACILITY_REF,
+        currency: 'NGN',
+        contributions: contributions.map(c => ({ sponsorRef: c.sponsorRef, amountMinor: toMinor(c.amount) })),
+      });
+      logAudit('Family Funding Requested', `${inv.id} · ${money(total)} across ${contributions.length} sponsor${contributions.length === 1 ? '' : 's'}`);
+      state.modal = null;
+      state.fundingSynced = false;
+      showToast('Request created', 'Use Payment link on each sponsor to send them a checkout link.');
+      render();
+    } catch (err) {
+      showToast('Request not created', err.message);
+      if (btn) { btn.disabled = false; btn.textContent = 'Create request'; }
+    }
   }
   if (event.target.id === 'paystack-pay-form') {
     event.preventDefault();

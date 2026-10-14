@@ -331,6 +331,7 @@ const state = {
   // wiring" below) — track whether a GET has completed or is in flight so
   // navigating back and forth doesn't re-fire the request every render.
   patientsSynced: false,
+  patientRecordsSynced: false,
   patientsSyncing: false,
   paymentsSynced: false,
   paymentsSyncing: false,
@@ -636,7 +637,8 @@ function renderDesk() {
 
 /* 3. Patients */
 function renderPatients() {
-  const filtered = state.patientList.filter(p => {
+  const patientRows = visiblePatients();
+  const filtered = patientRows.filter(p => {
     const matchesFilter = state.patientFilter === 'All' ||
       (state.patientFilter === 'HMO' && p.hmo !== 'Self-Pay') ||
       (state.patientFilter === 'Self-Pay' && p.hmo === 'Self-Pay') ||
@@ -650,7 +652,7 @@ function renderPatients() {
   return `<div class="page">
     ${renderBranchBanner()}
     ${pageHeading('Revenue Cycle', 'Patient Financial Management', 'Patient profiles, WelliID verification, outstanding balances and family sponsor links.')}
-    ${metricGrid([['3,204','Active Patients','Enrolled'],['₦2.1M','Total Balance Due','Receivables'],['18 days','Avg Age of Balance','Turnaround'],['94%','WelliPass Adoption','Digital Pass']])}
+    ${metricGrid(SHOW_SAMPLE_DATA ? [['3,204','Active Patients','Enrolled'],['₦2.1M','Total Balance Due','Receivables'],['18 days','Avg Age of Balance','Turnaround'],['94%','WelliPass Adoption','Digital Pass']] : [[String(patientRows.length),'Registered patients','Enrolled'],[money(patientRows.reduce((sum, p) => sum + p.balance, 0)),'Total balance due','Receivables'],[String(patientRows.filter(p => p.balance > 0).length),'Patients with a balance','Open'],[String(patientRows.reduce((sum, p) => sum + (p.invoiceCount || 0), 0)),'Invoices raised','Billed']])}
     ${card('<div class="section-heading"><span>Patient Directory</span><div class="toolbar"><button class="btn btn-primary" data-action="open-new-patient">Register Patient</button><button class="btn btn-secondary" data-action="export-patients">Export CSV</button></div></div>', `
       <div class="filter-bar">
         <div class="filter-group">
@@ -681,6 +683,7 @@ function renderPatients() {
           </tbody>
         </table>
       </div>
+      ${filtered.length ? '' : `<p class="empty-state">${state.patientRecordsSynced ? 'No patients yet. Use Register Patient to add the first one.' : 'Loading patients…'}</p>`}
     `)}
   </div>`;
 }
@@ -1729,6 +1732,7 @@ function render() {
   modalRoot.innerHTML = renderModal();
   content.focus({ preventScroll: true });
 
+  if ((state.active === 'patients' || state.active === 'invoices' || state.active === 'desk') && !state.patientRecordsSynced) ensurePatientRecords().then(() => render());
   if (state.active === 'patients' && !state.patientsSynced) syncPatientsFromApi();
   if (state.active === 'payments' && !state.paymentsSynced) syncPaymentsFromApi();
   if (state.active === 'invoices' && !state.invoicesSynced) syncInvoicesFromApi();
@@ -1946,16 +1950,7 @@ function renderModal() {
   }
 
   if (state.modal.type === 'new-patient') {
-    return `<div class="modal-backdrop" data-action="dismiss-modal">
-      <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="new-pt-title">
-        <h2 id="new-pt-title">Register New Patient</h2>
-        <p>Register a patient profile, assign primary branch, and link HMO coverage or WelliPass.</p>
-        <form id="new-patient-form" class="form-grid">
-          <div class="form-grid two-col">
-            <div class="form-group"><label>Full Name *</label><input class="input" name="name" required placeholder="e.g. Amina Bello"></div>
-            <div class="form-group"><label>Phone Number *</label><input class="input" name="phone" required placeholder="e.g. +234 803 000 0000"></div>
-          </div>
-          <div class="form-grid two-col">
+    const demoFields = `<div class="form-grid two-col">
             <div class="form-group"><label>Primary Hospital Branch</label>
               <select name="branch">
                 <option value="Wuse">Wuse</option><option value="Maitama">Maitama</option><option value="Garki">Garki</option><option value="Kaduna">Kaduna</option><option value="Lagos">Lagos</option>
@@ -1980,10 +1975,21 @@ function renderModal() {
             <div class="form-group"><label>Issue WelliPass?</label>
               <select name="issuePass"><option value="yes">Yes — Generate WelliID & QR Pass</option><option value="no">No — Standard Physical File</option></select>
             </div>
+          </div>`;
+    const realFields = `<div class="form-group"><label>Email (optional)</label><input class="input" type="email" name="email" maxlength="160" placeholder="e.g. amina@example.com"></div>`;
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="new-pt-title">
+        <h2 id="new-pt-title">Register New Patient</h2>
+        <p>${SHOW_SAMPLE_DATA ? 'Register a patient profile, assign primary branch, and link HMO coverage or WelliPass.' : 'Register a patient so you can invoice them.'}</p>
+        <form id="new-patient-form" class="form-grid">
+          <div class="form-grid two-col">
+            <div class="form-group"><label>Full Name *</label><input class="input" name="name" required minlength="2" maxlength="120" placeholder="e.g. Amina Bello"></div>
+            <div class="form-group"><label>Phone Number *</label><input class="input" name="phone" required maxlength="30" placeholder="e.g. +234 803 000 0000"></div>
           </div>
+          ${SHOW_SAMPLE_DATA ? demoFields : realFields}
           <div class="modal-actions">
             <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
-            <button class="btn btn-primary" type="submit">Create Patient Profile</button>
+            <button class="btn btn-primary" type="submit" id="new-patient-submit">${SHOW_SAMPLE_DATA ? 'Create Patient Profile' : 'Register patient'}</button>
           </div>
         </form>
       </section>
@@ -1991,7 +1997,7 @@ function renderModal() {
   }
 
   if (state.modal.type === 'find-patient') {
-    const list = state.patientList;
+    const list = visiblePatients();
     return `<div class="modal-backdrop" data-action="dismiss-modal">
       <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="find-pt-title">
         <h2 id="find-pt-title">Find Patient for Hospital Desk</h2>
@@ -2024,6 +2030,34 @@ function renderModal() {
   }
 
   if (state.modal.type === 'create-invoice') {
+    const patients = visiblePatients();
+    if (!SHOW_SAMPLE_DATA && !patients.length) {
+      return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="create-inv-title">
+        <h2 id="create-inv-title">Create invoice</h2>
+        <p>${state.patientRecordsSynced ? 'Register a patient before you create an invoice.' : 'Loading patients…'}</p>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
+          <button class="btn btn-primary" type="button" data-action="open-new-patient">Register patient</button>
+        </div>
+      </section>
+    </div>`;
+    }
+    const branchField = SHOW_SAMPLE_DATA ? `<div class="form-group"><label>Branch</label>
+              <select name="branch">
+                <option value="Wuse">Wuse</option><option value="Maitama">Maitama</option><option value="Garki">Garki</option><option value="Kaduna">Kaduna</option><option value="Lagos">Lagos</option>
+              </select>
+            </div>` : '';
+    const serviceField = SHOW_SAMPLE_DATA
+      ? `<div class="form-group"><label>Primary Service Item</label>
+            <select name="serviceItem" id="inv-service-picker">
+              ${state.servicesList.map(s => `<option value="${escapeHtml(s.cash)}" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)} — ${money(s.cash)}</option>`).join('')}
+            </select>
+          </div>`
+      : `<div class="form-grid two-col">
+            <div class="form-group"><label>Service or item *</label><input class="input" name="serviceName" required maxlength="200" placeholder="e.g. Full blood count"></div>
+            <div class="form-group"><label>Amount (₦) *</label><input class="input" type="number" name="serviceAmount" required min="1" step="any" placeholder="e.g. 8600"></div>
+          </div>`;
     return `<div class="modal-backdrop" data-action="dismiss-modal">
       <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="create-inv-title">
         <h2 id="create-inv-title">Create Digital Invoice</h2>
@@ -2032,20 +2066,12 @@ function renderModal() {
           <div class="form-grid two-col">
             <div class="form-group"><label>Patient *</label>
               <select name="patientId" required>
-                ${state.patientList.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)} (${escapeHtml(p.id)} · ${escapeHtml(p.branch)})</option>`).join('')}
+                ${patients.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)} (${escapeHtml(p.id)}${SHOW_SAMPLE_DATA ? ' · ' + escapeHtml(p.branch) : ''})</option>`).join('')}
               </select>
             </div>
-            <div class="form-group"><label>Branch</label>
-              <select name="branch">
-                <option value="Wuse">Wuse</option><option value="Maitama">Maitama</option><option value="Garki">Garki</option><option value="Kaduna">Kaduna</option><option value="Lagos">Lagos</option>
-              </select>
-            </div>
+            ${branchField}
           </div>
-          <div class="form-group"><label>Primary Service Item</label>
-            <select name="serviceItem" id="inv-service-picker">
-              ${state.servicesList.map(s => `<option value="${escapeHtml(s.cash)}" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)} — ${money(s.cash)}</option>`).join('')}
-            </select>
-          </div>
+          ${serviceField}
           <div class="form-grid two-col">
             <div class="form-group"><label>Additional Fee / Lab (Optional)</label>
               <input class="input" type="number" name="extraFee" placeholder="0" min="0">
@@ -2341,7 +2367,9 @@ function updateClaim(id, status) {
 // prepended, tagged `live: true` so a re-sync can replace them without
 // touching the original mock rows.
 
-function branchLabel(ref) { return FACILITY_BRANCH[ref] || 'Other facility'; }
+// A provider with a single site bills against this reference.
+const MAIN_FACILITY_REF = 'facility-main';
+function branchLabel(ref) { return ref === MAIN_FACILITY_REF ? orgName() : (FACILITY_BRANCH[ref] || 'Other facility'); }
 const FACILITY_BRANCH = { 'facility-wuse': 'Wuse', 'facility-maitama': 'Maitama', 'facility-garki': 'Garki', 'facility-kaduna': 'Kaduna', 'facility-lagos': 'Lagos' };
 const PAYMENT_CHANNEL_LABEL = { card: 'Card (Live)', bank_transfer: 'Bank Transfer (Live)', ussd: 'USSD (Live)', cash: 'Cash (Live)', hmo_direct: 'HMO Direct (Live)', wellipass: 'WelliPass (Live)' };
 const PAYMENT_STATUS_LABEL = { SUCCESS: 'Success', PENDING: 'Pending', FAILED: 'Failed' };
@@ -2354,7 +2382,49 @@ const CLAIM_STATUS_LABEL = { DRAFT: 'Draft', SUBMITTED: 'Submitted', APPROVED: '
 const INVOICE_STATUS_LABEL = { OPEN: 'Unpaid', PARTIALLY_PAID: 'Part-paid', PAID: 'Paid', CANCELLED: 'Cancelled' };
 const REFUND_STATUS_LABEL = { PENDING: 'Pending Approval', APPROVED: 'Approved', REJECTED: 'Rejected' };
 
+// The provider's own registered patients. Without SHOW_SAMPLE_DATA the demo
+// patients are never listed or offered for billing.
+function visiblePatients() {
+  return SHOW_SAMPLE_DATA ? state.patientList : state.patientList.filter(p => p.registered);
+}
+
+function patientFromRecord(item) {
+  return {
+    id: item.patientRef,
+    name: item.fullName,
+    phone: item.phone || '—',
+    email: item.email || '',
+    branch: orgName(),
+    hmo: 'Self-Pay',
+    plan: 'Standard',
+    balance: 0,
+    status: 'Active',
+    wellipass: false,
+    sponsors: [],
+    lastVisit: '—',
+    registered: true,
+  };
+}
+
+let patientRecordsPromise = null;
+// Loads the registered patients once. Other syncs wait on it so invoices,
+// payments and refunds can show a patient's name instead of the reference.
+function ensurePatientRecords() {
+  if (state.patientRecordsSynced) return Promise.resolve();
+  if (!patientRecordsPromise) {
+    patientRecordsPromise = wellipayApi.listPatientRecords({ limit: 200 })
+      .then(data => {
+        state.patientList = [...data.items.map(patientFromRecord), ...state.patientList.filter(p => !p.registered)];
+        state.patientRecordsSynced = true;
+      })
+      .catch(err => { showToast('API Sync Failed', `Patients not loaded: ${err.message}`); })
+      .finally(() => { patientRecordsPromise = null; });
+  }
+  return patientRecordsPromise;
+}
+
 async function syncPatientsFromApi() {
+  await ensurePatientRecords();
   if (state.patientsSyncing) return;
   state.patientsSyncing = true;
   try {
@@ -2381,6 +2451,7 @@ async function syncPatientsFromApi() {
 async function syncPaymentsFromApi() {
   if (state.paymentsSyncing) return;
   state.paymentsSyncing = true;
+  await ensurePatientRecords();
   try {
     const data = await wellipayApi.listPayments({ limit: 50 });
     const patientNameByRef = new Map(state.patientList.map(p => [p.id, p.name]));
@@ -2413,6 +2484,7 @@ async function syncPaymentsFromApi() {
 async function syncInvoicesFromApi() {
   if (state.invoicesSyncing) return;
   state.invoicesSyncing = true;
+  await ensurePatientRecords();
   try {
     const data = await wellipayApi.listInvoices({ limit: 100 });
     const patientNameByRef = new Map(state.patientList.map(p => [p.id, p.name]));
@@ -2455,6 +2527,7 @@ async function syncInvoicesFromApi() {
 async function syncRefundsFromApi() {
   if (state.refundsSyncing) return;
   state.refundsSyncing = true;
+  await ensurePatientRecords();
   try {
     const [refundsData, paymentsData, invoicesData] = await Promise.all([
       wellipayApi.listRefunds({ limit: 100 }),
@@ -3869,6 +3942,31 @@ document.addEventListener('submit', async event => {
     const question = new FormData(event.target).get('question')?.toString().trim();
     if (question) ask(question);
   }
+  if (event.target.id === 'new-patient-form' && !SHOW_SAMPLE_DATA) {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    const btn = document.getElementById('new-patient-submit');
+    if (btn) { btn.disabled = true; btn.textContent = 'Registering…'; }
+    try {
+      const email = fd.get('email').toString().trim();
+      const created = await wellipayApi.createPatientRecord({
+        fullName: fd.get('name').toString().trim(),
+        phone: fd.get('phone').toString().trim(),
+        ...(email ? { email } : {}),
+      });
+      const patient = patientFromRecord(created);
+      state.patientList.unshift(patient);
+      state.patient = { name: patient.name, welliId: patient.id, hmo: 'Self-Pay' };
+      state.modal = null;
+      logAudit('Patient Registered', `${patient.name} (${patient.id})`);
+      showToast('Patient registered', `${patient.name} is now in your patient list as ${patient.id}.`);
+      render();
+    } catch (err) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Register patient'; }
+      showToast('Could not register patient', err.message);
+    }
+    return;
+  }
   if (event.target.id === 'new-patient-form') {
     event.preventDefault();
     const fd = new FormData(event.target);
@@ -3897,17 +3995,19 @@ document.addEventListener('submit', async event => {
   if (event.target.id === 'create-invoice-form') {
     event.preventDefault();
     const fd = new FormData(event.target);
-    const pt = state.patientList.find(p => p.id === fd.get('patientId')) || state.patientList[0];
+    const pt = visiblePatients().find(p => p.id === fd.get('patientId'));
+    if (!pt) { showToast('Choose a patient', 'Pick a patient from the list.'); return; }
     const srvSelect = document.querySelector('#inv-service-picker');
-    const srvName = srvSelect.selectedOptions[0]?.dataset.name || 'Clinical Care';
-    const srvAmt = Number(fd.get('serviceItem')) || 25000;
+    const srvName = SHOW_SAMPLE_DATA ? (srvSelect.selectedOptions[0]?.dataset.name || 'Clinical Care') : fd.get('serviceName').toString().trim();
+    const srvAmt = SHOW_SAMPLE_DATA ? (Number(fd.get('serviceItem')) || 25000) : Number(fd.get('serviceAmount'));
+    if (!srvName || !(srvAmt > 0)) { showToast('Check the invoice', 'Enter the service and an amount above zero.'); return; }
     const extra = Number(fd.get('extraFee')) || 0;
     const totalAmt = srvAmt + extra;
     const newInv = {
       id: 'INV-' + Math.floor(2100 + Math.random() * 900),
       patient: pt.name,
       patientId: pt.id,
-      branch: fd.get('branch').toString(),
+      branch: SHOW_SAMPLE_DATA ? fd.get('branch').toString() : orgName(),
       amount: totalAmt,
       paid: 0,
       status: 'Unpaid',
@@ -3923,7 +4023,7 @@ document.addEventListener('submit', async event => {
     try {
       const created = await wellipayApi.createInvoice({
         providerInvoiceRef: newInv.id,
-        facilityRef: `facility-${newInv.branch.toLowerCase()}`,
+        facilityRef: SHOW_SAMPLE_DATA ? `facility-${newInv.branch.toLowerCase()}` : MAIN_FACILITY_REF,
         patientRef: pt.id,
         description: srvName,
         amountMinor: toMinor(totalAmt),
@@ -3931,6 +4031,9 @@ document.addEventListener('submit', async event => {
       });
       newInv.apiInvoiceId = created.invoiceId;
       showToast('Synced to WelliPay API', `${newInv.id} recorded on the server as ${created.invoiceId}.`);
+      // The ledger lists live invoices only, so reload it.
+      state.invoicesSynced = false;
+      await syncInvoicesFromApi();
       render();
     } catch (err) {
       showToast('API Sync Failed', `${newInv.id} saved locally only: ${err.message}`);

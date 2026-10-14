@@ -173,6 +173,8 @@ export const wellipayApi = {
     apiRequest('/provider/eligibility-checks', { method: 'POST', body, idempotent: 'elig' }),
   createFinancialConsent: (body) =>
     apiRequest('/provider/financial-consents', { method: 'POST', body, idempotent: 'consent' }),
+  listPatientRecords: (query) => apiRequest(`/provider/patient-records${toQueryString(query)}`),
+  createPatientRecord: (body) => apiRequest('/provider/patient-records', { method: 'POST', body }),
   listPatients: (query) => apiRequest(`/provider/patients${toQueryString(query)}`),
   listPayments: (query) => apiRequest(`/provider/payments${toQueryString(query)}`),
   listPaystackSettlements: (query) => apiRequest(`/provider/paystack/settlements${toQueryString(query)}`),

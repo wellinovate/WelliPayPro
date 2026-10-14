@@ -301,6 +301,8 @@ export const wellipayApi = {
     apiRequest(`/provider/unmatched-transactions/${encodeURIComponent(transactionId)}/match`, { method: 'POST', body }),
   flagUnmatchedTransactionException: (transactionId, body) =>
     apiRequest(`/provider/unmatched-transactions/${encodeURIComponent(transactionId)}/exception`, { method: 'POST', body }),
+  listPreAuthorizations: (query) => apiRequest(`/provider/pre-authorizations${toQueryString(query)}`),
+  updatePreAuthorization: (id, body) => apiRequest(`/provider/pre-authorizations/${encodeURIComponent(id)}`, { method: 'PATCH', body }),
   listWebhookEndpoints: () => apiRequest('/provider/webhook-endpoints'),
   createWebhookEndpoint: (body) => apiRequest('/provider/webhook-endpoints', { method: 'POST', body, idempotent: 'webhook' }),
   deleteWebhookEndpoint: (id) => apiRequest(`/provider/webhook-endpoints/${encodeURIComponent(id)}`, { method: 'DELETE' }),

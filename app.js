@@ -405,6 +405,7 @@ const state = {
   reconciliationSyncing: false,
   liveReconciliationSummary: null,
   staffSynced: false,
+  livePreAuths: [], preAuthsSynced: false, preAuthsSyncing: false, preAuthsError: '',
   webhooks: [], webhooksSynced: false, webhooksSyncing: false, webhooksError: '',
   staffSyncing: false,
   liveStaff: [],
@@ -1153,7 +1154,7 @@ function renderHmoInsurance() {
 }
 
 /* 9. Authorization Centre */
-function renderAuthorization() {
+function renderAuthorizationSample() {
   const counts=Object.entries(state.authCounts).map(([label,value])=>`<section class="card elev-sm auth-count"><span class="stat-value">${value}</span><span class="stat-label">${label}</span></section>`).join('');
   const authItems=state.authItems.map(item=>`<div class="auth-item"><div class="auth-head" data-action="toggle-auth" data-id="${escapeHtml(item.id)}"><div class="data-primary"><strong>${escapeHtml(item.patient)} · ${escapeHtml(item.service)}</strong><span>${escapeHtml(item.hmo)} · ${money(item.amount)}</span></div>${tag(item.status,item.status==='Approved'?'neutral':item.status==='Rejected'?'accent':'outline')}</div>${state.selectedAuth===item.id?`<div class="auth-detail">${item.readiness?`<div class="readiness"><span class="card-kicker">Readiness</span><div class="progress-track"><div class="progress-fill" style="width:${escapeHtml(item.readiness)}%"></div></div><strong>${escapeHtml(item.readiness)}%</strong></div>`:''}${item.timeline.map(([time,text])=>`<div class="timeline-line"><time>${time}</time><span>${text}</span></div>`).join('')}<div class="toolbar">${item.status==='Draft'?`<button class="btn btn-primary" data-action="submit-auth" data-id="${escapeHtml(item.id)}">Submit to HMO</button>`:''}${['Submitted','Pending'].includes(item.status)?`<button class="btn btn-secondary" data-action="approve-auth" data-id="${escapeHtml(item.id)}">Simulate: HMO approves</button>`:''}${item.status==='Approved'?'<span class="stat-label">Patient notified.</span>':''}</div></div>`:''}</div>`).join('');
   return `<div class="page">
@@ -2425,6 +2426,92 @@ function renderReferrals() {
   </div>`;
 }
 
+/* Authorization Centre: real pre-authorizations and eligibility checks. */
+const PREAUTH_STATUS = { APPROVED: ['Approved', 'success'], IN_REVIEW: ['In review', 'outline'], DECLINED: ['Declined', 'accent'] };
+const ELIGIBILITY_DECISION = { ELIGIBLE: 'Eligible', PARTIALLY_ELIGIBLE: 'Partly eligible', INELIGIBLE: 'Not eligible', PENDING: 'Pending' };
+function canEditPreAuth() {
+  const level = authState.user?.accessLevel;
+  return !level || !ACCESS_LEVELS[level] || ['ADMIN', 'FINANCE', 'BILLING'].includes(level);
+}
+
+function renderAuthorization() {
+  if (SHOW_SAMPLE_DATA) return renderAuthorizationSample();
+  const pre = state.livePreAuths;
+  const checks = state.liveEligibilityChecks;
+  const byStatus = key => pre.filter(p => p.status === key).length;
+  const byDecision = key => checks.filter(c => c.decision === key).length;
+  const loadingPre = !state.preAuthsSynced && !state.preAuthsError;
+  const dash = n => (state.preAuthsSynced ? String(n) : '—');
+  const dashChecks = n => (state.welliPassStatsSynced ? String(n) : '—');
+  const fmtDate = iso => new Date(iso).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' });
+  const editable = canEditPreAuth();
+  const preRows = pre.map(p => `<tr>
+    <td><strong>${escapeHtml(patientNameFor(p.patientRef))}</strong><br><small>${escapeHtml(p.patientRef)}</small></td>
+    <td>${escapeHtml(p.procedure)}</td>
+    <td>${money(fromMinor(p.estimatedCost.amountMinor))}</td>
+    <td>${money(fromMinor(p.coveredAmount.amountMinor))}</td>
+    <td>${money(fromMinor(p.patientPortion.amountMinor))}</td>
+    <td>${tag(PREAUTH_STATUS[p.status]?.[0] || escapeHtml(p.status), PREAUTH_STATUS[p.status]?.[1] || 'neutral')}${p.approvalCode ? `<br><small>${escapeHtml(p.approvalCode)}</small>` : ''}${p.notes ? `<br><small>${escapeHtml(p.notes)}</small>` : ''}</td>
+    <td><small>${escapeHtml(fmtDate(p.requestedAt))}</small></td>
+    <td>${editable ? `<button class="btn btn-secondary" data-action="open-preauth-status" data-id="${escapeHtml(p.preAuthId)}">Update</button>` : ''}</td>
+  </tr>`).join('');
+  const preBody = state.preAuthsError
+    ? `<p class="empty-state">${escapeHtml(state.preAuthsError)} <button class="btn btn-secondary" data-action="retry-preauths">Try again</button></p>`
+    : loadingPre ? '<p class="empty-state">Loading pre-authorizations…</p>'
+    : pre.length === 0 ? '<p class="empty-state">No pre-authorization requests yet. Patients request them from the WelliPay app.</p>'
+    : `<div class="table-wrap"><table class="table"><thead><tr><th>Patient</th><th>Procedure</th><th>Estimate</th><th>Covered</th><th>Patient pays</th><th>Status</th><th>Requested</th><th></th></tr></thead><tbody>${preRows}</tbody></table></div>`;
+  const checkRows = checks.slice(0, 25).map(c => `<tr>
+    <td><strong>${escapeHtml(patientNameFor(c.patientRef))}</strong><br><small>${escapeHtml(c.patientRef)}</small></td>
+    <td>${escapeHtml(c.payerRef)}</td>
+    <td>${escapeHtml(ELIGIBILITY_DECISION[c.decision] || c.decision)}</td>
+    <td><small>${escapeHtml(fmtDate(c.requestedAt))}</small></td>
+  </tr>`).join('');
+  const checkBody = !state.welliPassStatsSynced ? '<p class="empty-state">Loading eligibility checks…</p>'
+    : checks.length === 0 ? '<p class="empty-state">No eligibility checks yet. The Hospital Desk runs one when a patient needs HMO authorization.</p>'
+    : `<div class="table-wrap"><table class="table"><thead><tr><th>Patient</th><th>Payer</th><th>Decision</th><th>Requested</th></tr></thead><tbody>${checkRows}</tbody></table></div>${checks.length > 25 ? `<p style="color:var(--muted);font-size:0.85em;">Showing the latest 25 of ${checks.length}.</p>` : ''}`;
+  return `<div class="page">
+    ${renderBranchBanner()}
+    ${pageHeading('Authorization Centre', 'Pre-authorization & eligibility', 'Pre-authorization requests and eligibility checks recorded in WelliPay.')}
+    <p style="color:var(--muted);font-size:0.85em;margin:-8px 0 12px;">No HMO is connected to WelliPay yet. The API decides each request itself from the patient's policy co-pay, so an approval here is not an HMO approval. Billing, Finance and Admin can change a status after the HMO answers outside WelliPay.</p>
+    ${metricGrid([[dash(byStatus('APPROVED')), 'Approved', 'Pre-authorizations'], [dash(byStatus('IN_REVIEW')), 'In review', 'Pre-authorizations'], [dash(byStatus('DECLINED')), 'Declined', 'Pre-authorizations'], [dashChecks(checks.length), 'Eligibility checks', `${dashChecks(byDecision('ELIGIBLE'))} eligible`]])}
+    ${card('Pre-authorization requests', preBody)}
+    ${card('Eligibility checks', checkBody)}
+  </div>`;
+}
+
+async function syncPreAuths() {
+  if (state.preAuthsSyncing) return;
+  state.preAuthsSyncing = true;
+  try {
+    const data = await wellipayApi.listPreAuthorizations({ limit: 100 });
+    state.livePreAuths = data.items;
+    state.preAuthsSynced = true;
+    state.preAuthsError = '';
+  } catch (err) {
+    state.preAuthsError = `Pre-authorizations not loaded: ${err.message}`;
+  } finally {
+    state.preAuthsSyncing = false;
+    if (state.active === 'authorization') render();
+  }
+}
+
+async function savePreAuthStatus(id, status, notes) {
+  const m = state.modal;
+  if (!m || m.busy) return;
+  m.busy = true; render();
+  try {
+    const updated = await wellipayApi.updatePreAuthorization(id, { status, ...(notes ? { notes } : {}) });
+    logAudit('Pre-Auth Updated', `${patientNameFor(updated.patientRef)} · ${updated.procedure} set to ${PREAUTH_STATUS[updated.status]?.[0] || updated.status}`);
+    showToast('Pre-authorization updated', `${updated.procedure} is now ${PREAUTH_STATUS[updated.status]?.[0] || updated.status}.`);
+    state.modal = null;
+    state.preAuthsSynced = false;
+  } catch (err) {
+    m.busy = false;
+    showToast('Not updated', err.message);
+  }
+  render();
+}
+
 /* Webhook endpoints (Admin only). Real list from GET /provider/webhook-endpoints. */
 function renderApiDevelopers() {
   if (SHOW_SAMPLE_DATA) return renderStub();
@@ -2682,7 +2769,7 @@ function render() {
     if (!state.patientRecordsSynced) ensurePatientRecords().then(() => render());
     pharmacy.sync(state.active);
   }
-  if ((state.active === 'patients' || state.active === 'invoices' || state.active === 'hospital-desk' || state.active === 'bookings' || state.active === 'hmo-insurance') && !state.patientRecordsSynced) ensurePatientRecords().then(() => render());
+  if ((state.active === 'patients' || state.active === 'invoices' || state.active === 'hospital-desk' || state.active === 'bookings' || state.active === 'hmo-insurance' || state.active === 'authorization') && !state.patientRecordsSynced) ensurePatientRecords().then(() => render());
   if (state.active === 'patients' && !state.patientsSynced) syncPatientsFromApi();
   if (state.active === 'payments' && !state.paymentsSynced) syncPaymentsFromApi();
   if (isLab() && state.active === 'dashboard') {
@@ -2720,6 +2807,10 @@ function render() {
   if ((state.active === 'partners' || state.active === 'referrals') && !state.partnersSynced) syncPartnersFromApi();
   if (state.active === 'referrals' && !state.referralsSynced) syncReferralsFromApi();
   if (state.active === 'wellipass' && !state.welliPassStatsSynced) syncWelliPassStatsFromApi();
+  if (state.active === 'authorization' && !SHOW_SAMPLE_DATA) {
+    if (!state.welliPassStatsSynced && !state.welliPassStatsSyncing) syncWelliPassStatsFromApi();
+    if (!state.preAuthsSynced && !state.preAuthsError) syncPreAuths();
+  }
   if (state.active === 'settlements' && !state.settlementsSynced) syncSettlementsFromApi();
   if (state.active === 'settlements' && !state.paymentSettlement) setTimeout(() => loadPaymentSettlement(false), 0);
 
@@ -3698,6 +3789,25 @@ function renderModal() {
     </div>`;
   }
 
+  if (state.modal.type === 'preauth-status') {
+    const p = state.livePreAuths.find(x => x.preAuthId === state.modal.id);
+    if (!p) return '';
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="pa-title">
+        <h2 id="pa-title">Update pre-authorization</h2>
+        <p>${escapeHtml(patientNameFor(p.patientRef))} · ${escapeHtml(p.procedure)}. Use this to record the HMO's answer. The patient sees the new status in the app.</p>
+        <form id="preauth-status-form" class="form-grid">
+          <div class="form-group"><label>Status *</label><select name="status">${Object.entries(PREAUTH_STATUS).map(([v, [label]]) => `<option value="${v}" ${p.status === v ? 'selected' : ''}>${label}</option>`).join('')}</select></div>
+          <div class="form-group"><label>Note</label><input class="input" name="notes" maxlength="500" value="${escapeHtml(p.notes || '')}" placeholder="e.g. HMO reference or reason"></div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
+            <button class="btn btn-primary" type="submit" ${state.modal.busy ? 'disabled' : ''}>${state.modal.busy ? 'Saving…' : 'Save'}</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+  }
+
   if (state.modal.type === 'add-webhook') {
     return `<div class="modal-backdrop" data-action="dismiss-modal">
       <section class="modal" role="dialog" aria-modal="true" aria-labelledby="add-wh-title">
@@ -4645,7 +4755,7 @@ async function syncWelliPassStatsFromApi() {
     showToast('API Sync Failed', `Live WelliPass stats not loaded: ${err.message}`);
   } finally {
     state.welliPassStatsSyncing = false;
-    if (state.active === 'wellipass') render();
+    if (state.active === 'wellipass' || state.active === 'authorization') render();
   }
 }
 
@@ -5370,6 +5480,8 @@ function dispatch(action, target, domEvent) {
     }
 
     /* Staff */
+    case 'open-preauth-status': state.modal={type:'preauth-status', id:String(id)};render();break;
+    case 'retry-preauths': state.preAuthsError='';render();break;
     case 'open-add-webhook': state.modal={type:'add-webhook'};render();break;
     case 'deactivate-webhook': deactivateWebhook(id);break;
     case 'retry-webhooks': state.webhooksError='';render();break;
@@ -6191,6 +6303,11 @@ document.addEventListener('submit', async event => {
     event.preventDefault();
     const fd = new FormData(event.target);
     startPaystackCharge(fd.get('email').toString().trim(), Number(fd.get('amount')));
+  }
+  if (event.target.id === 'preauth-status-form') {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    savePreAuthStatus(state.modal.id, fd.get('status').toString(), fd.get('notes').toString().trim());
   }
   if (event.target.id === 'add-webhook-form') {
     event.preventDefault();

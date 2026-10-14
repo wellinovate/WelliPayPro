@@ -653,7 +653,45 @@ function renderDashboard() {
 }
 
 /* 2. Hospital Desk */
+function sameLocalDay(iso, now = new Date()) {
+  const d = new Date(iso);
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+}
+
+// Front desk for a real provider: today's figures, the invoices still owing,
+// and the latest payments. Collecting a payment goes through Paystack.
+function renderLiveDesk() {
+  const copy = billingCopy();
+  const invoices = state.invoiceList.filter(i => i.live);
+  const payments = state.paymentList.filter(p => p.live);
+  const loaded = state.invoicesSynced && state.paymentsSynced;
+  const owing = invoices.filter(i => i.status !== 'Cancelled' && i.amount - i.paid > 0);
+  const todayPaid = payments.filter(p => p.status === 'Success' && p.occurredAt && sameLocalDay(p.occurredAt));
+  const metrics = [
+    [String(invoices.filter(i => i.createdAt && sameLocalDay(i.createdAt)).length), 'Invoices today', 'Billed'],
+    [money(todayPaid.reduce((sum, p) => sum + p.amount, 0)), 'Collected today', `${todayPaid.length} payment${todayPaid.length === 1 ? '' : 's'}`],
+    [money(owing.reduce((sum, i) => sum + (i.amount - i.paid), 0)), 'Still owing', `${owing.length} invoice${owing.length === 1 ? '' : 's'}`],
+    [String(state.patientList.filter(p => p.registered).length), 'Registered patients', 'Enrolled'],
+  ];
+  const queue = !loaded
+    ? '<p class="empty-state">Loading…</p>'
+    : owing.length
+      ? `<div class="row-list">${owing.slice(0, 10).map(i => `<div class="queue-row"><strong>${escapeHtml(i.patient)}</strong><span>${escapeHtml(i.id)} · ${money(i.amount - i.paid)}</span>${tag(i.status, 'outline')}<button class="btn btn-secondary" data-action="open-paystack-pay" data-id="${escapeHtml(i.id)}">Pay online</button></div>`).join('')}</div>`
+      : '<p class="empty-state">Nothing owing. Create an invoice to start a bill.</p>';
+  const recent = !loaded
+    ? '<p class="empty-state">Loading…</p>'
+    : payments.length
+      ? payments.slice(0, 8).map(p => dataRow(`${p.patient} · ${money(p.amount)}`, `${p.channel} · ${p.time}`, p.status, p.status === 'Success' ? 'neutral' : 'outline')).join('')
+      : '<p class="empty-state">No payments yet.</p>';
+  return `<div class="page">
+    <div class="page-heading"><div><span class="eyebrow">${escapeHtml(copy.desk)}</span><h2>Front desk & cashier</h2><p>Today's billing and collections for ${escapeHtml(orgName())}.</p></div><div class="toolbar"><button class="btn btn-secondary" data-action="open-new-patient">New patient</button><button class="btn btn-primary" data-action="open-create-invoice">Create invoice</button></div></div>
+    ${metricGrid(metrics, 'grid activity-grid')}
+    <div class="grid two-col">${card('Payment queue', queue)}${card('Recent payments', recent)}</div>
+  </div>`;
+}
+
 function renderDesk() {
+  if (!SHOW_SAMPLE_DATA) return renderLiveDesk();
   const total=58000, isHmo=state.payer==='hmo', isFamily=state.payer==='family', needsAuth=isHmo&&total>=50000;
   let flow='';
   if(isFamily&&state.payment==='idle') flow=`<p>Choose who to request payment from:</p><div class="sponsor-choices">${['Mother','Brother','Sister','Uncle'].map(name=>`<button class="sponsor-choice ${state.sponsor===name?'selected':''}" data-action="choose-sponsor" data-name="${name}">${name}</button>`).join('')}</div><button class="btn btn-primary" data-action="family-request" ${state.sponsor?'':'disabled'}>Send payment request</button>`;
@@ -1269,7 +1307,64 @@ function renderPaymentPlans() {
 }
 
 /* 18. Reports */
+function renderLiveReports() {
+  const invoices = state.invoiceList.filter(i => i.live && i.status !== 'Cancelled');
+  const payments = state.paymentList.filter(p => p.live && p.status === 'Success');
+  const now = new Date();
+  const monthName = now.toLocaleDateString('en-NG', { month: 'long', year: 'numeric' });
+  const thisMonth = payments.filter(p => p.occurredAt && new Date(p.occurredAt).getMonth() === now.getMonth() && new Date(p.occurredAt).getFullYear() === now.getFullYear());
+  const billed = invoices.reduce((sum, i) => sum + i.amount, 0);
+  const collected = invoices.reduce((sum, i) => sum + i.paid, 0);
+  const loaded = state.invoicesSynced && state.paymentsSynced;
+  const claimsByStatus = {};
+  state.liveClaims.forEach(c => { claimsByStatus[c.status] = (claimsByStatus[c.status] || 0) + 1; });
+  const rec = state.liveReconciliationSummary;
+  const stale = staleInvoiceRows();
+  const mini = items => `<div class="mini-metrics">${items.map(([value, label]) => `<div class="mini-metric"><strong>${value}</strong><span>${label}</span></div>`).join('')}</div>`;
+  return `<div class="page">
+    ${pageHeading('Operations', 'Reports & Financial Statements', 'Revenue, claims, reconciliation and unpaid invoices from your own records, with CSV and PDF downloads.')}
+    ${metricGrid(loaded ? [[String(invoices.length), 'Invoices raised', 'Billed'], [money(billed), 'Total billed', 'All time'], [money(collected), 'Total collected', 'All time'], [money(billed - collected), 'Still owing', 'Open']] : [['…', 'Invoices raised', 'Loading'], ['…', 'Total billed', 'Loading'], ['…', 'Total collected', 'Loading'], ['…', 'Still owing', 'Loading']])}
+    <div class="grid two-col">
+      ${card('Monthly revenue statement', `
+        ${loaded ? mini([[money(thisMonth.reduce((sum, p) => sum + p.amount, 0)), `Collected in ${monthName}`], [String(thisMonth.length), 'Payments']]) : '<p class="empty-state">Loading…</p>'}
+        <p>Collected payments by channel and date, as recorded in WelliPay.</p>
+        <div class="toolbar" style="margin-top:12px;">
+          <button class="btn btn-primary" data-action="export-revenue-report-pdf">Download PDF</button>
+          <button class="btn btn-secondary" data-action="export-revenue-report">Download CSV</button>
+        </div>
+      `)}
+      ${card('Claims', `
+        ${state.claimsSynced ? (state.liveClaims.length ? mini(Object.entries(claimsByStatus).map(([status, count]) => [String(count), CLAIM_STATUS_LABEL[status] || status])) : '<p class="empty-state">No claims yet.</p>') : '<p class="empty-state">Loading…</p>'}
+        <p>Claims by status, with payer and amount in the download.</p>
+        <div class="toolbar" style="margin-top:12px;">
+          <button class="btn btn-primary" data-action="export-claims-report-pdf">Download PDF</button>
+          <button class="btn btn-secondary" data-action="export-claims-report">Download CSV</button>
+        </div>
+      `)}
+      ${card('Reconciliation', `
+        ${rec ? mini([[String(rec.matched), 'Matched'], [String(rec.unmatched), 'Unmatched'], [String(rec.exception), 'Exceptions']]) : '<p class="empty-state">Loading…</p>'}
+        <p>Bank and Paystack transactions matched against your records.</p>
+        <div class="toolbar" style="margin-top:12px;">
+          <button class="btn btn-primary" data-action="export-recon-report-pdf">Download PDF</button>
+          <button class="btn btn-secondary" data-action="export-recon-report">Download CSV</button>
+        </div>
+      `)}
+      ${card('Unpaid invoices over 30 days', `
+        ${stale.length
+          ? mini([[String(stale.length), 'Invoices'], [money(stale.reduce((sum, r) => sum + r.balance, 0)), 'At risk']])
+          : `<p class="empty-state">${state.receivablesSynced ? 'No invoices open 30+ days with zero payment.' : 'Loading…'}</p>`}
+        <p>Invoices open for 30 or more days with no payment applied.</p>
+        <div class="toolbar" style="margin-top:12px;">
+          <button class="btn btn-primary" data-action="export-leakage-report-pdf">Download PDF</button>
+          <button class="btn btn-secondary" data-action="export-leakage-report">Download CSV</button>
+        </div>
+      `)}
+    </div>
+  </div>`;
+}
+
 function renderReports() {
+  if (!SHOW_SAMPLE_DATA) return renderLiveReports();
   return `<div class="page">
     ${renderBranchBanner()}
     ${pageHeading('Operations', 'Reports & Financial Statements', 'Automated revenue, claims scrubbing, debt ageing and branch reconciliation exports.')}
@@ -1781,9 +1876,14 @@ function render() {
   modalRoot.innerHTML = renderModal();
   content.focus({ preventScroll: true });
 
-  if ((state.active === 'patients' || state.active === 'invoices' || state.active === 'desk') && !state.patientRecordsSynced) ensurePatientRecords().then(() => render());
+  if ((state.active === 'patients' || state.active === 'invoices' || state.active === 'hospital-desk') && !state.patientRecordsSynced) ensurePatientRecords().then(() => render());
   if (state.active === 'patients' && !state.patientsSynced) syncPatientsFromApi();
   if (state.active === 'payments' && !state.paymentsSynced) syncPaymentsFromApi();
+  if (!SHOW_SAMPLE_DATA && (state.active === 'hospital-desk' || state.active === 'reports')) {
+    if (!state.paymentsSynced) syncPaymentsFromApi();
+    if (!state.invoicesSynced) syncInvoicesFromApi();
+  }
+  if (!SHOW_SAMPLE_DATA && state.active === 'reports' && !state.reconciliationSynced) syncReconciliationFromApi();
   if (state.active === 'invoices' && !state.invoicesSynced) syncInvoicesFromApi();
   if ((state.active === 'claims' || state.active === 'hmo-insurance' || state.active === 'reports' || state.active === 'ai-insights') && !state.claimsSynced) syncClaimsFromApi();
   if ((state.active === 'dashboard' || state.active === 'reports' || state.active === 'branches') && !state.dashboardSynced) syncDashboardFromApi();
@@ -2519,6 +2619,7 @@ async function syncPaymentsFromApi() {
     const liveRows = data.items.map(item => ({
       id: `PMT-${item.paymentId.slice(-6).toUpperCase()}`,
       apiPaymentId: item.paymentId,
+      occurredAt: item.occurredAt,
       ref: item.providerPaymentRef,
       channel: PAYMENT_CHANNEL_LABEL[item.channel] || item.channel,
       patient: patientNameByRef.get(item.patientRef) || item.patientRef,
@@ -2538,7 +2639,7 @@ async function syncPaymentsFromApi() {
     // Also re-render while the Request Refund modal is open (on any page)
     // so its "Select Payment" list picks up live payments as soon as this
     // finishes, not only when the Payments page itself is on screen.
-    if (state.active === 'payments' || (state.modal && state.modal.type === 'request-refund')) render();
+    if (state.active === 'payments' || state.active === 'hospital-desk' || state.active === 'reports' || (state.modal && state.modal.type === 'request-refund')) render();
   }
 }
 
@@ -2552,6 +2653,7 @@ async function syncInvoicesFromApi() {
     const liveRows = data.items.map(item => ({
       id: item.providerInvoiceRef,
       invoiceId: item.invoiceId,
+      createdAt: item.createdAt,
       patient: patientNameByRef.get(item.patientRef) || item.patientRef,
       patientId: item.patientRef,
       date: new Date(item.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }),
@@ -2575,7 +2677,7 @@ async function syncInvoicesFromApi() {
     state.invoicesSyncing = false;
     // Also re-render while the reconciliation "match" modal is open, so its
     // invoice picker picks up live invoices as soon as this finishes.
-    if (state.active === 'invoices' || state.active === 'payment-plans' || state.active === 'financing' || (state.modal && (state.modal.type === 'match' || state.modal.type === 'new-payment-plan' || state.modal.type === 'new-financing-record'))) render();
+    if (state.active === 'invoices' || state.active === 'hospital-desk' || state.active === 'reports' || state.active === 'payment-plans' || state.active === 'financing' || (state.modal && (state.modal.type === 'match' || state.modal.type === 'new-payment-plan' || state.modal.type === 'new-financing-record'))) render();
   }
 }
 
@@ -2754,7 +2856,7 @@ async function syncReconciliationFromApi() {
     showToast('API Sync Failed', `Live reconciliation not loaded: ${err.message}`);
   } finally {
     state.reconciliationSyncing = false;
-    if (state.active === 'reconciliation') render();
+    if (state.active === 'reconciliation' || state.active === 'reports') render();
   }
 }
 

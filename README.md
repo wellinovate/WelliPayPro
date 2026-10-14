@@ -134,6 +134,9 @@ No photographic or icon assets are used. All visual marks are flat CSS (colored 
 - `design-assets/WelliPay Provider.dc.html` — archived design-tool export for visual/copy reference only; not the runnable app or production source.
 - `_ds/` — the bound "Modernist" design system: `styles.css` (all tokens + component CSS, referenced above) and `readme.md` (component usage guide). `_ds_bundle.js` is a runtime helper specific to this tool's preview and is not needed by a real app.
 
+## Payout status per payment
+
+Settlements page, card "Online payments and payout status". It lists each online payment from the last 90 days with its fee, the amount you receive and whether Paystack has paid it into your bank account (Awaiting payout, Processing, Paid to bank, Payout failed). "Check with Paystack" asks the API to read your payouts and update the list. Wallet credit held for patients shows under the table. Needs the matching API release.
 ## Guest payment page
 
 `pay.html` is a public page that lets anyone pay one invoice without an account. On an unpaid live invoice, press Payment link, then copy the link or send it on WhatsApp. The link holds an unguessable token. Press Make a new link to stop the old one working.

@@ -409,6 +409,8 @@ const state = {
   paymentPlansSyncing: false,
   livePaymentPlans: [],
   settlementsSynced: false,
+  paymentSettlement: null, // { loading, syncing, error, notice, filter, data }
+  walletSummary: null,
   paystackPayouts: null, // { loading, error, data } once loaded on request
   settlementsSyncing: false,
   liveSettlements: [],
@@ -1291,6 +1293,68 @@ function renderPaystackPayouts() {
   return `${body}<div class="toolbar" style="margin-top:12px;">${button}</div>`;
 }
 
+const SETTLEMENT_LABELS = { AWAITING: 'Awaiting payout', PROCESSING: 'Processing', SETTLED: 'Paid to bank', FAILED: 'Payout failed' };
+
+function renderPaymentSettlement() {
+  const ps = state.paymentSettlement;
+  const filter = ps?.filter || '';
+  const buttons = `<div class="toolbar" style="margin-top:12px;gap:8px;flex-wrap:wrap;">
+    <button class="btn btn-secondary" data-action="load-payment-settlement" style="font-size:11px;padding:6px 10px;">${ps?.data ? 'Refresh' : 'Load payments'}</button>
+    <button class="btn btn-secondary" data-action="sync-payment-settlement" style="font-size:11px;padding:6px 10px;" ${ps?.syncing ? 'disabled' : ''}>${ps?.syncing ? 'Checking…' : 'Check with Paystack'}</button>
+  </div>`;
+  let body = '<p style="margin:0 0 12px;font-size:12px;color:var(--muted);">Each online payment, and whether Paystack has paid it into your bank account. Paystack pays out a day or more after the payment. Amounts are after Paystack fees. Use Check with Paystack to update the status.</p>';
+  if (ps?.loading) return body + '<p style="color:var(--muted);font-size:12px;">Loading…</p>';
+  if (ps?.error) body += `<p style="color:var(--color-accent);font-size:12px;">${escapeHtml(ps.error)}</p>`;
+  if (ps?.notice) body += `<p style="color:var(--muted);font-size:12px;">${escapeHtml(ps.notice)}</p>`;
+  if (ps?.data) {
+    const d = { hasPayoutAccount: true, ...ps.data, summary: { awaitingMinor: 0, processingMinor: 0, settledMinor: 0, failedMinor: 0, ...(ps.data.summary || {}) }, items: ps.data.items || [] };
+    if (!d.hasPayoutAccount) body += '<p style="font-size:12px;color:var(--color-accent);">No payout account is set up yet. Payments go to the main Paystack account until one is added in onboarding.</p>';
+    body += metricGrid([
+      [money(fromMinor(d.summary.awaitingMinor)), 'Awaiting payout', 'awaiting'],
+      [money(fromMinor(d.summary.processingMinor)), 'Processing', 'processing'],
+      [money(fromMinor(d.summary.settledMinor)), 'Paid to bank', 'settled'],
+      [money(fromMinor(d.summary.failedMinor)), 'Payout failed', 'failed'],
+    ], 'grid activity-grid');
+    body += `<div class="toolbar" style="margin:12px 0;gap:6px;flex-wrap:wrap;">${[['', 'All'], ['AWAITING', 'Awaiting'], ['PROCESSING', 'Processing'], ['SETTLED', 'Paid to bank'], ['FAILED', 'Failed']].map(([v, l]) => `<button class="btn ${filter === v ? 'btn-primary' : 'btn-secondary'}" data-action="filter-payment-settlement" data-value="${v}" style="font-size:11px;padding:4px 10px;">${l}</button>`).join('')}</div>`;
+    const items = d.items.filter(i => !filter || i.settlementStatus === filter);
+    body += items.length
+      ? `<div class="table-wrap"><table class="table"><thead><tr><th>Payment</th><th>Paid</th><th>Amount</th><th>Fee</th><th>You receive</th><th>Status</th></tr></thead><tbody>${items.map(i => `<tr><td>${escapeHtml(i.label)}<br><small style="color:var(--muted)">${escapeHtml(i.reference)}</small></td><td>${escapeHtml(new Date(i.paidAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' }))}</td><td>${money(fromMinor(i.amountMinor))}</td><td>${i.feesMinor === undefined ? '—' : money(fromMinor(i.feesMinor))}</td><td>${money(fromMinor(i.netMinor))}</td><td>${tag(SETTLEMENT_LABELS[i.settlementStatus] || i.settlementStatus, i.settlementStatus === 'SETTLED' ? 'neutral' : 'outline')}${i.settledAt ? `<br><small style="color:var(--muted)">${escapeHtml(new Date(i.settledAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' }))}</small>` : ''}</td></tr>`).join('')}</tbody></table></div>`
+      : '<p style="color:var(--muted);font-size:12px;">No payments in this view for the last 90 days.</p>';
+  }
+  const w = state.walletSummary;
+  if (w && w.totalCreditMinor > 0) {
+    body += `<p style="margin-top:12px;font-size:12px;color:var(--muted);">Prepaid wallet credit held for patients: ${money(fromMinor(w.totalCreditMinor))} across ${w.patientsWithCredit} patient${w.patientsWithCredit === 1 ? '' : 's'}. You owe this back to them as bill payments or refunds.</p>`;
+  }
+  return body + buttons;
+}
+
+async function loadPaymentSettlement(keep) {
+  const prev = state.paymentSettlement || {};
+  state.paymentSettlement = { ...prev, loading: !keep, error: '', notice: keep ? prev.notice : '' };
+  if (!keep) render();
+  try {
+    const [data, wallet] = await Promise.all([wellipayApi.listPaymentSettlement({ limit: 200 }), wellipayApi.getWalletSummary().catch(() => null)]);
+    state.paymentSettlement = { ...state.paymentSettlement, loading: false, syncing: false, data };
+    state.walletSummary = wallet;
+  } catch (err) {
+    state.paymentSettlement = { ...state.paymentSettlement, loading: false, syncing: false, error: `Could not load payments: ${err.message}` };
+  }
+  if (state.active === 'settlements') render();
+}
+
+async function syncPaymentSettlement() {
+  state.paymentSettlement = { ...(state.paymentSettlement || {}), syncing: true, error: '', notice: '' };
+  render();
+  try {
+    const r = await wellipayApi.syncPaymentSettlement({ days: 30 });
+    state.paymentSettlement.notice = r.paymentsUpdated > 0 ? `Updated ${r.paymentsUpdated} payment${r.paymentsUpdated === 1 ? '' : 's'} from ${r.payoutsChecked} payout${r.payoutsChecked === 1 ? '' : 's'}.` : `Checked ${r.payoutsChecked} payout${r.payoutsChecked === 1 ? '' : 's'}. Nothing changed.`;
+    await loadPaymentSettlement(true);
+  } catch (err) {
+    state.paymentSettlement = { ...state.paymentSettlement, syncing: false, error: `Could not check with Paystack: ${err.message}` };
+    render();
+  }
+}
+
 async function loadPaystackPayouts() {
   const now = new Date();
   const pad = (n) => String(n).padStart(2, '0');
@@ -1322,10 +1386,11 @@ function renderSettlements() {
   return `<div class="page">
     ${renderBranchBanner()}
     ${pageHeading('Settlements','Gateway payouts & branch settlement','Follow gateway payout status and branch-level settlement totals.')}
+    ${card('Online payments and payout status', renderPaymentSettlement())}
     ${card('Paystack payouts (live)', renderPaystackPayouts())}
     ${SHOW_SAMPLE_DATA ? card('Payout timeline (illustrative)',events.map(([time,text])=>`<div class="timeline-line"><time>${time}</time><span>${text}</span></div>`).join('')) : ''}
     ${card('<div class="section-heading"><span>Live settlement batches</span><span></span></div>', `
-      <p style="margin:0 0 12px;font-size:12px;color:var(--muted);">There's no real payment gateway behind this service — payments are recorded directly, not via a Paystack/Flutterwave webhook — so "Create settlement" batches a branch's unsettled successful payments in wellipay-api, and "Confirm Settled" records that a human verified the funds landed. Neither is a real bank payout.</p>
+      <p style="margin:0 0 12px;font-size:12px;color:var(--muted);">Settlement batches are your own record. "Create settlement" groups a branch's unsettled payments, including cash. "Confirm Settled" records that a person checked the funds arrived. For online payments, use Online payments and payout status above.</p>
       <div class="toolbar" style="margin-bottom:12px;flex-wrap:wrap;gap:8px;">
         ${(SHOW_SAMPLE_DATA ? Object.entries(FACILITY_BRANCH) : [[MAIN_FACILITY_REF, orgName()]]).map(([ref, label]) => `<button class="btn btn-secondary" data-action="create-settlement" data-facility="${ref}" data-label="${label}" style="font-size:11px;padding:6px 10px;">Settle ${label}</button>`).join('')}
       </div>
@@ -2545,6 +2610,7 @@ function render() {
   if (state.active === 'referrals' && !state.referralsSynced) syncReferralsFromApi();
   if (state.active === 'wellipass' && !state.welliPassStatsSynced) syncWelliPassStatsFromApi();
   if (state.active === 'settlements' && !state.settlementsSynced) syncSettlementsFromApi();
+  if (state.active === 'settlements' && !state.paymentSettlement) setTimeout(() => loadPaymentSettlement(false), 0);
 
   if (state.active === 'dashboard' || state.active === 'reports') {
     setTimeout(() => initializeCharts(), 0);
@@ -5018,6 +5084,9 @@ function dispatch(action, target, domEvent) {
     /* Payments */
     case 'filter-payments': state.paymentFilter=target.dataset.filter;render();break;
     case 'load-paystack-payouts': loadPaystackPayouts(); break;
+    case 'load-payment-settlement': loadPaymentSettlement(false); break;
+    case 'sync-payment-settlement': syncPaymentSettlement(); break;
+    case 'filter-payment-settlement': state.paymentSettlement = { ...(state.paymentSettlement || {}), filter: target.dataset.value || '' }; render(); break;
     case 'view-payment-receipt': {
       const p = state.paymentList.find(item=>item.id===id);
       if (p) {

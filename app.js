@@ -295,11 +295,13 @@ function openProfileDropdown() {
   }, 50);
 }
 
+import { createPharmacy, PHARMACY_PAGES } from './pharmacy.js';
 import { wellipayApi, toMinor, fromMinor, loginStaff, logoutStaff, getStaffSession, getTenant, fetchBanks, fetchApplicationTerms, submitProviderApplication, onSessionExpired } from './api.js';
 
 const groups = [
   { name: 'Overview', items: [['dashboard', 'Dashboard', 'grid'], ['hospital-desk', 'Hospital Desk', 'wallet'], ['ai-insights', 'AI Insights', 'spark'], ['notifications', 'Notifications', 'bell']] },
   { name: 'Revenue Cycle', items: [['patients', 'Patients', 'users'], ['invoices', 'Invoices', 'file'], ['payments', 'Payments', 'credit'], ['services-pricing', 'Services & Pricing', 'list'], ['bookings', 'Bookings & Collection', 'calendar'], ['checkup-packages', 'Check-Up Packages', 'list'], ['corporate-accounts', 'Corporate Accounts', 'building']] },
+  { name: 'Pharmacy', items: [['pharmacy-products', 'Products', 'list'], ['pharmacy-inventory', 'Inventory', 'receipt'], ['pharmacy-prescriptions', 'Prescriptions', 'file'], ['pharmacy-orders', 'Orders & Delivery', 'wallet']] },
   { name: 'Claims & Payers', items: [['claims', 'Claims', 'claim'], ['hmo-insurance', 'HMO / Insurance', 'shield'], ['authorization', 'Authorization Centre', 'check'], ['family-sponsors', 'Family / Sponsors', 'users'], ['wellipass', 'WelliPass', 'qr'], ['receivables', 'Receivables', 'receipt'], ['reconciliation', 'Reconciliation', 'refresh'], ['settlements', 'Settlements', 'bank'], ['refunds', 'Refunds', 'undo']] },
   { name: 'Growth', items: [['financing', 'Financing', 'trend'], ['payment-plans', 'Payment Plans', 'calendar'], ['referrals', 'Referrals', 'share'], ['partners', 'Providers / Partners', 'link']] },
   { name: 'Operations', items: [['reports', 'Reports', 'chart'], ['branches', 'Branches', 'building'], ['staff', 'Staff', 'users'], ['integrations', 'Integrations', 'plug'], ['api-developers', 'API & Developers', 'code']] },
@@ -567,10 +569,12 @@ function icon(name) { return `<svg viewBox="0 0 24 24" aria-hidden="true">${icon
 // Which provider types use each page. Sample mode never shows the new pages.
 function providerTypeOrDefault() { return getTenant()?.providerType || 'HOSPITAL'; }
 function isLab() { return !SHOW_SAMPLE_DATA && providerTypeOrDefault() === 'DIAGNOSTIC_LAB'; }
+function isPharmacy() { return !SHOW_SAMPLE_DATA && providerTypeOrDefault() === 'PHARMACY'; }
 function usesCorporate() { return !SHOW_SAMPLE_DATA && ['DIAGNOSTIC_LAB', 'HOSPITAL'].includes(providerTypeOrDefault()); }
 function navVisible(id) {
   if (id === 'branches') return SHOW_SAMPLE_DATA;
   if (id === 'bookings' || id === 'checkup-packages') return isLab();
+  if (PHARMACY_PAGES.includes(id)) return isPharmacy();
   if (id === 'corporate-accounts') return usesCorporate();
   return true;
 }
@@ -2133,11 +2137,12 @@ function renderStaffRow(item, isLive) {
   const action = isLive
     ? (item.status === 'ACTIVE'
         ? `<button class="btn btn-secondary" data-action="open-set-password" data-id="${escapeHtml(item.staffId)}" data-name="${escapeHtml(item.name)}">Set Password</button>
+           ${isPharmacy() ? `<button class="btn btn-secondary" data-action="ph-pharmacist" data-id="${escapeHtml(item.staffId)}">Pharmacist licence</button>` : ''}
            <button class="btn btn-secondary" data-action="deactivate-staff" data-id="${escapeHtml(item.staffId)}">Deactivate</button>`
         : `<button class="btn btn-secondary" data-action="reactivate-staff" data-id="${escapeHtml(item.staffId)}">Reactivate</button>`)
     : '';
   return `<tr>
-    <td><strong>${escapeHtml(name)}</strong>${isLive ? ' <small style="color:var(--muted)">(Live)</small>' : ''}<br><small style="color:var(--muted)">${escapeHtml(email)}</small></td>
+    <td><strong>${escapeHtml(name)}</strong>${isLive ? ' <small style="color:var(--muted)">(Live)</small>' : ''}<br><small style="color:var(--muted)">${escapeHtml(email)}</small>${isLive && item.pharmacistLicenceNo ? `<br>${tag('Pharmacist ' + escapeHtml(item.pharmacistLicenceNo), 'neutral')}` : ''}</td>
     <td>${tag(escapeHtml(role), 'outline')}</td>
     <td>${accessCell}</td>
     <td>${escapeHtml(branch)}</td>
@@ -2565,13 +2570,17 @@ function render() {
     settings: renderSettings,
     'mobile-app': renderMobileIntegration
   };
-  content.innerHTML = (views[state.active] || renderStub)();
+  content.innerHTML = (views[state.active] || pharmacy.pages[state.active] || renderStub)();
   const typed = captureModalInput();
-  modalRoot.innerHTML = renderModal();
+  modalRoot.innerHTML = pharmacy.modalHtml() ?? renderModal();
   restoreModalInput(typed);
   updateCheckupSum();
   content.focus({ preventScroll: true });
 
+  if (isPharmacy() && PHARMACY_PAGES.includes(state.active)) {
+    if (!state.patientRecordsSynced) ensurePatientRecords().then(() => render());
+    pharmacy.sync(state.active);
+  }
   if ((state.active === 'patients' || state.active === 'invoices' || state.active === 'hospital-desk' || state.active === 'bookings' || state.active === 'hmo-insurance') && !state.patientRecordsSynced) ensurePatientRecords().then(() => render());
   if (state.active === 'patients' && !state.patientsSynced) syncPatientsFromApi();
   if (state.active === 'payments' && !state.paymentsSynced) syncPaymentsFromApi();
@@ -4837,7 +4846,10 @@ function resetPayment(clearSponsor=true) {
   if(clearSponsor) state.sponsor='';
 }
 
+const pharmacy = createPharmacy({ state, render, card, tag, pageHeading, metricGrid, escapeHtml, money, showToast, syncInvoices: () => syncInvoicesFromApi().then(() => render()) });
+
 function dispatch(action, target, domEvent) {
+  if (action.startsWith('ph-') && pharmacy.handleAction(action, target)) return;
   const id = Number(target.dataset.id) || target.dataset.id;
   switch(action) {
     case 'toggle-menu': document.querySelector('#sidebar').classList.add('is-open');document.querySelector('#scrim').classList.add('is-open');break;
@@ -5439,6 +5451,7 @@ document.addEventListener('click', event => {
 });
 
 document.addEventListener('input', event => {
+  if (pharmacy.handleInput(event)) return;
   if (event.target.id === 'inv-test-search') {
     const needle = event.target.value.trim().toLowerCase();
     document.querySelectorAll('.inv-test-row').forEach(row => { row.style.display = !needle || row.dataset.name.includes(needle) ? '' : 'none'; });
@@ -5479,6 +5492,7 @@ document.addEventListener('input', event => {
 });
 
 document.addEventListener('change', event => {
+  if (pharmacy.handleChange(event)) return;
   if (state.modal && state.modal.type === 'catalogue') {
     if (event.target.id === 'catalogue-category') { state.modal.category = event.target.value; render(); return; }
     if (event.target.dataset.pickCode) {
@@ -5531,6 +5545,7 @@ document.addEventListener('change', event => {
 });
 
 document.addEventListener('submit', async event => {
+  if (pharmacy.handleSubmit(event)) return;
   if (event.target.id === 'chat-form') {
     event.preventDefault();
     const question = new FormData(event.target).get('question')?.toString().trim();

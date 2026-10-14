@@ -142,3 +142,15 @@ Settlements page, card "Online payments and payout status". It lists each online
 `pay.html` is a public page that lets anyone pay one invoice without an account. On an unpaid live invoice, press Payment link, then copy the link or send it on WhatsApp. The link holds an unguessable token. Press Make a new link to stop the old one working.
 
 On the API (Render), set `PAY_PAGE_URL` to this site's `pay.html` address, for example `https://wellipaypro.onrender.com/pay.html`. Guests then return to that page after Paystack checkout. The page shows the receipt once Paystack's webhook confirms the payment, and prints a code the patient can enter in the WelliPay app to add the payment to a profile.
+
+## Pharmacy workspace
+
+Shown only when the signed-in provider's type is Pharmacy. Code is in `pharmacy.js`; `app.js` passes in its helpers and routes events to it.
+
+- Products: medicine, consumable and device listings with generic and brand names, strength, dosage form, pack size, price, stock, next expiry and dispensing class. Batch view with adjust, write off and quarantine. Pharmacy services the pharmacy chooses to offer.
+- Inventory: low-stock, expired and near-expiry alerts, receive stock, suppliers, recent stock movements.
+- Prescriptions: queue of patient and counter prescriptions. A registered pharmacist reviews each one, matches items to products and sets validity and refills.
+- Orders and delivery: start an order from a bill, dispense (batch, pharmacist and payment checks happen in the API), dispatch, confirm delivery with the patient's code, record a failed delivery.
+- Staff: an admin sets a staff member's pharmacist licence number.
+
+Smoke test: `pharm.py` (mocked API) covers each page and every write.

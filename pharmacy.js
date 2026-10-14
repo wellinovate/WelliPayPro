@@ -13,7 +13,7 @@ const ADJUST_REASONS = { COUNT_CORRECTION: 'Count correction', DAMAGED: 'Damaged
 const WRITE_OFF_REASONS = { EXPIRED: 'Expired', DAMAGED: 'Damaged', RECALLED: 'Recalled' };
 const MOVEMENT_LABEL = { RECEIPT: 'Received', DISPENSE: 'Dispensed', ADJUSTMENT: 'Adjusted', WRITE_OFF: 'Written off' };
 
-export const PHARMACY_PAGES = ['pharmacy-products', 'pharmacy-inventory', 'pharmacy-prescriptions', 'pharmacy-orders'];
+export const PHARMACY_PAGES = ['pharmacy-products', 'pharmacy-inventory', 'pharmacy-prescriptions', 'pharmacy-orders', 'pharmacy-register'];
 
 export function createPharmacy(ctx) {
   const { state, render, card, tag, pageHeading, metricGrid, escapeHtml: esc, money, showToast } = ctx;
@@ -28,6 +28,8 @@ export function createPharmacy(ctx) {
     movements: [],
     prescriptions: [], rxSynced: false, rxError: '', rxStatus: 'SUBMITTED',
     orders: [], ordersSynced: false, ordersError: '', orderStatus: '',
+    couriers: [], couriersSynced: false,
+    balances: [], register: [], registerSynced: false, registerError: '', regFilter: { productId: '', from: '', to: '' },
   };
   const inflight = {};
   const failed = {};
@@ -62,12 +64,20 @@ export function createPharmacy(ctx) {
       .then(d => { ph.orders = d.items; ph.ordersSynced = true; ph.ordersError = ''; })
       .catch(e => { ph.ordersError = `Orders not loaded: ${e.message}`; showToast('API Sync Failed', ph.ordersError); throw e; }));
 
+  const loadCouriers = () => once('couriers', () => wellipayApi.listCouriers().then(d => { ph.couriers = d.items; ph.couriersSynced = true; }));
+  const loadRegister = () => once('register', () => Promise.all([
+    wellipayApi.getRegisterBalances(),
+    wellipayApi.listControlledRegister({ ...regQuery(), limit: 300 }),
+  ]).then(([b, r]) => { ph.balances = b.items; ph.register = r.items; ph.registerSynced = true; ph.registerError = ''; })
+    .catch(e => { ph.registerError = `Register not loaded: ${e.message}`; showToast('API Sync Failed', ph.registerError); throw e; }));
+  const regQuery = () => ({ ...(ph.regFilter.productId ? { productId: ph.regFilter.productId } : {}), ...(ph.regFilter.from ? { from: ph.regFilter.from } : {}), ...(ph.regFilter.to ? { to: ph.regFilter.to } : {}) });
+
   // Called from render() after the page is drawn.
   function sync(page) {
     if (page !== lastPage) {
       lastPage = page;
       for (const k of Object.keys(failed)) delete failed[k];
-      ph.productsError = ''; ph.alertsError = ''; ph.rxError = ''; ph.ordersError = ''; ph.invoicesTried = false;
+      ph.productsError = ''; ph.alertsError = ''; ph.rxError = ''; ph.ordersError = ''; ph.registerError = ''; ph.invoicesTried = false;
     }
     if (page === 'pharmacy-products') {
       if (!ph.productsSynced && !ph.productsError) loadProducts();
@@ -82,8 +92,13 @@ export function createPharmacy(ctx) {
       if (!ph.rxSynced && !ph.rxError) loadPrescriptions();
       if (!ph.productsSynced && !ph.productsError) loadProducts();
     }
+    if (page === 'pharmacy-register') {
+      if (!ph.productsSynced && !ph.productsError) loadProducts();
+      if (!ph.registerSynced && !ph.registerError) loadRegister();
+    }
     if (page === 'pharmacy-orders') {
       if (!ph.ordersSynced && !ph.ordersError) loadOrders();
+      if (!ph.couriersSynced) loadCouriers();
       if (!state.invoicesSynced && !ph.invoicesTried) { ph.invoicesTried = true; ctx.syncInvoices(); }
     }
   }
@@ -152,13 +167,15 @@ export function createPharmacy(ctx) {
   function renderServices() {
     const body = !ph.servicesSynced
       ? '<p class="empty-state">Loading services…</p>'
-      : `<div class="table-wrap"><table class="table"><thead><tr><th>Service</th><th>Time</th><th>Price</th><th></th></tr></thead><tbody>
+      : `<div class="table-wrap"><table class="table"><thead><tr><th>Service</th><th>Time</th><th>Price</th><th>Status</th><th></th></tr></thead><tbody>
         ${ph.services.map(s => `<tr><td><strong>${esc(s.name)}</strong><br><small style="color:var(--muted)">${esc(s.description)}</small></td><td>${esc(s.turnaround)}</td>
           <td>${s.offer ? m(s.offer.unitPriceMinor) : '—'}</td>
-          <td>${s.offer ? tag('Offered', 'neutral') : tag('Not offered', 'outline')}</td></tr>`).join('')}
+          <td>${s.offer ? tag(s.offer.active ? 'Offered' : 'Off', s.offer.active ? 'neutral' : 'outline') : tag('Not offered', 'outline')}</td>
+          <td>${s.offer ? `<button class="btn btn-secondary" data-action="ph-service-price" data-id="${esc(s.offer.serviceItemId)}">Change price</button>
+            <button class="btn btn-ghost" data-action="ph-service-toggle" data-id="${esc(s.offer.serviceItemId)}">${s.offer.active ? 'Switch off' : 'Switch on'}</button>` : ''}</td></tr>`).join('')}
         </tbody></table></div>`;
     return card('<div class="section-heading"><span>Pharmacy services</span><button class="btn btn-secondary" data-action="ph-offer-services">Offer services</button></div>',
-      `<p style="font-size:13px;color:var(--muted);margin:0 0 8px">List only the services you provide. Change a price from Services &amp; Pricing.</p>${body}`);
+      `<p style="font-size:13px;color:var(--muted);margin:0 0 8px">List only the services you provide. Prices are changed here and show on the Services &amp; Pricing list.</p>${body}`);
   }
 
   function productModal() {
@@ -283,10 +300,11 @@ export function createPharmacy(ctx) {
   function batchesModal() {
     const d = state.modal.detail;
     const body = !d ? '<p class="empty-state">Loading batches…</p>'
-      : d.batches.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Batch</th><th>Expiry</th><th>On hand</th><th>Status</th><th></th></tr></thead><tbody>
+      : d.batches.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Batch</th><th>Expiry</th><th>On hand</th>${d.batches.some(b => b.costMinor !== undefined) ? '<th>Cost each</th>' : ''}<th>Status</th><th></th></tr></thead><tbody>
         ${d.batches.map(b => `<tr><td><strong>${esc(b.batchNo)}</strong><br><small style="color:var(--muted)">Received ${esc(b.receivedAt.slice(0, 10))} · ${b.quantityReceived} in</small></td>
           <td>${b.expiryDate ? esc(b.expiryDate) : '—'}<br>${tag(esc(EXPIRY_LABEL[b.expiryState] || b.expiryState), b.expiryState === 'OK' || b.expiryState === 'NO_EXPIRY' ? 'outline' : 'accent')}</td>
           <td>${b.quantityOnHand}</td>
+          ${d.batches.some(x => x.costMinor !== undefined) ? `<td>${b.costMinor !== undefined ? m(b.costMinor) : '—'}</td>` : ''}
           <td>${b.status === 'QUARANTINED' ? tag('Quarantined', 'accent') + (b.quarantineReason ? `<br><small style="color:var(--muted)">${esc(b.quarantineReason)}</small>` : '') : tag('Active', 'neutral')}</td>
           <td>${b.quantityOnHand > 0 ? `<button class="btn btn-secondary" data-action="ph-batch-action" data-kind="adjust" data-id="${esc(b.batchId)}" data-label="${esc(d.displayName || '')} · ${esc(b.batchNo)}" data-onhand="${b.quantityOnHand}">Adjust</button>
             <button class="btn btn-secondary" data-action="ph-batch-action" data-kind="writeoff" data-id="${esc(b.batchId)}" data-label="${esc(d.displayName || '')} · ${esc(b.batchNo)}" data-onhand="${b.quantityOnHand}">Write off</button>` : ''}
@@ -356,7 +374,7 @@ export function createPharmacy(ctx) {
   function renderInventory() {
     const a = ph.alerts;
     const metrics = a
-      ? [[String(a.summary.lowStock + a.summary.outOfStock), 'Reorder now', 'Low or out'], [String(a.summary.expired), 'Expired on shelf', 'Remove from sale'], [String(a.summary.expiringSoon), `Expiring in ${a.nearExpiryDays} days`, 'Sell or return first'], [m(a.summary.stockValueMinor), 'Stock at cost', 'Where cost is recorded']]
+      ? [[String(a.summary.lowStock + a.summary.outOfStock), 'Reorder now', 'Low or out'], [String(a.summary.expired), 'Expired on shelf', 'Remove from sale'], [String(a.summary.expiringSoon), `Expiring in ${a.nearExpiryDays} days`, 'Sell or return first'], a.summary.stockValueMinor !== undefined ? [m(a.summary.stockValueMinor), 'Stock at cost', 'Where cost is recorded'] : [String(ph.products.filter(p => p.active).length), 'Active products', 'In the catalogue']]
       : [['…', 'Reorder now', 'Loading'], ['…', 'Expired on shelf', 'Loading'], ['…', 'Expiring soon', 'Loading'], ['…', 'Stock at cost', 'Loading']];
     const nameCol = ['Product', r => `<strong>${esc(r.name)}</strong>`];
     const batchCols = [nameCol, ['Batch', r => esc(r.batchNo)], ['Expiry', r => esc(r.expiryDate || '—')], ['Days', r => (r.daysToExpiry == null ? '—' : r.daysToExpiry < 0 ? `${-r.daysToExpiry} ago` : r.daysToExpiry)], ['On hand', r => r.quantityOnHand], ['Status', r => (r.status === 'QUARANTINED' ? tag('Quarantined', 'accent') : '')],
@@ -395,7 +413,7 @@ export function createPharmacy(ctx) {
         </div>
         <div class="form-grid two-col">
           <div class="form-group"><label>Quantity *</label><input class="input" type="number" name="quantity" required min="1" step="1"></div>
-          <div class="form-group"><label>Cost per unit (₦)</label><input class="input" type="number" name="cost" min="0" step="any"></div>
+          <div class="form-group"><label>Cost per unit (₦)</label><input class="input" type="number" name="cost" min="0" step="any"><small style="color:var(--muted)">Only Admin and Finance can see costs afterwards.</small></div>
         </div>
         <div class="form-group"><label>Note</label><input class="input" name="note" maxlength="240" placeholder="e.g. Invoice number from supplier"></div>
         <div class="modal-actions"><button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit" id="ph-recv-submit">Receive</button></div>
@@ -477,7 +495,8 @@ export function createPharmacy(ctx) {
             <td>${rxSummary(r)}${r.notes ? `<br><small style="color:var(--muted)">${esc(r.notes)}</small>` : ''}</td>
             <td>${r.source === 'PATIENT' ? 'Patient app' : 'Counter'}</td>
             <td>${tag(esc(RX_STATUS_LABEL[r.status] || r.status), r.status === 'VERIFIED' ? 'neutral' : r.status === 'SUBMITTED' ? 'accent' : 'outline')}${r.status === 'VERIFIED' && r.validUntil ? `<br><small style="color:var(--muted)">To ${esc(r.validUntil.slice(0, 10))} · ${r.refillsAllowed} refills</small>` : ''}${r.status === 'REJECTED' && r.rejectionReason ? `<br><small style="color:var(--muted)">${esc(r.rejectionReason)}</small>` : ''}${r.verifiedBy ? `<br><small style="color:var(--muted)">${esc(r.verifiedBy)}</small>` : ''}</td>
-            <td>${r.status === 'SUBMITTED' ? `<button class="btn btn-primary" data-action="ph-verify" data-id="${esc(r.prescriptionId)}">Review</button>` : ''}</td>
+            <td>${(r.images && r.images.length) || r.status === 'SUBMITTED' ? `<button class="btn btn-secondary" data-action="ph-rx-photos" data-id="${esc(r.prescriptionId)}">Photos${r.images && r.images.length ? ` (${r.images.length})` : ''}</button>` : ''}
+              ${r.status === 'SUBMITTED' ? `<button class="btn btn-primary" data-action="ph-verify" data-id="${esc(r.prescriptionId)}">Review</button>` : ''}</td>
           </tr>`).join('')}</tbody></table></div>`
         : '<p class="empty-state">No prescriptions with this status.</p>';
     const statuses = [['SUBMITTED', 'Waiting'], ['VERIFIED', 'Verified'], ['COMPLETED', 'Supplied'], ['REJECTED', 'Rejected'], ['CANCELLED', 'Cancelled'], ['', 'All']];
@@ -597,9 +616,10 @@ export function createPharmacy(ctx) {
             <td><strong>${esc(o.invoiceRef || o.invoiceId)}</strong><br><small style="color:var(--muted)">${o.lines.map(l => esc(l.description) + ' × ' + l.quantity).join(', ')}</small></td>
             <td>${esc(patientName(o.patientRef))}</td>
             <td>${tag(o.paymentStatus === 'PAID' ? 'Paid' : esc((o.paymentStatus || 'Unknown').replace(/_/g, ' ').toLowerCase()), o.paymentStatus === 'PAID' ? 'neutral' : 'accent')}${o.paymentOverrideReason ? `<br><small style="color:var(--muted)">Released: ${esc(o.paymentOverrideReason)}</small>` : ''}</td>
-            <td>${tag(esc(ORDER_STATUS_LABEL[o.status] || o.status), o.status === 'DISPENSED' ? 'neutral' : o.status === 'CANCELLED' ? 'outline' : 'accent')}<br><small style="color:var(--muted)">${o.fulfilment === 'DELIVERY' ? 'Delivery' : 'Pickup'}${o.dispensedBy ? ' · ' + esc(o.dispensedBy) : ''}</small></td>
-            <td>${o.fulfilment === 'DELIVERY' ? esc(DELIVERY_LABEL[o.deliveryStatus] || o.deliveryStatus) + (o.courierName ? `<br><small style="color:var(--muted)">${esc(o.courierName)}</small>` : '') + (o.deliveryStatus === 'FAILED' && o.failureReason ? `<br><small style="color:var(--muted)">${esc(o.failureReason)}</small>` : '') : '—'}</td>
+            <td>${tag(esc(o.status === 'AWAITING_DISPENSING' && o.readyAt ? 'Ready' : (ORDER_STATUS_LABEL[o.status] || o.status)), o.status === 'DISPENSED' ? 'neutral' : o.status === 'CANCELLED' ? 'outline' : 'accent')}<br><small style="color:var(--muted)">${o.fulfilment === 'DELIVERY' ? 'Delivery' : 'Pickup'}${o.dispensedBy ? ' · ' + esc(o.dispensedBy) : ''}</small></td>
+            <td>${o.fulfilment === 'DELIVERY' ? esc(DELIVERY_LABEL[o.deliveryStatus] || o.deliveryStatus) + (o.courierName ? `<br><small style="color:var(--muted)">${esc(o.courierName)}${o.trackingRef ? ' · ' + esc(o.trackingRef) : ''}</small>` : '') + (o.deliveryStatus === 'FAILED' && o.failureReason ? `<br><small style="color:var(--muted)">${esc(o.failureReason)}</small>` : '') : '—'}</td>
             <td><button class="btn btn-secondary" data-action="ph-order-detail" data-id="${esc(o.orderId)}">Details</button>
+              ${o.status === 'AWAITING_DISPENSING' && !o.readyAt ? `<button class="btn btn-secondary" data-action="ph-ready" data-id="${esc(o.orderId)}">Mark ready</button>` : ''}
               ${o.status === 'AWAITING_DISPENSING' ? `<button class="btn btn-primary" data-action="ph-dispense" data-id="${esc(o.orderId)}">Dispense</button><button class="btn btn-ghost" data-action="ph-cancel-order" data-id="${esc(o.orderId)}">Cancel</button>` : ''}
               ${o.status === 'DISPENSED' && o.fulfilment === 'DELIVERY' && o.deliveryStatus !== 'DELIVERED' ? `<button class="btn btn-primary" data-action="ph-delivery" data-id="${esc(o.orderId)}">Delivery</button>` : ''}</td>
           </tr>`).join('')}</tbody></table></div>`
@@ -609,6 +629,7 @@ export function createPharmacy(ctx) {
       ${pageHeading('Pharmacy', 'Orders and delivery', 'A paid bill is not proof that goods were handed over. Dispensing takes stock off the shelf and records the batch, the pharmacist and who received it.')}
       ${card('<div class="section-heading"><span>Orders</span><button class="btn btn-primary" data-action="ph-new-order">New order</button></div>',
         `<div class="seg" role="group" aria-label="Order status" style="margin:0 0 12px">${statuses.map(([v, l]) => `<label class="seg-opt"><input type="radio" name="ph-order-status" value="${v}" ${ph.orderStatus === v ? 'checked' : ''}><span>${l}</span></label>`).join('')}</div>${body}`)}
+      ${couriersCard()}
     </div>`;
   }
 
@@ -676,7 +697,7 @@ export function createPharmacy(ctx) {
       <p>${o.lines.map(l => esc(l.description) + ' × ' + l.quantity).join('<br>')}</p>
       <p style="font-size:13px">Stock is taken from the earliest-expiring usable batches. Prescription-only and controlled items need a verified prescription and a signed-in pharmacist.</p>
       <form id="ph-dispense-form" class="form-grid" data-id="${esc(o.orderId)}">
-        ${o.fulfilment === 'PICKUP' ? '<div class="form-group"><label>Collected by *</label><input class="input" name="handedToName" required minlength="2" maxlength="120" placeholder="Name of the person collecting"></div>' : '<p style="font-size:13px">This is a delivery. Record the handover on the Delivery step.</p>'}
+        ${o.fulfilment === 'PICKUP' ? '<div class="form-group"><label>Collected by *</label><input class="input" name="handedToName" required minlength="2" maxlength="120" placeholder="Name of the person collecting"></div><div class="form-group"><label>Collector ID</label><input class="input" name="collectorId" maxlength="60" placeholder="e.g. NIN 1234. Needed for controlled medicines."></div>' : '<p style="font-size:13px">This is a delivery. Record the handover on the Delivery step.</p>'}
         ${unpaid ? `<div class="form-group"><label>The bill is ${esc((o.paymentStatus || 'not paid').replace(/_/g, ' ').toLowerCase())}. Release without full payment?</label><input class="input" name="overridePaymentReason" maxlength="240" placeholder="Reason (Billing, Finance or Admin only). Leave blank to require payment."></div>` : ''}
         <div class="modal-actions"><button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit" id="ph-disp-submit">Dispense</button></div>
       </form></section></div>`;
@@ -686,6 +707,7 @@ export function createPharmacy(ctx) {
     const fd = new FormData(form);
     const body = {};
     opt(body, 'handedToName', val(fd, 'handedToName'));
+    opt(body, 'collectorId', val(fd, 'collectorId'));
     opt(body, 'overridePaymentReason', val(fd, 'overridePaymentReason'));
     const btn = document.getElementById('ph-disp-submit');
     if (btn) { btn.disabled = true; btn.textContent = 'Dispensing…'; }
@@ -736,7 +758,9 @@ export function createPharmacy(ctx) {
       <p>${esc(o.deliveryAddress || '')}<br>${esc(o.deliveryPhone || '')}<br>Fee ${m(o.deliveryFeeMinor)} · Status: ${esc(DELIVERY_LABEL[s] || s)}</p>
       <form id="ph-delivery-form" class="form-grid" data-id="${esc(o.orderId)}">
         <div class="form-group"><label>Step</label><select name="action" id="ph-del-action">${actions.map(([v, l]) => `<option value="${v}" ${act === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-        ${act === 'dispatch' ? '<div class="form-group"><label>Courier or rider *</label><input class="input" name="courierName" required minlength="2" maxlength="120"></div>' : ''}
+        ${act === 'dispatch' ? `<div class="form-group"><label>Courier</label><select name="courierId"><option value="">Other rider (type a name)</option>${ph.couriers.filter(c => c.active).map(c => `<option value="${esc(c.courierId)}">${esc(c.name)}</option>`).join('')}</select></div>
+          <div class="form-group"><label>Rider's name (if not listed)</label><input class="input" name="courierName" maxlength="120"></div>
+          <div class="form-group"><label>Tracking number</label><input class="input" name="trackingRef" maxlength="80"></div>` : ''}
         ${act === 'deliver' ? `<div class="form-group"><label>Received by *</label><input class="input" name="recipientName" required minlength="2" maxlength="120"></div>
           <div class="form-group"><label>Patient's 6-digit code</label><input class="input" name="proofCode" inputmode="numeric" pattern="\\d{6}" maxlength="6" placeholder="Shown in the patient app"></div>
           <div class="form-group"><label>No code? How was the recipient confirmed?</label><input class="input" name="note" maxlength="300" placeholder="e.g. Checked ID card"></div>` : ''}
@@ -748,7 +772,7 @@ export function createPharmacy(ctx) {
   async function submitDelivery(form) {
     const fd = new FormData(form);
     const body = { action: val(fd, 'action') };
-    for (const k of ['courierName', 'recipientName', 'proofCode', 'note', 'reason']) opt(body, k, val(fd, k));
+    for (const k of ['courierId', 'courierName', 'trackingRef', 'recipientName', 'proofCode', 'note', 'reason']) opt(body, k, val(fd, k));
     const btn = document.getElementById('ph-del-submit');
     if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
     try {
@@ -811,12 +835,228 @@ export function createPharmacy(ctx) {
     } catch (err) { showToast('Not saved', err.message); }
   }
 
+
+  /* Service price (the pharmacy page and Services & Pricing show the same record) */
+  function servicePriceModal() {
+    const s = ph.services.find(x => x.offer && x.offer.serviceItemId === state.modal.itemId);
+    if (!s) return '';
+    return `<div class="modal-backdrop" data-action="dismiss-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="ph-sp-title">
+      <h2 id="ph-sp-title">Change price</h2><p>${esc(s.name)}. Bills already created keep their old price.</p>
+      <form id="ph-service-price-form" class="form-grid" data-id="${esc(s.offer.serviceItemId)}">
+        <div class="form-group"><label>Price (₦) *</label><input class="input" type="number" name="price" required min="1" step="any" value="${s.offer.unitPriceMinor / 100}"></div>
+        <div class="modal-actions"><button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit" id="ph-sp-submit">Save</button></div>
+      </form></section></div>`;
+  }
+
+  async function submitServicePrice(form) {
+    const price = nair(val(new FormData(form), 'price'));
+    if (!(price > 0)) { showToast('Check the price', 'Enter a price above zero.'); return; }
+    try {
+      await wellipayApi.updateServiceItem(form.dataset.id, { unitPriceMinor: toMinor(price) });
+      ph.servicesSynced = false; state.priceListSynced = false; state.modal = null;
+      showToast('Price saved');
+      render();
+    } catch (err) { showToast('Price not saved', err.message); }
+  }
+
+  async function toggleService(id) {
+    const s = ph.services.find(x => x.offer && x.offer.serviceItemId === id);
+    if (!s) return;
+    try {
+      await wellipayApi.updateServiceItem(id, { active: !s.offer.active });
+      ph.servicesSynced = false; state.priceListSynced = false;
+      render();
+    } catch (err) { showToast('Service not changed', err.message); }
+  }
+
+  /* Ready for pickup */
+  async function markReady(id) {
+    try {
+      await wellipayApi.markOrderReady(id);
+      ph.ordersSynced = false;
+      showToast('Marked ready', 'A pickup patient gets a text message if SMS is set up.');
+      render();
+    } catch (err) { showToast('Not marked ready', err.message); }
+  }
+
+  /* Couriers */
+  function couriersCard() {
+    const rows = ph.couriers;
+    return card('<div class="section-heading"><span>Couriers</span><button class="btn btn-secondary" data-action="ph-new-courier">Add courier</button></div>',
+      rows.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Courier</th><th>Type</th><th>Tracking link</th><th>Status</th><th></th></tr></thead><tbody>
+        ${rows.map(c => `<tr><td><strong>${esc(c.name)}</strong>${c.phone ? `<br><small style="color:var(--muted)">${esc(c.phone)}</small>` : ''}</td>
+          <td>${c.kind === 'PARTNER' ? 'Delivery partner' : 'Own rider'}${c.kind === 'PARTNER' ? `<br><small style="color:var(--muted)">${c.hasWebhookSecret ? 'Reports by webhook' : 'No secret'}</small>` : ''}</td>
+          <td><small>${esc(c.trackingUrlTemplate || '—')}</small></td>
+          <td>${tag(c.active ? 'Active' : 'Off', c.active ? 'neutral' : 'outline')}</td>
+          <td><button class="btn btn-secondary" data-action="ph-edit-courier" data-id="${esc(c.courierId)}">Edit</button>
+            ${c.kind === 'PARTNER' ? `<button class="btn btn-ghost" data-action="ph-rotate-secret" data-id="${esc(c.courierId)}">New secret</button>` : ''}</td></tr>`).join('')}
+        </tbody></table></div>` : `<p class="empty-state">${ph.couriersSynced ? 'No couriers yet. Add your riders or a delivery partner.' : 'Loading couriers…'}</p>`);
+  }
+
+  function courierModal() {
+    const c = state.modal.courierId ? ph.couriers.find(x => x.courierId === state.modal.courierId) : null;
+    return `<div class="modal-backdrop" data-action="dismiss-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="ph-courier-title">
+      <h2 id="ph-courier-title">${c ? 'Edit courier' : 'Add courier'}</h2>
+      <form id="ph-courier-form" class="form-grid" data-id="${c ? esc(c.courierId) : ''}">
+        <div class="form-group"><label>Name *</label><input class="input" name="name" required minlength="2" maxlength="120" value="${c ? esc(c.name) : ''}"></div>
+        ${c ? '' : '<div class="form-group"><label>Type</label><select name="kind"><option value="OWN_RIDER">Own rider (staff update the status)</option><option value="PARTNER">Delivery partner (reports by webhook)</option></select></div>'}
+        <div class="form-group"><label>Phone</label><input class="input" name="phone" maxlength="30" value="${c && c.phone ? esc(c.phone) : ''}"></div>
+        <div class="form-group"><label>Tracking link</label><input class="input" name="trackingUrlTemplate" maxlength="300" value="${c && c.trackingUrlTemplate ? esc(c.trackingUrlTemplate) : ''}" placeholder="https://courier.example/track/{ref}"><small style="color:var(--muted)">Optional. {ref} is replaced with the tracking number.</small></div>
+        ${c ? `<label style="font-size:13px"><input type="checkbox" name="active" ${c.active ? 'checked' : ''}> Active</label>` : ''}
+        <div class="modal-actions"><button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button><button class="btn btn-primary" type="submit" id="ph-courier-submit">Save</button></div>
+      </form></section></div>`;
+  }
+
+  async function submitCourier(form) {
+    const fd = new FormData(form);
+    const id = form.dataset.id;
+    const body = { name: val(fd, 'name') };
+    if (id) { body.phone = val(fd, 'phone') || null; body.trackingUrlTemplate = val(fd, 'trackingUrlTemplate') || null; body.active = fd.get('active') === 'on'; }
+    else { body.kind = val(fd, 'kind') || 'OWN_RIDER'; opt(body, 'phone', val(fd, 'phone')); opt(body, 'trackingUrlTemplate', val(fd, 'trackingUrlTemplate')); }
+    try {
+      const saved = id ? await wellipayApi.updateCourier(id, body) : await wellipayApi.createCourier(body);
+      ph.couriers = id ? ph.couriers.map(c => c.courierId === id ? saved : c) : [...ph.couriers, saved];
+      state.modal = saved.webhookSecret ? { type: 'ph-courier-secret', name: saved.name, courierId: saved.courierId, secret: saved.webhookSecret } : null;
+      showToast('Courier saved', saved.name);
+      render();
+    } catch (err) { showToast('Courier not saved', err.message); }
+  }
+
+  async function rotateSecret(id) {
+    if (!window.confirm('Make a new secret? The partner must start using it, and the old one stops working now.')) return;
+    try {
+      const saved = await wellipayApi.rotateCourierSecret(id);
+      state.modal = { type: 'ph-courier-secret', name: saved.name, courierId: id, secret: saved.webhookSecret };
+      render();
+    } catch (err) { showToast('Secret not changed', err.message); }
+  }
+
+  function courierSecretModal() {
+    const { name, courierId, secret } = state.modal;
+    const base = (typeof window !== 'undefined' && window.WELLIPAY_API_BASE) || 'https://wellipay-api.onrender.com';
+    return `<div class="modal-backdrop" data-action="dismiss-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="ph-secret-title">
+      <h2 id="ph-secret-title">Webhook details for ${esc(name)}</h2>
+      <p>Copy the secret now. It is not shown again.</p>
+      <div class="form-group"><label>Secret</label><input class="input" readonly value="${esc(secret)}" onfocus="this.select()"></div>
+      <div class="form-group"><label>Webhook address</label><input class="input" readonly value="${esc(base)}/webhooks/courier/${esc(courierId)}" onfocus="this.select()"></div>
+      <p style="font-size:12px;color:var(--muted)">The partner sends a POST with headers x-wellipay-timestamp (seconds) and x-wellipay-signature: sha256= plus the HMAC-SHA256 of "timestamp.body" using this secret. Body: trackingRef, status (OUT_FOR_DELIVERY, DELIVERED or FAILED), and for DELIVERED the patient's proofCode and recipientName.</p>
+      <div class="modal-actions"><button class="btn btn-primary" data-action="close-modal">I have copied it</button></div></section></div>`;
+  }
+
+  /* Prescription photos */
+  const PHOTO_MAX_SIDE = 1800;
+
+  // Shrinks a phone photo to a JPEG well under the 4 MB limit, then returns its base64 text.
+  async function photoToBase64(file) {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, PHOTO_MAX_SIDE / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bmp.width * scale);
+    canvas.height = Math.round(bmp.height * scale);
+    canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.82));
+    if (!blob) throw new Error('The photo could not be read.');
+    const dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(new Error('The photo could not be read.')); r.readAsDataURL(blob); });
+    return String(dataUrl).split(',')[1];
+  }
+
+  async function openPhotos(id) {
+    const rx = ph.prescriptions.find(x => x.prescriptionId === id);
+    if (!rx) return;
+    state.modal = { type: 'ph-rx-photos', prescriptionId: id, urls: [], loading: true };
+    render();
+    try {
+      const blobs = await Promise.all((rx.images || []).map(i => wellipayApi.downloadPrescriptionPhoto(id, i.imageId)));
+      if (state.modal && state.modal.type === 'ph-rx-photos' && state.modal.prescriptionId === id) {
+        state.modal.urls = blobs.map(b => URL.createObjectURL(b));
+        state.modal.loading = false;
+        render();
+      }
+    } catch (err) {
+      if (state.modal && state.modal.type === 'ph-rx-photos') { state.modal.loading = false; render(); }
+      showToast('Photos not loaded', err.message);
+    }
+  }
+
+  function photosModal() {
+    const rx = ph.prescriptions.find(x => x.prescriptionId === state.modal.prescriptionId);
+    if (!rx) return '';
+    const n = (rx.images || []).length;
+    return `<div class="modal-backdrop" data-action="dismiss-modal"><section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="ph-photos-title">
+      <h2 id="ph-photos-title">Prescription photos</h2>
+      <p>${esc(patientName(rx.patientRef))} · ${esc(rx.prescriberName || '')}. Check the photo against the items typed in before you verify.</p>
+      ${state.modal.loading ? '<p class="empty-state">Loading photos…</p>' : state.modal.urls.length ? `<div style="display:grid;gap:8px">${state.modal.urls.map(u => `<a href="${u}" target="_blank" rel="noopener"><img src="${u}" alt="Prescription photo" style="width:100%;border:1px solid var(--color-divider)"></a>`).join('')}</div>` : '<p class="empty-state">No photos on this prescription.</p>'}
+      ${rx.status === 'SUBMITTED' && n < 3 ? `<div class="form-group" style="margin-top:12px"><label>Add a photo (${3 - n} left)</label><input type="file" id="ph-photo-input" accept="image/jpeg,image/png,image/webp" data-id="${esc(rx.prescriptionId)}"></div>` : ''}
+      <div class="modal-actions"><button class="btn btn-secondary" data-action="close-modal">Close</button>${rx.status === 'SUBMITTED' ? `<button class="btn btn-primary" data-action="ph-verify" data-id="${esc(rx.prescriptionId)}">Review</button>` : ''}</div></section></div>`;
+  }
+
+  async function uploadPhoto(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const id = input.dataset.id;
+    input.disabled = true;
+    try {
+      const dataBase64 = await photoToBase64(file);
+      await wellipayApi.uploadPrescriptionPhoto(id, { contentType: 'image/jpeg', dataBase64 });
+      ph.rxSynced = false;
+      showToast('Photo added');
+      await loadPrescriptions();
+      openPhotos(id);
+    } catch (err) {
+      showToast('Photo not added', err.message);
+      input.disabled = false;
+    }
+  }
+
+  /* Controlled-drug register */
+  const KIND_TEXT = { RECEIPT: 'Received', DISPENSE: 'Dispensed', ADJUSTMENT: 'Adjusted', WRITE_OFF: 'Written off' };
+
+  function renderRegister() {
+    const controlled = ph.products.filter(p => p.dispensingClass === 'CONTROLLED');
+    const f = ph.regFilter;
+    const bal = ph.registerSynced
+      ? (ph.balances.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Medicine</th><th>Register balance</th><th>On the shelf</th><th>Check</th></tr></thead><tbody>
+        ${ph.balances.map(b => `<tr><td><strong>${esc(b.name)}</strong></td><td>${b.registerBalance === undefined ? '—' : b.registerBalance}</td><td>${b.onHand}</td><td>${b.matches ? tag('Matches', 'neutral') : tag('Does not match', 'accent')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-state">No controlled medicines are listed. Set a product\'s dispensing to Controlled to track it here.</p>')
+      : `<p class="empty-state">${ph.registerError ? esc(ph.registerError) : 'Loading register…'}</p>`;
+    const rows = ph.register.length
+      ? `<div class="table-wrap"><table class="table"><thead><tr><th>When</th><th>Medicine</th><th>Batch</th><th>Entry</th><th>Qty</th><th>Balance</th><th>Patient and prescriber</th><th>Recorded by</th></tr></thead><tbody>
+        ${ph.register.map(e => `<tr><td><small>${esc(new Date(e.createdAt).toLocaleString('en-NG', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }))}</small></td>
+          <td>${esc(e.productName)}</td><td>${esc(e.batchNo)}</td>
+          <td>${esc(KIND_TEXT[e.kind] || e.kind)}${e.reason ? `<br><small style="color:var(--muted)">${esc(e.reason)}</small>` : ''}${e.supplierName ? `<br><small style="color:var(--muted)">From ${esc(e.supplierName)}</small>` : ''}</td>
+          <td>${e.quantity > 0 ? '+' : ''}${e.quantity}</td><td>${e.balanceAfter}</td>
+          <td>${e.patientName || e.patientRef ? esc(e.patientName || e.patientRef) : '—'}${e.prescriberName ? `<br><small style="color:var(--muted)">${esc(e.prescriberName)}${e.prescriberLicenceNo ? ' · ' + esc(e.prescriberLicenceNo) : ''}</small>` : ''}${e.recipientName ? `<br><small style="color:var(--muted)">Received by ${esc(e.recipientName)}${e.recipientId ? ' · ' + esc(e.recipientId) : ''}</small>` : ''}</td>
+          <td><small>${esc(e.actor)}</small></td></tr>`).join('')}</tbody></table></div>`
+      : `<p class="empty-state">${ph.registerSynced ? 'No entries for this filter.' : ''}</p>`;
+    return `<div class="page">
+      ${pageHeading('Pharmacy', 'Controlled-drug register', 'Every receipt, supply, adjustment and write-off of a controlled medicine, with the balance after. Entries cannot be edited or deleted.')}
+      ${card('<div class="section-heading"><span>Balances</span></div>', bal)}
+      ${card('<div class="section-heading"><span>Entries</span><button class="btn btn-secondary" data-action="ph-register-csv">Download CSV</button></div>',
+        `<form id="ph-register-filter" class="form-grid" style="grid-template-columns:2fr 1fr 1fr;gap:8px;margin:0 0 12px">
+          <select class="input" name="productId" aria-label="Medicine"><option value="">All controlled medicines</option>${controlled.map(p => `<option value="${esc(p.productId)}" ${f.productId === p.productId ? 'selected' : ''}>${esc(productName(p))}</option>`).join('')}</select>
+          <input class="input" type="date" name="from" value="${esc(f.from)}" aria-label="From">
+          <input class="input" type="date" name="to" value="${esc(f.to)}" aria-label="To">
+        </form>${rows}`)}
+    </div>`;
+  }
+
+  async function downloadRegisterCsv() {
+    try {
+      const blob = await wellipayApi.downloadRegisterCsv({ ...(ph.regFilter.productId ? { productId: ph.regFilter.productId } : {}), ...(ph.regFilter.from ? { from: ph.regFilter.from } : {}), ...(ph.regFilter.to ? { to: ph.regFilter.to } : {}), limit: 2000 });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'controlled-drug-register.csv';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } catch (err) { showToast('Download failed', err.message); }
+  }
+
   /* Hooks used by app.js */
   const pages = {
     'pharmacy-products': renderProducts,
     'pharmacy-inventory': renderInventory,
     'pharmacy-prescriptions': renderPrescriptions,
     'pharmacy-orders': renderOrders,
+    'pharmacy-register': renderRegister,
   };
 
   const modals = {
@@ -824,6 +1064,7 @@ export function createPharmacy(ctx) {
     'ph-receive': receiveModal, 'ph-supplier': supplierModal, 'ph-new-rx': newRxModal, 'ph-verify': verifyModal,
     'ph-new-order': newOrderModal, 'ph-dispense': dispenseModal, 'ph-cancel-order': cancelOrderModal, 'ph-delivery': deliveryModal,
     'ph-order-detail': orderDetailModal, 'ph-pharmacist': pharmacistModal,
+    'ph-service-price': servicePriceModal, 'ph-courier': courierModal, 'ph-courier-secret': courierSecretModal, 'ph-rx-photos': photosModal,
   };
 
   function modalHtml() {
@@ -852,6 +1093,14 @@ export function createPharmacy(ctx) {
       case 'ph-delivery': open({ type: 'ph-delivery', orderId: id }); return true;
       case 'ph-order-detail': openOrderDetail(id); return true;
       case 'ph-pharmacist': open({ type: 'ph-pharmacist', staffId: id }); return true;
+      case 'ph-service-price': open({ type: 'ph-service-price', itemId: id }); return true;
+      case 'ph-service-toggle': toggleService(id); return true;
+      case 'ph-ready': markReady(id); return true;
+      case 'ph-new-courier': open({ type: 'ph-courier', courierId: '' }); return true;
+      case 'ph-edit-courier': open({ type: 'ph-courier', courierId: id }); return true;
+      case 'ph-rotate-secret': rotateSecret(id); return true;
+      case 'ph-rx-photos': openPhotos(id); return true;
+      case 'ph-register-csv': downloadRegisterCsv(); return true;
       default: return false;
     }
   }
@@ -864,9 +1113,10 @@ export function createPharmacy(ctx) {
       'ph-receive-form': submitReceipt, 'ph-supplier-form': submitSupplier, 'ph-rx-form': submitRx,
       'ph-order-form': submitOrder, 'ph-dispense-form': submitDispense, 'ph-cancel-form': submitCancelOrder,
       'ph-delivery-form': submitDelivery, 'ph-pharmacist-form': submitPharmacist,
+      'ph-service-price-form': submitServicePrice, 'ph-courier-form': submitCourier,
     };
     if (form.id === 'ph-verify-form') { event.preventDefault(); submitVerify(form, event.submitter); return true; }
-    if (form.id === 'ph-filter-form') { event.preventDefault(); return true; }
+    if (form.id === 'ph-filter-form' || form.id === 'ph-register-filter') { event.preventDefault(); return true; }
     const fn = map[form.id];
     if (!fn) return false;
     event.preventDefault();
@@ -885,6 +1135,14 @@ export function createPharmacy(ctx) {
       render();
       const q = document.querySelector('#ph-filter-form input[name="q"]');
       if (q && t.name === 'q') { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+      return true;
+    }
+    if (t.id === 'ph-photo-input') { uploadPhoto(t); return true; }
+    if (t.closest && t.closest('#ph-register-filter')) {
+      const fd = new FormData(t.closest('form'));
+      ph.regFilter = { productId: val(fd, 'productId'), from: val(fd, 'from'), to: val(fd, 'to') };
+      ph.registerSynced = false;
+      render();
       return true;
     }
     if (t.name === 'ph-rx-status') { ph.rxStatus = t.value; ph.rxSynced = false; render(); return true; }

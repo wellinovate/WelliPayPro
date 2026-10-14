@@ -154,3 +154,5 @@ Shown only when the signed-in provider's type is Pharmacy. Code is in `pharmacy.
 - Staff: an admin sets a staff member's pharmacist licence number.
 
 Smoke test: `pharm.py` (mocked API) covers each page and every write.
+
+Pharmacy workspace additions: a Controlled-drug register page (balances against shelf stock, entries, CSV), prescription photos on the Prescriptions page (view and add), Mark ready and courier choice with tracking number on Orders, a Couriers card (partner webhook secret shown once), and price change and switch off on pharmacy services. Cost and stock value show only when the API sends them (Admin and Finance). Needs wellipay-api PR #26.

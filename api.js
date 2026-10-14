@@ -181,6 +181,17 @@ async function apiRequest(path, { method = 'GET', body, idempotent } = {}) {
   return payload;
 }
 
+// Fetches a file (a photo or a CSV) with the staff token and returns it as a Blob.
+async function blobRequest(path) {
+  const token = await getActiveToken();
+  const res = await fetch(`${API_BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) {
+    const payload = await res.json().catch(() => null);
+    throw new Error((payload && (payload.detail || payload.title)) || `Request failed (HTTP ${res.status})`);
+  }
+  return res.blob();
+}
+
 // Amounts in `state` are Naira (display units). The API stores money as
 // minor units (kobo) per its money-as-integer design — never floats.
 export const toMinor = (nairaAmount) => Math.round(nairaAmount * 100);
@@ -256,6 +267,16 @@ export const wellipayApi = {
   dispenseOrder: (id, body) => apiRequest(`/provider/pharmacy/orders/${encodeURIComponent(id)}/dispense`, { method: 'POST', body }),
   cancelPharmacyOrder: (id, body) => apiRequest(`/provider/pharmacy/orders/${encodeURIComponent(id)}/cancel`, { method: 'POST', body }),
   updateDelivery: (id, body) => apiRequest(`/provider/pharmacy/orders/${encodeURIComponent(id)}/delivery`, { method: 'PATCH', body }),
+  listCouriers: () => apiRequest('/provider/pharmacy/couriers'),
+  createCourier: (body) => apiRequest('/provider/pharmacy/couriers', { method: 'POST', body }),
+  updateCourier: (id, body) => apiRequest(`/provider/pharmacy/couriers/${encodeURIComponent(id)}`, { method: 'PATCH', body }),
+  rotateCourierSecret: (id) => apiRequest(`/provider/pharmacy/couriers/${encodeURIComponent(id)}/rotate-secret`, { method: 'POST' }),
+  markOrderReady: (id) => apiRequest(`/provider/pharmacy/orders/${encodeURIComponent(id)}/ready`, { method: 'POST' }),
+  listControlledRegister: (query) => apiRequest(`/provider/pharmacy/controlled-register${toQueryString(query)}`),
+  getRegisterBalances: () => apiRequest('/provider/pharmacy/controlled-register/balances'),
+  downloadRegisterCsv: (query) => blobRequest(`/provider/pharmacy/controlled-register${toQueryString({ ...query, format: 'csv' })}`),
+  uploadPrescriptionPhoto: (id, body) => apiRequest(`/provider/prescriptions/${encodeURIComponent(id)}/images`, { method: 'POST', body }),
+  downloadPrescriptionPhoto: (id, imageId) => blobRequest(`/provider/prescriptions/${encodeURIComponent(id)}/images/${encodeURIComponent(imageId)}`),
   listPatients: (query) => apiRequest(`/provider/patients${toQueryString(query)}`),
   listPayments: (query) => apiRequest(`/provider/payments${toQueryString(query)}`),
   listPaymentSettlement: (query) => apiRequest(`/provider/payments/settlement${toQueryString(query)}`),

@@ -56,6 +56,26 @@ const PROVIDER_TYPE_LABEL = {
   INDEPENDENT_PRACTITIONER: 'Independent practitioner',
 };
 
+// What a provider bills for, by type. Drives the wording on the invoice form,
+// the sidebar and the catalogue page. Unknown or missing types use the hospital
+// wording.
+const BILLING_COPY = {
+  HOSPITAL: { desk: 'Hospital Desk', catalogue: 'Services & Pricing', itemLabel: 'Service or item', itemPlaceholder: 'e.g. Consultation', catalogueNote: 'Enter each service and its price when you create an invoice.' },
+  DIAGNOSTIC_LAB: { desk: 'Lab Desk', catalogue: 'Tests & Pricing', itemLabel: 'Test or investigation', itemPlaceholder: 'e.g. Full blood count', requestedBy: true, catalogueNote: 'Enter each test and its price when you create an invoice.' },
+  PHARMACY: { desk: 'Pharmacy Desk', catalogue: 'Drugs & Pricing', itemLabel: 'Drug or item', itemPlaceholder: 'e.g. Amoxicillin 500mg capsules', quantity: true, catalogueNote: 'Enter each drug, the quantity and the unit price when you create an invoice.' },
+  INDEPENDENT_PRACTITIONER: { desk: 'Practice Desk', catalogue: 'Services & Pricing', itemLabel: 'Consultation or procedure', itemPlaceholder: 'e.g. Follow-up consultation', catalogueNote: 'Enter each service and its price when you create an invoice.' },
+};
+function billingCopy() {
+  return BILLING_COPY[getTenant()?.providerType] || BILLING_COPY.HOSPITAL;
+}
+// Sidebar and page-title wording that depends on the provider type.
+function navLabel(id, label) {
+  if (SHOW_SAMPLE_DATA) return label;
+  if (id === 'hospital-desk') return billingCopy().desk;
+  if (id === 'services-pricing') return billingCopy().catalogue;
+  return label;
+}
+
 // The signed-in provider's own name. Falls back to a neutral label for a
 // session saved before the login response carried the tenant.
 function orgName() {
@@ -339,6 +359,7 @@ const state = {
   // wiring" below) — track whether a GET has completed or is in flight so
   // navigating back and forth doesn't re-fire the request every render.
   patientsSynced: false,
+  patientRecordsSynced: false,
   patientsSyncing: false,
   paymentsSynced: false,
   paymentsSyncing: false,
@@ -519,7 +540,7 @@ const modalRoot = document.querySelector('#modal-root');
 
 function icon(name) { return `<svg viewBox="0 0 24 24" aria-hidden="true">${iconPaths[name] || ''}</svg>`; }
 function renderNav() {
-  nav.innerHTML = groups.map(group => `<div class="nav-group"><div class="nav-label">${group.name}</div>${group.items.map(([id,label,iconName]) => `<a class="nav-link" href="#${id}" ${state.active === id ? 'aria-current="page"' : ''}><span class="nav-icon">${icon(iconName)}</span><span>${label}</span></a>`).join('')}</div>`).join('');
+  nav.innerHTML = groups.map(group => `<div class="nav-group"><div class="nav-label">${group.name}</div>${group.items.filter(([id]) => SHOW_SAMPLE_DATA || id !== 'branches').map(([id,label,iconName]) => `<a class="nav-link" href="#${id}" ${state.active === id ? 'aria-current="page"' : ''}><span class="nav-icon">${icon(iconName)}</span><span>${navLabel(id, label)}</span></a>`).join('')}</div>`).join('');
 }
 function card(kicker, body, className='') { return `<section class="card elev-sm ${className}"><div class="card-kicker">${kicker}</div>${body}</section>`; }
 function stat(value, label, kicker='') { return `<section class="card elev-sm stat-card"><span class="card-kicker">${kicker || label}</span><strong class="stat-value">${value}</strong><span class="stat-label">${label}</span></section>`; }
@@ -574,6 +595,17 @@ function greetingForNow() {
 // not backed by wellipay-api stay hidden. Set to true only for a local demo.
 const SHOW_SAMPLE_DATA = false;
 
+// Revenue by day and payments by channel, from live payments.
+function liveChartCards(snapshot) {
+  const weekTotal = snapshot.days.reduce((sum, d) => sum + d.total, 0);
+  const channelTotal = snapshot.channelTotals.reduce((sum, c) => sum + c[1], 0);
+  const note = snapshot.paymentsCapped ? 'latest 100 payments' : 'all payments';
+  return `<div class="grid two-col">
+      ${card(`Revenue by day · last 7 days`, `<div class="chart-summary" style="margin-bottom:12px;"><strong>${money(weekTotal)}</strong><span>collected in 7 days · ${note}</span></div>${weekTotal > 0 ? '<div style="height:160px;position:relative"><canvas id="revenueTrendChart"></canvas></div>' : '<p class="empty-state">No successful payments in the last 7 days.</p>'}`, 'trend-card')}
+      ${card(`Payments by channel`, `<div class="chart-summary" style="margin-bottom:12px;"><strong>${money(channelTotal)}</strong><span>by how patients paid · ${note}</span></div>${channelTotal > 0 ? '<div style="height:160px;position:relative"><canvas id="payerMixChart"></canvas></div>' : '<p class="empty-state">No successful payments yet.</p>'}`, 'mix-card')}
+    </div>`;
+}
+
 /* 1. Dashboard */
 function renderDashboard() {
   const sampleTiles = [['₦2,450,000','This period','Revenue'],['₦1,950,000','This period','Collected'],['₦500,000','This period','Outstanding'],['₦1,200,000','Owed to facility','HMO receivables'],['₦750,000','Awaiting HMO decision','Pending claims'],['₦450,000','In gateway pipeline','Pending settlements'],['124','This period','Patients served'],['₦35,000','This period','Refunds']];
@@ -601,11 +633,12 @@ function renderDashboard() {
     <div class="page-heading"><div><h1>${greetingForNow()}, ${(authState.user?.name || 'there').split(' ')[0]}</h1><p>${new Date().toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · ${escapeHtml(orgName())}${state.branch === 'All branches' ? '' : ', ' + escapeHtml(state.branch) + ' Branch'}</p></div><div class="seg" role="group" aria-label="Date range">${['Today','Week','Month','Quarter'].map(value=>`<label class="seg-opt"><input type="radio" name="filter" value="${value}" ${state.filter===value?'checked':''}><span>${value}</span></label>`).join('')}</div></div>
     ${snapshotCard}
     ${SHOW_SAMPLE_DATA ? metricGrid(tiles) : ''}
+    ${!SHOW_SAMPLE_DATA && snapshot ? liveChartCards(snapshot) : ''}
     ${SHOW_SAMPLE_DATA ? `<div class="grid two-col">
       ${card('Revenue trend · last 7 days (sample data)',`<div class="chart-summary" style="margin-bottom:12px;"><strong>₦2.45M</strong><span>+8.4% vs last week</span></div><div style="height:160px;position:relative"><canvas id="revenueTrendChart"></canvas></div>`,'trend-card')}
       ${card('Payer mix · this month (sample data)', `<div class="chart-summary" style="margin-bottom:12px;"><strong>₦6.2M</strong><span>collected by payer</span></div><div style="height:160px;position:relative"><canvas id="payerMixChart"></canvas></div>`, 'mix-card')}
     </div>` : ''}
-    ${card('Branch revenue', branchRevenueBody)}
+    ${SHOW_SAMPLE_DATA ? card('Branch revenue', branchRevenueBody) : ''}
     <div class="grid two-col">
       ${card('<div class="section-heading"><span>Receivables & ageing</span><a href="#receivables">View all →</a></div>', receivablesCardBody)}
       ${SHOW_SAMPLE_DATA ? card('<div class="section-heading"><span>Smart Reconciliation Centre (sample data)</span><a href="#reconciliation">Open workspace →</a></div>',`<div class="mini-metrics"><div class="mini-metric"><strong>${state.matched.toLocaleString()}</strong><span>Matched</span></div><div class="mini-metric"><strong style="color:var(--color-accent-700)">${state.unmatched.length}</strong><span>Unmatched</span></div><div class="mini-metric"><strong>${state.exceptions}</strong><span>Exceptions</span></div><div class="mini-metric"><strong>${state.duplicates}</strong><span>Duplicate</span></div></div><div class="row-list">${unmatchedMarkup}</div>`) : ''}
@@ -644,7 +677,8 @@ function renderDesk() {
 
 /* 3. Patients */
 function renderPatients() {
-  const filtered = state.patientList.filter(p => {
+  const patientRows = visiblePatients();
+  const filtered = patientRows.filter(p => {
     const matchesFilter = state.patientFilter === 'All' ||
       (state.patientFilter === 'HMO' && p.hmo !== 'Self-Pay') ||
       (state.patientFilter === 'Self-Pay' && p.hmo === 'Self-Pay') ||
@@ -658,7 +692,7 @@ function renderPatients() {
   return `<div class="page">
     ${renderBranchBanner()}
     ${pageHeading('Revenue Cycle', 'Patient Financial Management', 'Patient profiles, WelliID verification, outstanding balances and family sponsor links.')}
-    ${metricGrid([['3,204','Active Patients','Enrolled'],['₦2.1M','Total Balance Due','Receivables'],['18 days','Avg Age of Balance','Turnaround'],['94%','WelliPass Adoption','Digital Pass']])}
+    ${metricGrid(SHOW_SAMPLE_DATA ? [['3,204','Active Patients','Enrolled'],['₦2.1M','Total Balance Due','Receivables'],['18 days','Avg Age of Balance','Turnaround'],['94%','WelliPass Adoption','Digital Pass']] : [[String(patientRows.length),'Registered patients','Enrolled'],[money(patientRows.reduce((sum, p) => sum + p.balance, 0)),'Total balance due','Receivables'],[String(patientRows.filter(p => p.balance > 0).length),'Patients with a balance','Open'],[String(patientRows.reduce((sum, p) => sum + (p.invoiceCount || 0), 0)),'Invoices raised','Billed']])}
     ${card('<div class="section-heading"><span>Patient Directory</span><div class="toolbar"><button class="btn btn-primary" data-action="open-new-patient">Register Patient</button><button class="btn btn-secondary" data-action="export-patients">Export CSV</button></div></div>', `
       <div class="filter-bar">
         <div class="filter-group">
@@ -670,13 +704,13 @@ function renderPatients() {
       </div>
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>Patient & WelliID</th><th>HMO & Plan</th><th>Branch</th><th>Balance Due</th><th>Sponsors</th><th>Status</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Patient & WelliID</th><th>HMO & Plan</th>${SHOW_SAMPLE_DATA ? '<th>Branch</th>' : ''}<th>Balance Due</th><th>Sponsors</th><th>Status</th><th>Actions</th></tr></thead>
           <tbody>
             ${filtered.map(p => `
               <tr>
                 <td><strong>${escapeHtml(p.name)}</strong><br><small style="color:var(--muted)">${escapeHtml(p.id)} · ${escapeHtml(p.phone)}</small></td>
                 <td>${escapeHtml(p.hmo)} <small style="color:var(--muted)">(${escapeHtml(p.plan)})</small></td>
-                <td>${escapeHtml(p.branch)}</td>
+                ${SHOW_SAMPLE_DATA ? `<td>${escapeHtml(p.branch)}</td>` : ''}
                 <td><strong>${money(p.balance)}</strong>${p.live ? ' <small style="color:var(--muted)">(Live)</small>' : ''}</td>
                 <td>${p.sponsors.length ? p.sponsors.join(', ') : '—'}</td>
                 <td>${tag(p.status, p.balance > 0 ? 'accent' : 'neutral')}</td>
@@ -689,6 +723,7 @@ function renderPatients() {
           </tbody>
         </table>
       </div>
+      ${filtered.length ? '' : `<p class="empty-state">${state.patientRecordsSynced ? 'No patients yet. Use Register Patient to add the first one.' : 'Loading patients…'}</p>`}
     `)}
   </div>`;
 }
@@ -729,7 +764,7 @@ function renderInvoices() {
             ${filtered.map(inv => `
               <tr>
                 <td><strong>${escapeHtml(inv.id)}</strong></td>
-                <td>${escapeHtml(inv.patient)}<br><small style="color:var(--muted)">${escapeHtml(inv.patientId)} · ${escapeHtml(inv.branch)}</small></td>
+                <td>${escapeHtml(inv.patient)}<br><small style="color:var(--muted)">${escapeHtml(inv.patientId)}${SHOW_SAMPLE_DATA ? ' · ' + escapeHtml(inv.branch) : ''}</small></td>
                 <td>${escapeHtml(inv.date)}</td>
                 <td><strong>${money(inv.amount)}</strong></td>
                 <td>${money(inv.paid)}</td>
@@ -771,14 +806,14 @@ function renderPayments() {
       </div>
       <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>Reference</th><th>Channel</th><th>Patient & Invoice</th><th>Branch</th><th>Amount</th><th>Time</th><th>Status</th><th>Action</th></tr></thead>
+          <thead><tr><th>Reference</th><th>Channel</th><th>Patient & Invoice</th>${SHOW_SAMPLE_DATA ? '<th>Branch</th>' : ''}<th>Amount</th><th>Time</th><th>Status</th><th>Action</th></tr></thead>
           <tbody>
             ${filtered.map(p => `
               <tr>
                 <td><strong>${escapeHtml(p.id)}</strong><br><small style="color:var(--muted)">${escapeHtml(p.ref)}</small></td>
                 <td>${escapeHtml(p.channel)}</td>
                 <td>${escapeHtml(p.patient)}<br><small style="color:var(--muted)">${escapeHtml(p.inv)}</small></td>
-                <td>${escapeHtml(p.branch)}</td>
+                ${SHOW_SAMPLE_DATA ? `<td>${escapeHtml(p.branch)}</td>` : ''}
                 <td><strong>${money(p.amount)}</strong></td>
                 <td>${escapeHtml(p.time)}</td>
                 <td>${tag(p.status, 'neutral')}</td>
@@ -794,6 +829,13 @@ function renderPayments() {
 
 /* 6. Services & Pricing */
 function renderServicesPricing() {
+  if (!SHOW_SAMPLE_DATA) {
+    const copy = billingCopy();
+    return `<div class="page">
+    ${pageHeading('Revenue Cycle', copy.catalogue, 'Your price list.')}
+    ${card('Price list', `<p class="empty-state">A saved price list is not available yet. ${escapeHtml(copy.catalogueNote)}</p>`)}
+  </div>`;
+  }
   const filtered = state.servicesList.filter(s => {
     const matchesFilter = state.serviceFilter === 'All' || s.cat.toLowerCase() === state.serviceFilter.toLowerCase();
     const matchesSearch = !state.serviceSearch || s.name.toLowerCase().includes(state.serviceSearch.toLowerCase());
@@ -1070,17 +1112,17 @@ function renderSettlements() {
     ${renderBranchBanner()}
     ${pageHeading('Settlements','Gateway payouts & branch settlement','Follow gateway payout status and branch-level settlement totals.')}
     ${card('Paystack payouts (live)', renderPaystackPayouts())}
-    ${card('Payout timeline (illustrative)',events.map(([time,text])=>`<div class="timeline-line"><time>${time}</time><span>${text}</span></div>`).join(''))}
+    ${SHOW_SAMPLE_DATA ? card('Payout timeline (illustrative)',events.map(([time,text])=>`<div class="timeline-line"><time>${time}</time><span>${text}</span></div>`).join('')) : ''}
     ${card('<div class="section-heading"><span>Live settlement batches</span><span></span></div>', `
       <p style="margin:0 0 12px;font-size:12px;color:var(--muted);">There's no real payment gateway behind this service — payments are recorded directly, not via a Paystack/Flutterwave webhook — so "Create settlement" batches a branch's unsettled successful payments in wellipay-api, and "Confirm Settled" records that a human verified the funds landed. Neither is a real bank payout.</p>
       <div class="toolbar" style="margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-        ${Object.entries(FACILITY_BRANCH).map(([ref, label]) => `<button class="btn btn-secondary" data-action="create-settlement" data-facility="${ref}" data-label="${label}" style="font-size:11px;padding:6px 10px;">Settle ${label}</button>`).join('')}
+        ${(SHOW_SAMPLE_DATA ? Object.entries(FACILITY_BRANCH) : [[MAIN_FACILITY_REF, orgName()]]).map(([ref, label]) => `<button class="btn btn-secondary" data-action="create-settlement" data-facility="${ref}" data-label="${label}" style="font-size:11px;padding:6px 10px;">Settle ${label}</button>`).join('')}
       </div>
       ${liveRows
         ? `<div class="table-wrap"><table class="table"><thead><tr><th>Branch</th><th>Amount</th><th>Payments</th><th>Status</th><th></th></tr></thead><tbody>${liveRows}</tbody></table></div>`
         : `<p style="color:var(--muted);font-size:12px;">${state.settlementsSynced ? 'No settlement batches created yet.' : 'Loading live settlements…'}</p>`}
     `)}
-    ${card('<div class="section-heading"><span>Per-branch settlement (illustrative)</span><button class="btn btn-secondary" data-action="export-settlements">Export CSV</button></div>',`<div class="table-wrap"><table class="table"><thead><tr><th>Branch</th><th>Settled</th><th>Pending</th></tr></thead><tbody>${rows.map(([branch,settled,pending])=>`<tr><td><strong>${branch}</strong></td><td>${money(settled)}</td><td>${money(pending)}</td></tr>`).join('')}</tbody></table></div>`)}
+    ${SHOW_SAMPLE_DATA ? card('<div class="section-heading"><span>Per-branch settlement (illustrative)</span><button class="btn btn-secondary" data-action="export-settlements">Export CSV</button></div>',`<div class="table-wrap"><table class="table"><thead><tr><th>Branch</th><th>Settled</th><th>Pending</th></tr></thead><tbody>${rows.map(([branch,settled,pending])=>`<tr><td><strong>${branch}</strong></td><td>${money(settled)}</td><td>${money(pending)}</td></tr>`).join('')}</tbody></table></div>`) : ''}
   </div>`;
 }
 
@@ -1113,7 +1155,7 @@ function renderRefunds() {
                 <td><strong>${money(r.amount)}</strong></td>
                 <td>${escapeHtml(r.requester)}</td>
                 <td>${escapeHtml(r.reason)}</td>
-                <td>${tag(r.status, r.status === 'Approved' || r.status === 'Settled' ? 'neutral' : 'accent')}${r.recovery === 'OWED' ? ' ' + tag('Owed to Wellinovate', 'outline') : ''}</td>
+                <td>${tag(r.status, r.status === 'Approved' || r.status === 'Settled' ? 'neutral' : 'accent')}${r.recovery === 'OWED' ? ' ' + tag('Owed to Wellinovate', 'outline') : ''}${r.gateway ? '<br>' + tag(GATEWAY_REFUND_LABEL[r.gateway] || `Paystack: ${escapeHtml(r.gateway)}`, r.gateway === 'processed' ? 'neutral' : (r.gateway === 'failed' || r.gateway === 'needs-attention') ? 'accent' : 'outline') : ''}${r.gateway === 'failed' || r.gateway === 'needs-attention' ? `<br><small style="color:var(--color-accent-700)">The patient has not been paid. Contact Paystack support about this refund.</small>` : ''}</td>
                 <td>
                   ${r.deciding ? tag('Processing…', 'outline') : r.status.includes('Pending') ? `
                     <button class="btn btn-secondary" data-action="approve-refund-item" data-id="${escapeHtml(r.id)}" style="font-size:11px;padding:4px 8px;">Approve</button>
@@ -1632,10 +1674,10 @@ function initializeCharts() {
     chartInstances.push(new Chart(revenueCanvas, {
       type: 'bar',
       data: {
-        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        labels: SHOW_SAMPLE_DATA ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] : (state.liveSnapshot?.days || []).map(d => d.label),
         datasets: [{
-          label: 'Revenue (M)',
-          data: [1.8, 2.1, 1.6, 2.4, 2.0, 2.6, 2.45],
+          label: SHOW_SAMPLE_DATA ? 'Revenue (M)' : 'Revenue (₦)',
+          data: SHOW_SAMPLE_DATA ? [1.8, 2.1, 1.6, 2.4, 2.0, 2.6, 2.45] : (state.liveSnapshot?.days || []).map(d => d.total),
           backgroundColor: '#ec3013',
           borderRadius: 4
         }]
@@ -1658,10 +1700,10 @@ function initializeCharts() {
     chartInstances.push(new Chart(mixCanvas, {
       type: 'doughnut',
       data: {
-        labels: ['Patient', 'HMO', 'Insurance', 'Corporate'],
+        labels: SHOW_SAMPLE_DATA ? ['Patient', 'HMO', 'Insurance', 'Corporate'] : (state.liveSnapshot?.channelTotals || []).map(c => c[0]),
         datasets: [{
-          data: [40, 45, 10, 5],
-          backgroundColor: ['#d4d4d4', '#ec3013', '#7d190a', '#525252'],
+          data: SHOW_SAMPLE_DATA ? [40, 45, 10, 5] : (state.liveSnapshot?.channelTotals || []).map(c => c[1]),
+          backgroundColor: ['#ec3013', '#d4d4d4', '#7d190a', '#525252', '#a3a3a3', '#f58a78'],
           borderWidth: 0,
           hoverOffset: 4
         }]
@@ -1700,7 +1742,9 @@ function initializeCharts() {
 function render() {
   if (!labels[state.active]) state.active = 'dashboard';
   renderNav();
-  document.querySelector('#page-title').textContent = labels[state.active];
+  document.querySelector('#page-title').textContent = navLabel(state.active, labels[state.active]);
+  const branchPicker = document.querySelector('.branch-picker');
+  if (branchPicker) branchPicker.style.display = SHOW_SAMPLE_DATA ? '' : 'none';
   const branchSelect = document.querySelector('#branch-select');
   if (branchSelect && branchSelect.value !== state.branch) branchSelect.value = state.branch;
 
@@ -1737,6 +1781,7 @@ function render() {
   modalRoot.innerHTML = renderModal();
   content.focus({ preventScroll: true });
 
+  if ((state.active === 'patients' || state.active === 'invoices' || state.active === 'desk') && !state.patientRecordsSynced) ensurePatientRecords().then(() => render());
   if (state.active === 'patients' && !state.patientsSynced) syncPatientsFromApi();
   if (state.active === 'payments' && !state.paymentsSynced) syncPaymentsFromApi();
   if (state.active === 'invoices' && !state.invoicesSynced) syncInvoicesFromApi();
@@ -1954,16 +1999,7 @@ function renderModal() {
   }
 
   if (state.modal.type === 'new-patient') {
-    return `<div class="modal-backdrop" data-action="dismiss-modal">
-      <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="new-pt-title">
-        <h2 id="new-pt-title">Register New Patient</h2>
-        <p>Register a patient profile, assign primary branch, and link HMO coverage or WelliPass.</p>
-        <form id="new-patient-form" class="form-grid">
-          <div class="form-grid two-col">
-            <div class="form-group"><label>Full Name *</label><input class="input" name="name" required placeholder="e.g. Amina Bello"></div>
-            <div class="form-group"><label>Phone Number *</label><input class="input" name="phone" required placeholder="e.g. +234 803 000 0000"></div>
-          </div>
-          <div class="form-grid two-col">
+    const demoFields = `<div class="form-grid two-col">
             <div class="form-group"><label>Primary Hospital Branch</label>
               <select name="branch">
                 <option value="Wuse">Wuse</option><option value="Maitama">Maitama</option><option value="Garki">Garki</option><option value="Kaduna">Kaduna</option><option value="Lagos">Lagos</option>
@@ -1988,10 +2024,21 @@ function renderModal() {
             <div class="form-group"><label>Issue WelliPass?</label>
               <select name="issuePass"><option value="yes">Yes — Generate WelliID & QR Pass</option><option value="no">No — Standard Physical File</option></select>
             </div>
+          </div>`;
+    const realFields = `<div class="form-group"><label>Email (optional)</label><input class="input" type="email" name="email" maxlength="160" placeholder="e.g. amina@example.com"></div>`;
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="new-pt-title">
+        <h2 id="new-pt-title">Register New Patient</h2>
+        <p>${SHOW_SAMPLE_DATA ? 'Register a patient profile, assign primary branch, and link HMO coverage or WelliPass.' : 'Register a patient so you can invoice them.'}</p>
+        <form id="new-patient-form" class="form-grid">
+          <div class="form-grid two-col">
+            <div class="form-group"><label>Full Name *</label><input class="input" name="name" required minlength="2" maxlength="120" placeholder="e.g. Amina Bello"></div>
+            <div class="form-group"><label>Phone Number *</label><input class="input" name="phone" required maxlength="30" placeholder="e.g. +234 803 000 0000"></div>
           </div>
+          ${SHOW_SAMPLE_DATA ? demoFields : realFields}
           <div class="modal-actions">
             <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
-            <button class="btn btn-primary" type="submit">Create Patient Profile</button>
+            <button class="btn btn-primary" type="submit" id="new-patient-submit">${SHOW_SAMPLE_DATA ? 'Create Patient Profile' : 'Register patient'}</button>
           </div>
         </form>
       </section>
@@ -1999,7 +2046,7 @@ function renderModal() {
   }
 
   if (state.modal.type === 'find-patient') {
-    const list = state.patientList;
+    const list = visiblePatients();
     return `<div class="modal-backdrop" data-action="dismiss-modal">
       <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="find-pt-title">
         <h2 id="find-pt-title">Find Patient for Hospital Desk</h2>
@@ -2032,6 +2079,37 @@ function renderModal() {
   }
 
   if (state.modal.type === 'create-invoice') {
+    const patients = visiblePatients();
+    if (!SHOW_SAMPLE_DATA && !patients.length) {
+      return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="create-inv-title">
+        <h2 id="create-inv-title">Create invoice</h2>
+        <p>${state.patientRecordsSynced ? 'Register a patient before you create an invoice.' : 'Loading patients…'}</p>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
+          <button class="btn btn-primary" type="button" data-action="open-new-patient">Register patient</button>
+        </div>
+      </section>
+    </div>`;
+    }
+    const branchField = SHOW_SAMPLE_DATA ? `<div class="form-group"><label>Branch</label>
+              <select name="branch">
+                <option value="Wuse">Wuse</option><option value="Maitama">Maitama</option><option value="Garki">Garki</option><option value="Kaduna">Kaduna</option><option value="Lagos">Lagos</option>
+              </select>
+            </div>` : '';
+    const copy = billingCopy();
+    const serviceField = SHOW_SAMPLE_DATA
+      ? `<div class="form-group"><label>Primary Service Item</label>
+            <select name="serviceItem" id="inv-service-picker">
+              ${state.servicesList.map(s => `<option value="${escapeHtml(s.cash)}" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)} — ${money(s.cash)}</option>`).join('')}
+            </select>
+          </div>`
+      : `<div class="form-group"><label>${escapeHtml(copy.itemLabel)} *</label><input class="input" name="serviceName" required maxlength="200" placeholder="${escapeHtml(copy.itemPlaceholder)}"></div>
+          <div class="form-grid two-col">
+            ${copy.quantity ? `<div class="form-group"><label>Quantity *</label><input class="input" type="number" name="quantity" required min="1" step="1" value="1"></div>` : ''}
+            <div class="form-group"><label>${copy.quantity ? 'Unit price (₦) *' : 'Amount (₦) *'}</label><input class="input" type="number" name="serviceAmount" required min="1" step="any" placeholder="e.g. 8600"></div>
+            ${copy.requestedBy ? `<div class="form-group"><label>Requested by (optional)</label><input class="input" name="requestedBy" maxlength="120" placeholder="Doctor or referring facility"></div>` : ''}
+          </div>`;
     return `<div class="modal-backdrop" data-action="dismiss-modal">
       <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="create-inv-title">
         <h2 id="create-inv-title">Create Digital Invoice</h2>
@@ -2040,20 +2118,12 @@ function renderModal() {
           <div class="form-grid two-col">
             <div class="form-group"><label>Patient *</label>
               <select name="patientId" required>
-                ${state.patientList.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)} (${escapeHtml(p.id)} · ${escapeHtml(p.branch)})</option>`).join('')}
+                ${patients.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)} (${escapeHtml(p.id)}${SHOW_SAMPLE_DATA ? ' · ' + escapeHtml(p.branch) : ''})</option>`).join('')}
               </select>
             </div>
-            <div class="form-group"><label>Branch</label>
-              <select name="branch">
-                <option value="Wuse">Wuse</option><option value="Maitama">Maitama</option><option value="Garki">Garki</option><option value="Kaduna">Kaduna</option><option value="Lagos">Lagos</option>
-              </select>
-            </div>
+            ${branchField}
           </div>
-          <div class="form-group"><label>Primary Service Item</label>
-            <select name="serviceItem" id="inv-service-picker">
-              ${state.servicesList.map(s => `<option value="${escapeHtml(s.cash)}" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)} — ${money(s.cash)}</option>`).join('')}
-            </select>
-          </div>
+          ${serviceField}
           <div class="form-grid two-col">
             <div class="form-group"><label>Additional Fee / Lab (Optional)</label>
               <input class="input" type="number" name="extraFee" placeholder="0" min="0">
@@ -2349,8 +2419,16 @@ function updateClaim(id, status) {
 // prepended, tagged `live: true` so a re-sync can replace them without
 // touching the original mock rows.
 
-function branchLabel(ref) { return FACILITY_BRANCH[ref] || 'Other facility'; }
+// A provider with a single site bills against this reference. Multi-branch
+// sample data still uses the per-branch references.
+const MAIN_FACILITY_REF = 'facility-main';
+function currentFacilityRef() {
+  if (!SHOW_SAMPLE_DATA) return MAIN_FACILITY_REF;
+  return state.branch === 'All branches' ? 'facility-wuse' : `facility-${state.branch.toLowerCase()}`;
+}
+function branchLabel(ref) { return ref === MAIN_FACILITY_REF ? orgName() : (FACILITY_BRANCH[ref] || 'Other facility'); }
 const FACILITY_BRANCH = { 'facility-wuse': 'Wuse', 'facility-maitama': 'Maitama', 'facility-garki': 'Garki', 'facility-kaduna': 'Kaduna', 'facility-lagos': 'Lagos' };
+const CHANNEL_SHORT_LABEL = { card: 'Card', bank_transfer: 'Bank transfer', ussd: 'USSD', cash: 'Cash', hmo_direct: 'HMO direct', wellipass: 'WelliPass' };
 const PAYMENT_CHANNEL_LABEL = { card: 'Card (Live)', bank_transfer: 'Bank Transfer (Live)', ussd: 'USSD (Live)', cash: 'Cash (Live)', hmo_direct: 'HMO Direct (Live)', wellipass: 'WelliPass (Live)' };
 const PAYMENT_STATUS_LABEL = { SUCCESS: 'Success', PENDING: 'Pending', FAILED: 'Failed' };
 const CLAIM_STATUS_LABEL = { DRAFT: 'Draft', SUBMITTED: 'Submitted', APPROVED: 'Approved', PARTIALLY_APPROVED: 'Partially Approved', REJECTED: 'Rejected' };
@@ -2360,9 +2438,54 @@ const CLAIM_STATUS_LABEL = { DRAFT: 'Draft', SUBMITTED: 'Submitted', APPROVED: '
 // created), so CANCELLED is labelled plainly rather than forced into one
 // of those four buckets; it just won't highlight under any filter chip.
 const INVOICE_STATUS_LABEL = { OPEN: 'Unpaid', PARTIALLY_PAID: 'Part-paid', PAID: 'Paid', CANCELLED: 'Cancelled' };
+// Where Paystack stands on a refund it was asked to pay.
+const GATEWAY_REFUND_LABEL = { pending: 'Paystack: pending', processing: 'Paystack: processing', processed: 'Paystack: refunded', 'needs-attention': 'Paystack: needs attention', failed: 'Paystack: failed' };
+const GATEWAY_REFUND_DONE = new Set(['processed', 'failed']);
 const REFUND_STATUS_LABEL = { PENDING: 'Pending Approval', APPROVED: 'Approved', REJECTED: 'Rejected' };
 
+// The provider's own registered patients. Without SHOW_SAMPLE_DATA the demo
+// patients are never listed or offered for billing.
+function visiblePatients() {
+  return SHOW_SAMPLE_DATA ? state.patientList : state.patientList.filter(p => p.registered);
+}
+
+function patientFromRecord(item) {
+  return {
+    id: item.patientRef,
+    name: item.fullName,
+    phone: item.phone || '—',
+    email: item.email || '',
+    branch: orgName(),
+    hmo: 'Self-Pay',
+    plan: 'Standard',
+    balance: 0,
+    status: 'Active',
+    wellipass: false,
+    sponsors: [],
+    lastVisit: '—',
+    registered: true,
+  };
+}
+
+let patientRecordsPromise = null;
+// Loads the registered patients once. Other syncs wait on it so invoices,
+// payments and refunds can show a patient's name instead of the reference.
+function ensurePatientRecords() {
+  if (state.patientRecordsSynced) return Promise.resolve();
+  if (!patientRecordsPromise) {
+    patientRecordsPromise = wellipayApi.listPatientRecords({ limit: 200 })
+      .then(data => {
+        state.patientList = [...data.items.map(patientFromRecord), ...state.patientList.filter(p => !p.registered)];
+        state.patientRecordsSynced = true;
+      })
+      .catch(err => { showToast('API Sync Failed', `Patients not loaded: ${err.message}`); })
+      .finally(() => { patientRecordsPromise = null; });
+  }
+  return patientRecordsPromise;
+}
+
 async function syncPatientsFromApi() {
+  await ensurePatientRecords();
   if (state.patientsSyncing) return;
   state.patientsSyncing = true;
   try {
@@ -2389,6 +2512,7 @@ async function syncPatientsFromApi() {
 async function syncPaymentsFromApi() {
   if (state.paymentsSyncing) return;
   state.paymentsSyncing = true;
+  await ensurePatientRecords();
   try {
     const data = await wellipayApi.listPayments({ limit: 50 });
     const patientNameByRef = new Map(state.patientList.map(p => [p.id, p.name]));
@@ -2421,6 +2545,7 @@ async function syncPaymentsFromApi() {
 async function syncInvoicesFromApi() {
   if (state.invoicesSyncing) return;
   state.invoicesSyncing = true;
+  await ensurePatientRecords();
   try {
     const data = await wellipayApi.listInvoices({ limit: 100 });
     const patientNameByRef = new Map(state.patientList.map(p => [p.id, p.name]));
@@ -2460,9 +2585,24 @@ async function syncInvoicesFromApi() {
 // mock toggle. Payments and invoices are fetched alongside (rather than
 // reused from state) so this works even landing on Refunds directly,
 // before those other pages have synced.
+// Asks the API for Paystack's current status on refunds that are not final.
+// Runs once per page load, a few at a time. A failure leaves the saved status.
+async function refreshGatewayStatuses() {
+  const open = state.refundList.filter(r => r.live && r.gateway && !GATEWAY_REFUND_DONE.has(r.gateway)).slice(0, 10);
+  let changed = false;
+  for (const row of open) {
+    try {
+      const updated = await wellipayApi.refreshRefundGatewayStatus(row.id);
+      if (updated.gatewayStatus && updated.gatewayStatus !== row.gateway) { row.gateway = updated.gatewayStatus; changed = true; }
+    } catch { /* keep the saved status */ }
+  }
+  if (changed && state.active === 'refunds') render();
+}
+
 async function syncRefundsFromApi() {
   if (state.refundsSyncing) return;
   state.refundsSyncing = true;
+  await ensurePatientRecords();
   try {
     const [refundsData, paymentsData, invoicesData] = await Promise.all([
       wellipayApi.listRefunds({ limit: 100 }),
@@ -2486,6 +2626,7 @@ async function syncRefundsFromApi() {
         status: REFUND_STATUS_LABEL[item.status] || item.status,
         dualApproval: item.amountMinor >= toMinor(state.settings.threshold),
         recovery: item.recoveryStatus || null,
+        gateway: item.gatewayStatus || null,
         live: true,
       };
     });
@@ -2497,6 +2638,7 @@ async function syncRefundsFromApi() {
     state.approvals = [...liveApprovalItems, ...state.approvals.filter(a => !a.live)];
 
     state.refundsSynced = true;
+    refreshGatewayStatuses();
   } catch (err) {
     showToast('API Sync Failed', `Live refunds not loaded: ${err.message}`);
   } finally {
@@ -2959,7 +3101,7 @@ async function syncReferralsFromApi() {
 
 async function createLiveReferral(partnerId, patientRef, description, partnerLabel) {
   try {
-    const facilityRef = state.branch === 'All branches' ? 'facility-wuse' : `facility-${state.branch.toLowerCase()}`;
+    const facilityRef = currentFacilityRef();
     const created = await wellipayApi.createReferral({ partnerId, facilityRef, patientRef, description });
     state.liveReferrals.unshift(created);
     logAudit('Referral Sent', `${patientRef} → ${partnerLabel || partnerId}: ${description}`);
@@ -3053,7 +3195,27 @@ async function syncDashboardFromApi() {
       });
     const branchRevenue = Object.entries(branchTotals).sort((a, b) => b[1] - a[1]);
 
+    // Revenue per day for the last 7 days and totals per payment channel, from
+    // the successful payments loaded above (the latest 100).
+    const dayKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - (6 - i));
+      return { key: dayKey(d), label: d.toLocaleDateString('en-NG', { weekday: 'short', day: 'numeric' }), total: 0 };
+    });
+    const channelTotals = {};
+    payments.items.filter(item => item.status === 'SUCCESS').forEach(item => {
+      const day = days.find(d => d.key === dayKey(new Date(item.occurredAt)));
+      if (day) day.total += fromMinor(item.amountMinor);
+      const label = CHANNEL_SHORT_LABEL[item.channel] || item.channel;
+      channelTotals[label] = (channelTotals[label] || 0) + fromMinor(item.amountMinor);
+    });
+
     state.liveSnapshot = {
+      days,
+      channelTotals: Object.entries(channelTotals).sort((a, b) => b[1] - a[1]),
+      paymentsCapped: payments.items.length >= 100,
       collected,
       pendingClaims,
       approvedClaims,
@@ -3208,7 +3370,7 @@ async function ensureDeskInvoice() {
   if (state.deskInvoiceId) return state.deskInvoiceId;
   const created = await wellipayApi.createInvoice({
     providerInvoiceRef: `DESK-${escapeHtml(state.patient.welliId)}-${Date.now()}`,
-    facilityRef: state.branch === 'All branches' ? 'facility-wuse' : `facility-${state.branch.toLowerCase()}`,
+    facilityRef: currentFacilityRef(),
     patientRef: state.patient.welliId,
     description: 'Consultation + ECG + Full Blood Count',
     amountMinor: toMinor(58000),
@@ -3223,7 +3385,7 @@ async function syncDeskEligibilityCheck() {
     await ensureDeskInvoice();
     await wellipayApi.createEligibilityCheck({
       providerRequestRef: `DESK-ELIG-${Date.now()}`,
-      facilityRef: state.branch === 'All branches' ? 'facility-wuse' : `facility-${state.branch.toLowerCase()}`,
+      facilityRef: currentFacilityRef(),
       patientRef: state.patient.welliId,
       payerRef: state.patient.hmo.split(' — ')[0],
       serviceCodes: ['CONSULT-GEN', 'ECG', 'LAB-FBC'],
@@ -3241,7 +3403,7 @@ async function syncDeskConsent() {
     const invoiceId = await ensureDeskInvoice();
     await wellipayApi.createFinancialConsent({
       providerConsentRef: `DESK-CONSENT-${Date.now()}`,
-      facilityRef: state.branch === 'All branches' ? 'facility-wuse' : `facility-${state.branch.toLowerCase()}`,
+      facilityRef: currentFacilityRef(),
       patientRef: state.patient.welliId,
       invoiceId,
       estimateRevision: 'rev-1',
@@ -3460,7 +3622,7 @@ function dispatch(action, target, domEvent) {
     }
     case 'view-patient': state.modal={type:'patient-profile', id};render();break;
     case 'view-desk-receipt': {
-      const deskInv = { id: 'RCT-' + Math.floor(1000 + Math.random() * 9000), patient: state.patient.name, patientId: state.patient.welliId, branch: state.branch === 'All branches' ? 'Wuse' : state.branch, amount: 58000, paid: 58000, status: 'Paid in Full', date: 'Sep 27, 2026', payer: state.payer === 'hmo' ? `HMO 80% (₦46,400) · Patient (₦11,600)` : `Paid via ${state.payer}` };
+      const deskInv = { id: 'RCT-' + Math.floor(1000 + Math.random() * 9000), patient: state.patient.name, patientId: state.patient.welliId, branch: SHOW_SAMPLE_DATA ? (state.branch === 'All branches' ? 'Wuse' : state.branch) : orgName(), amount: 58000, paid: 58000, status: 'Paid in Full', date: 'Sep 27, 2026', payer: state.payer === 'hmo' ? `HMO 80% (₦46,400) · Patient (₦11,600)` : `Paid via ${state.payer}` };
       state.modal = { type: 'receipt', invoice: deskInv };
       render();
       break;
@@ -3877,6 +4039,31 @@ document.addEventListener('submit', async event => {
     const question = new FormData(event.target).get('question')?.toString().trim();
     if (question) ask(question);
   }
+  if (event.target.id === 'new-patient-form' && !SHOW_SAMPLE_DATA) {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    const btn = document.getElementById('new-patient-submit');
+    if (btn) { btn.disabled = true; btn.textContent = 'Registering…'; }
+    try {
+      const email = fd.get('email').toString().trim();
+      const created = await wellipayApi.createPatientRecord({
+        fullName: fd.get('name').toString().trim(),
+        phone: fd.get('phone').toString().trim(),
+        ...(email ? { email } : {}),
+      });
+      const patient = patientFromRecord(created);
+      state.patientList.unshift(patient);
+      state.patient = { name: patient.name, welliId: patient.id, hmo: 'Self-Pay' };
+      state.modal = null;
+      logAudit('Patient Registered', `${patient.name} (${patient.id})`);
+      showToast('Patient registered', `${patient.name} is now in your patient list as ${patient.id}.`);
+      render();
+    } catch (err) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Register patient'; }
+      showToast('Could not register patient', err.message);
+    }
+    return;
+  }
   if (event.target.id === 'new-patient-form') {
     event.preventDefault();
     const fd = new FormData(event.target);
@@ -3905,22 +4092,28 @@ document.addEventListener('submit', async event => {
   if (event.target.id === 'create-invoice-form') {
     event.preventDefault();
     const fd = new FormData(event.target);
-    const pt = state.patientList.find(p => p.id === fd.get('patientId')) || state.patientList[0];
+    const pt = visiblePatients().find(p => p.id === fd.get('patientId'));
+    if (!pt) { showToast('Choose a patient', 'Pick a patient from the list.'); return; }
     const srvSelect = document.querySelector('#inv-service-picker');
-    const srvName = srvSelect.selectedOptions[0]?.dataset.name || 'Clinical Care';
-    const srvAmt = Number(fd.get('serviceItem')) || 25000;
+    const srvName = SHOW_SAMPLE_DATA ? (srvSelect.selectedOptions[0]?.dataset.name || 'Clinical Care') : fd.get('serviceName').toString().trim();
+    const quantity = SHOW_SAMPLE_DATA ? 1 : (billingCopy().quantity ? Math.max(1, Math.floor(Number(fd.get('quantity')) || 1)) : 1);
+    const srvAmt = SHOW_SAMPLE_DATA ? (Number(fd.get('serviceItem')) || 25000) : Number(fd.get('serviceAmount')) * quantity;
+    const requestedBy = SHOW_SAMPLE_DATA ? '' : (fd.get('requestedBy') || '').toString().trim();
+    const itemText = quantity > 1 ? `${srvName} × ${quantity}` : srvName;
+    const invoiceText = requestedBy ? `${itemText} (requested by ${requestedBy})` : itemText;
+    if (!srvName || !(srvAmt > 0)) { showToast('Check the invoice', 'Enter the service and an amount above zero.'); return; }
     const extra = Number(fd.get('extraFee')) || 0;
     const totalAmt = srvAmt + extra;
     const newInv = {
       id: 'INV-' + Math.floor(2100 + Math.random() * 900),
       patient: pt.name,
       patientId: pt.id,
-      branch: fd.get('branch').toString(),
+      branch: SHOW_SAMPLE_DATA ? fd.get('branch').toString() : orgName(),
       amount: totalAmt,
       paid: 0,
       status: 'Unpaid',
       date: new Date().toISOString().slice(0, 10),
-      items: [{ desc: srvName, amt: srvAmt }, ...(extra ? [{ desc: 'Supplemental Diagnostics / Labs', amt: extra }] : [])],
+      items: [{ desc: invoiceText, amt: srvAmt }, ...(extra ? [{ desc: 'Supplemental Diagnostics / Labs', amt: extra }] : [])],
       payer: fd.get('payerDetail').toString()
     };
     state.invoiceList.unshift(newInv);
@@ -3931,14 +4124,17 @@ document.addEventListener('submit', async event => {
     try {
       const created = await wellipayApi.createInvoice({
         providerInvoiceRef: newInv.id,
-        facilityRef: `facility-${newInv.branch.toLowerCase()}`,
+        facilityRef: SHOW_SAMPLE_DATA ? `facility-${newInv.branch.toLowerCase()}` : MAIN_FACILITY_REF,
         patientRef: pt.id,
-        description: srvName,
+        description: extra ? `${invoiceText} + additional fee` : invoiceText,
         amountMinor: toMinor(totalAmt),
         currency: 'NGN',
       });
       newInv.apiInvoiceId = created.invoiceId;
       showToast('Synced to WelliPay API', `${newInv.id} recorded on the server as ${created.invoiceId}.`);
+      // The ledger lists live invoices only, so reload it.
+      state.invoicesSynced = false;
+      await syncInvoicesFromApi();
       render();
     } catch (err) {
       showToast('API Sync Failed', `${newInv.id} saved locally only: ${err.message}`);

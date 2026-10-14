@@ -111,9 +111,40 @@ export function logoutStaff() {
   persistStaffSession();
 }
 
+// Renew a token that is about to expire, so a person who keeps working is not
+// signed out. One renewal runs at a time; callers wait for it.
+const RENEW_WITHIN_MS = 3 * 60 * 1000;
+let renewalInFlight = null;
+
+function renewSession() {
+  if (!renewalInFlight) {
+    const sent = staffSession;
+    renewalInFlight = fetch(`${API_BASE}/staff/refresh`, { method: 'POST', headers: { Authorization: `Bearer ${sent.token}` } })
+      .then(async res => {
+        const payload = await res.json().catch(() => null);
+        // Only apply the result if the same session is still active.
+        if (res.ok && payload && payload.access_token && staffSession === sent) {
+          staffSession = {
+            ...sent,
+            token: payload.access_token,
+            expiresAt: Date.now() + payload.expires_in * 1000,
+            staff: payload.staff || sent.staff,
+          };
+          persistStaffSession();
+        }
+      })
+      .catch(() => { /* a network failure leaves the current token to run out */ })
+      .finally(() => { renewalInFlight = null; });
+  }
+  return renewalInFlight;
+}
+
 async function getActiveToken() {
   if (staffSession) {
-    if (staffSession.expiresAt - Date.now() > 15000) return staffSession.token;
+    if (staffSession.expiresAt - Date.now() <= RENEW_WITHIN_MS && staffSession.expiresAt - Date.now() > 0) {
+      await renewSession();
+    }
+    if (staffSession && staffSession.expiresAt - Date.now() > 15000) return staffSession.token;
     clearExpiredSession('Your session expired. Please sign in again.');
     throw new Error('Your session expired. Please sign in again.');
   }
@@ -174,6 +205,8 @@ export const wellipayApi = {
     apiRequest('/provider/eligibility-checks', { method: 'POST', body, idempotent: 'elig' }),
   createFinancialConsent: (body) =>
     apiRequest('/provider/financial-consents', { method: 'POST', body, idempotent: 'consent' }),
+  listPatientRecords: (query) => apiRequest(`/provider/patient-records${toQueryString(query)}`),
+  createPatientRecord: (body) => apiRequest('/provider/patient-records', { method: 'POST', body }),
   listPatients: (query) => apiRequest(`/provider/patients${toQueryString(query)}`),
   listPayments: (query) => apiRequest(`/provider/payments${toQueryString(query)}`),
   listPaystackSettlements: (query) => apiRequest(`/provider/paystack/settlements${toQueryString(query)}`),
@@ -186,6 +219,8 @@ export const wellipayApi = {
     apiRequest(`/provider/claims/${encodeURIComponent(claimId)}/status`, { method: 'PATCH', body }),
   createRefund: (body) => apiRequest('/provider/refunds', { method: 'POST', body, idempotent: 'ref' }),
   listRefunds: (query) => apiRequest(`/provider/refunds${toQueryString(query)}`),
+  refreshRefundGatewayStatus: (refundId) =>
+    apiRequest(`/provider/refunds/${encodeURIComponent(refundId)}/gateway-status`, { method: 'POST' }),
   decideRefund: (refundId, body) =>
     apiRequest(`/provider/refunds/${encodeURIComponent(refundId)}/decision`, { method: 'PATCH', body }),
   listUnmatchedTransactions: (query) => apiRequest(`/provider/unmatched-transactions${toQueryString(query)}`),

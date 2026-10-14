@@ -296,7 +296,7 @@ function openProfileDropdown() {
 }
 
 import { createPharmacy, PHARMACY_PAGES } from './pharmacy.js';
-import { wellipayApi, toMinor, fromMinor, loginStaff, logoutStaff, getStaffSession, getTenant, fetchBanks, fetchApplicationTerms, submitProviderApplication, onSessionExpired } from './api.js';
+import { wellipayApi, onNetworkChange, reportNetwork, toMinor, fromMinor, loginStaff, logoutStaff, getStaffSession, getTenant, fetchBanks, fetchApplicationTerms, submitProviderApplication, onSessionExpired } from './api.js';
 
 const groups = [
   { name: 'Overview', items: [['dashboard', 'Dashboard', 'grid'], ['hospital-desk', 'Hospital Desk', 'wallet'], ['ai-insights', 'AI Insights', 'spark'], ['notifications', 'Notifications', 'bell']] },
@@ -6404,6 +6404,23 @@ onSessionExpired((message) => {
   authState.user = null;
   showAuthScreen(message);
 });
+
+// Offline banner. Shown when the browser reports no connection or a request
+// cannot reach the API; hidden when either recovers.
+function setOfflineBanner(offline) {
+  let banner = document.getElementById('offline-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'offline-banner';
+    banner.setAttribute('role', 'status');
+    banner.textContent = 'You are offline. Nothing you enter will be saved until the connection returns.';
+    document.body.prepend(banner);
+  }
+  banner.style.display = offline ? 'block' : 'none';
+}
+onNetworkChange(reachable => setOfflineBanner(!reachable));
+window.addEventListener('offline', () => reportNetwork(false));
+window.addEventListener('online', () => { reportNetwork(true); showToast('Back online', 'Reload the page if any section still shows old data.'); });
 
 // Boot: apply saved theme, then either restore an existing staff session
 // (sessionStorage survives a reload, not a closed tab) or show the login

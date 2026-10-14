@@ -381,6 +381,7 @@ const state = {
   checkups: [],
   checkupsSynced: false,
   checkupsError: '',
+  resultsByBooking: {},
   patientsSyncing: false,
   paymentsSynced: false,
   paymentsSyncing: false,
@@ -953,7 +954,7 @@ function renderServicesPricing() {
         : `<p class="empty-state">No items yet. Use Add item to save the first one.</p>`;
     return `<div class="page">
     ${pageHeading('Revenue Cycle', copy.catalogue, 'Your price list. Pick from it when you create an invoice.')}
-    ${card(`<div class="section-heading"><span>Price list</span><span>${isLab() ? '<button class="btn btn-secondary" data-action="open-catalogue">Test catalogue</button> ' : ''}<button class="btn btn-primary" data-action="open-price-item">Add item</button></span></div>`, body)}
+    ${card(`<div class="section-heading"><span>Price list</span><span>${isLab() ? '<button class="btn btn-secondary" data-action="open-catalogue">Test catalogue</button> ' : ''}<button class="btn btn-secondary" data-action="print-price-sheet">Print price sheet</button> <button class="btn btn-primary" data-action="open-price-item">Add item</button></span></div>`, body)}
   </div>`;
   }
   const filtered = state.servicesList.filter(s => {
@@ -1573,7 +1574,7 @@ function renderBookings() {
               <td>${escapeHtml([b.address, b.notes].filter(Boolean).join(' · ') || '—')}</td>
               <td>${b.invoiceId ? (linked ? `${escapeHtml(linked.id)}<br>${tag(escapeHtml(linked.status), linked.status === 'Paid' ? 'neutral' : linked.status === 'Unpaid' ? 'accent' : 'outline')}` : 'Linked') : `<button class="btn btn-ghost" data-action="open-link-invoice" data-id="${escapeHtml(b.bookingId)}">Link invoice</button>`}</td>
               <td>${tag(bookingStatusLabel(b), b.status === 'READY' ? 'neutral' : 'outline')}</td>
-              <td>${next ? `<button class="btn btn-secondary" data-action="advance-booking" data-id="${escapeHtml(b.bookingId)}" data-status="${next[0]}">${next[1]}</button>` : ''}${b.status === 'BOOKED' ? ` <button class="btn btn-ghost" data-action="advance-booking" data-id="${escapeHtml(b.bookingId)}" data-status="CANCELLED">Cancel</button>` : ''}</td>
+              <td>${next ? `<button class="btn btn-secondary" data-action="advance-booking" data-id="${escapeHtml(b.bookingId)}" data-status="${next[0]}">${next[1]}</button>` : ''}${['SAMPLE_COLLECTED', 'PROCESSING', 'READY'].includes(b.status) ? ` <button class="btn btn-secondary" data-action="open-results" data-id="${escapeHtml(b.bookingId)}">${b.kind === 'IMAGING' ? 'Report' : 'Results'}</button>` : ''}${b.status === 'BOOKED' ? ` <button class="btn btn-secondary" data-action="open-reminder" data-id="${escapeHtml(b.bookingId)}">Remind</button> <button class="btn btn-ghost" data-action="advance-booking" data-id="${escapeHtml(b.bookingId)}" data-status="CANCELLED">Cancel</button>` : ''}</td>
             </tr>`;
           }).join('')}</tbody></table></div>`
       : `<p class="empty-state">${all.length ? 'No bookings with this status.' : 'No bookings yet. Use New booking to add the first one.'}</p>`;
@@ -1597,6 +1598,76 @@ function syncBookings() {
       .finally(() => { bookingsPromise = null; if (state.active === 'bookings') render(); });
   }
   return bookingsPromise;
+}
+
+function bookingById(id) { return state.bookings.find(b => b.bookingId === id); }
+function patientNameFor(ref) { const p = state.patientList.find(x => x.id === ref); return p ? p.name : ref; }
+
+async function openBookingResults(id) {
+  state.modal = { type: 'booking-results', bookingId: id };
+  render();
+  try {
+    const data = await wellipayApi.listBookingResults(id);
+    state.resultsByBooking[id] = data.items;
+  } catch (err) {
+    state.resultsByBooking[id] = [];
+    showToast('Results not loaded', err.message);
+  }
+  render();
+}
+
+async function addResultTests(id, tests) {
+  if (!tests.length) { showToast('Nothing to add', 'Choose a test first.'); return; }
+  try {
+    const data = await wellipayApi.addBookingResults(id, { tests });
+    state.resultsByBooking[id] = data.items;
+    showToast('Tests listed', `${data.added} added.`);
+  } catch (err) {
+    showToast('Tests not added', err.message);
+  }
+  render();
+}
+
+async function saveResult(resultId, ready) {
+  const form = document.getElementById('results-form');
+  if (!form) return;
+  const text = form.elements[`text_${resultId}`].value.trim();
+  const abnormal = form.elements[`abn_${resultId}`].checked;
+  if (ready && !text) { showToast('Result needed', 'Enter the result before marking it ready.'); return; }
+  try {
+    const updated = await wellipayApi.updateBookingResult(resultId, { resultText: text || null, abnormal, ...(ready ? { status: 'READY' } : {}) });
+    const list = state.resultsByBooking[updated.bookingId] || [];
+    state.resultsByBooking[updated.bookingId] = list.map(r => r.resultId === resultId ? updated : r);
+    showToast(ready ? 'Result ready' : 'Result saved', updated.testName);
+  } catch (err) {
+    showToast('Result not saved', err.message);
+  }
+  render();
+}
+
+// Nigerian numbers: 0803… becomes 234803…; anything else keeps its digits.
+function phoneDigits(raw) {
+  const d = String(raw || '').replace(/\D/g, '');
+  if (!d) return '';
+  if (d.startsWith('234')) return d;
+  if (d.startsWith('0')) return '234' + d.slice(1);
+  return d;
+}
+
+function reminderText(b) {
+  const org = orgName();
+  const when = formatWhen(b.scheduledAt);
+  const name = patientNameFor(b.patientRef);
+  const kindText = b.kind === 'IMAGING' ? 'scan' : (b.type === 'HOME_COLLECTION' ? 'home sample collection' : 'visit');
+  const invoice = b.invoiceId ? state.invoiceList.find(i => i.live && i.invoiceId === b.invoiceId) : null;
+  const prep = [];
+  if (invoice && invoice.lines) {
+    for (const l of invoice.lines) {
+      const item = state.priceList.find(x => x.serviceItemId === l.serviceItemId);
+      if (item && item.preparation && !prep.includes(item.preparation)) prep.push(item.preparation);
+    }
+  }
+  return `Hello ${name}, this is a reminder of your ${kindText} at ${org} on ${when}.${b.type === 'HOME_COLLECTION' && b.address ? ` Our team will come to ${b.address}.` : ''}${prep.length ? ` Preparation: ${prep.join(' ')}` : ''} Reply to reschedule.`;
 }
 
 async function advanceBooking(id, status) {
@@ -1675,7 +1746,7 @@ function renderCheckupPackages() {
   return `<div class="page">
     ${pageHeading('Revenue Cycle', 'Check-Up Packages', 'Optional Classic, Executive, Diamond and Platinum packages. Each lists tests from your price list. You set the price.')}
     ${metricGrid(metrics)}
-    ${card('<div class="section-heading"><span>Packages</span><button class="btn btn-primary" data-action="open-checkup">New package</button></div>', body)}
+    ${card('<div class="section-heading"><span>Packages</span><span><button class="btn btn-secondary" data-action="print-brochure">Print brochure</button> <button class="btn btn-primary" data-action="open-checkup">New package</button></span></div>', body)}
   </div>`;
 }
 
@@ -1773,6 +1844,48 @@ function applyPickedTests(form) {
   form.elements.serviceAmount.value = total / 100;
   if (form.elements.quantity) form.elements.quantity.value = 1;
   if (out) out.textContent = `${picked.length} tests. Total ${money(fromMinor(total))}.`;
+}
+
+// Opens a clean page for printing or saving as PDF.
+function openPrintView(title, bodyHtml) {
+  const w = window.open('', '_blank');
+  if (!w) { showToast('Pop-up blocked', 'Allow pop-ups for this site, then try again.'); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>
+    body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:32px;font-size:13px}
+    h1{font-size:22px;margin:0 0 2px}h2{font-size:15px;margin:22px 0 6px;border-bottom:1px solid #999;padding-bottom:3px}
+    .sub{color:#555;margin:0 0 14px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:5px 6px;border-bottom:1px solid #ddd;vertical-align:top}
+    td.r,th.r{text-align:right;white-space:nowrap}small{color:#555}.pack{break-inside:avoid;border:1px solid #bbb;padding:10px 12px;margin:0 0 10px}
+    @media print{body{margin:14mm}}
+  </style></head><body>${bodyHtml}</body></html>`);
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 300);
+}
+
+function printPriceSheet() {
+  const lab = isLab();
+  const items = state.priceList.filter(x => x.active && !x.isPackage);
+  const groups = new Map();
+  for (const it of items) {
+    const key = it.category || 'Other';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(it);
+  }
+  const date = new Date().toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' });
+  const body = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([cat, rows]) => `<h2>${escapeHtml(cat)}</h2>
+    <table><thead><tr><th>${escapeHtml(billingCopy().itemLabel)}</th>${lab ? '<th>Sample</th><th>Results in</th><th>Home collection</th>' : ''}<th class="r">Price</th></tr></thead>
+    <tbody>${rows.map(r => `<tr><td>${escapeHtml(r.name)}${lab && r.preparation ? `<br><small>${escapeHtml(r.preparation)}</small>` : ''}</td>${lab ? `<td>${escapeHtml(r.sampleType || '')}</td><td>${escapeHtml(r.turnaround || '')}</td><td>${r.homeCollection ? 'Yes' : 'No'}</td>` : ''}<td class="r">${money(fromMinor(r.unitPriceMinor))}</td></tr>`).join('')}</tbody></table>`).join('');
+  openPrintView(`${orgName()} price list`, `<h1>${escapeHtml(orgName())}</h1><p class="sub">Price list · ${date}</p>${body || '<p>No items on the price list.</p>'}`);
+}
+
+function printBrochure() {
+  const packs = state.checkups.filter(c => c.available).sort((a, b) => TIER_ORDER.indexOf(a.tier) - TIER_ORDER.indexOf(b.tier) || a.name.localeCompare(b.name));
+  const date = new Date().toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' });
+  const body = packs.map(c => `<div class="pack"><div style="display:flex;justify-content:space-between"><strong style="font-size:15px">${escapeHtml(c.name)}</strong><strong>${money(fromMinor(c.priceMinor))}</strong></div>
+    <small>${escapeHtml(TIER_LABEL[c.tier] || c.tier)} · ${escapeHtml(AUDIENCE_LABEL[c.audience] || c.audience)}</small>
+    <p style="margin:6px 0 0"><strong>Includes (${c.includedIds.length}):</strong> ${escapeHtml(checkupContents(c).join(', '))}</p>
+    ${c.exclusions ? `<p style="margin:4px 0 0"><strong>Not included:</strong> ${escapeHtml(c.exclusions)}</p>` : ''}</div>`).join('');
+  openPrintView(`${orgName()} check-up packages`, `<h1>${escapeHtml(orgName())}</h1><p class="sub">Check-up packages · ${date}</p>${body || '<p>No packages are available.</p>'}`);
 }
 
 let corporatePromise = null;
@@ -2992,6 +3105,68 @@ function renderModal() {
     </div>`;
   }
 
+  if (state.modal.type === 'booking-results') {
+    const b = bookingById(state.modal.bookingId);
+    if (!b) return '';
+    const items = state.resultsByBooking[b.bookingId];
+    const word = b.kind === 'IMAGING' ? 'Report' : 'Result';
+    const invoice = b.invoiceId ? state.invoiceList.find(i => i.live && i.invoiceId === b.invoiceId) : null;
+    const listed = new Set((items || []).map(r => r.testName.toLowerCase()));
+    const singles = state.priceList.filter(x => x.active && !x.isPackage && !listed.has(x.name.toLowerCase()));
+    const rowsHtml = !items
+      ? '<p class="empty-state">Loading…</p>'
+      : items.length
+        ? items.map(r => `<div style="border:1px solid var(--color-divider);padding:8px 10px;margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;gap:8px"><strong>${escapeHtml(r.testName)}</strong>${tag(r.status === 'READY' ? 'Ready' : 'Pending', r.status === 'READY' ? 'neutral' : 'outline')}</div>
+            <textarea class="input" name="text_${escapeHtml(r.resultId)}" rows="2" maxlength="4000" placeholder="${word}" style="margin:6px 0">${r.resultText ? escapeHtml(r.resultText) : ''}</textarea>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+              <label style="font-size:13px"><input type="checkbox" name="abn_${escapeHtml(r.resultId)}" ${r.abnormal ? 'checked' : ''}> Outside the normal range</label>
+              <span><button class="btn btn-secondary" type="button" data-action="save-result" data-id="${escapeHtml(r.resultId)}">Save</button>
+              <button class="btn btn-primary" type="button" data-action="save-result" data-id="${escapeHtml(r.resultId)}" data-ready="1">Save and mark ready</button></span>
+            </div>
+          </div>`).join('')
+        : `<p class="empty-state">No tests listed yet. Add the tests for this booking below.</p>`;
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="results-title">
+        <h2 id="results-title">${b.kind === 'IMAGING' ? 'Report' : 'Results'} · ${escapeHtml(patientNameFor(b.patientRef))}</h2>
+        <p>${escapeHtml(formatWhen(b.scheduledAt))}. Mark the booking ready after every ${word.toLowerCase()} is ready.</p>
+        <form id="results-form" class="form-grid">
+          ${rowsHtml}
+          <div class="form-grid two-col">
+            <div class="form-group"><label>Add a test</label><select name="addTest"><option value="">Choose from price list</option>${singles.map(x => `<option value="${escapeHtml(x.serviceItemId)}">${escapeHtml(x.name)}</option>`).join('')}</select></div>
+            <div style="display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap">
+              <button class="btn btn-secondary" type="button" data-action="add-result-test" data-id="${escapeHtml(b.bookingId)}">Add test</button>
+              ${invoice && invoice.lines && invoice.lines.length ? `<button class="btn btn-secondary" type="button" data-action="add-result-invoice" data-id="${escapeHtml(b.bookingId)}">Add tests from invoice</button>` : ''}
+            </div>
+          </div>
+          <div class="modal-actions"><button class="btn btn-secondary" type="button" data-action="close-modal">Close</button></div>
+        </form>
+      </section>
+    </div>`;
+  }
+
+  if (state.modal.type === 'booking-reminder') {
+    const b = bookingById(state.modal.bookingId);
+    if (!b) return '';
+    const patient = state.patientList.find(x => x.id === b.patientRef);
+    const digits = phoneDigits(patient && patient.phone);
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="reminder-title">
+        <h2 id="reminder-title">Remind ${escapeHtml(patientNameFor(b.patientRef))}</h2>
+        <p>${digits ? `Phone on file: ${escapeHtml(patient.phone)}.` : 'No phone number on file. You can still copy the message.'} The message opens in your own SMS or WhatsApp. Nothing is sent from here.</p>
+        <form id="reminder-form" class="form-grid">
+          <div class="form-group"><label>Message</label><textarea class="input" name="msg" rows="5" maxlength="600">${escapeHtml(reminderText(b))}</textarea></div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" type="button" data-action="close-modal">Close</button>
+            <button class="btn btn-secondary" type="button" data-action="remind-copy">Copy</button>
+            <button class="btn btn-secondary" type="button" data-action="remind-sms" data-phone="${escapeHtml(digits)}" ${digits ? '' : 'disabled'}>Open SMS</button>
+            <button class="btn btn-primary" type="button" data-action="remind-whatsapp" data-phone="${escapeHtml(digits)}" ${digits ? '' : 'disabled'}>Open WhatsApp</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+  }
+
   if (state.modal.type === 'catalogue') {
     const m = state.modal;
     const cat = state.catalogue;
@@ -3619,6 +3794,10 @@ async function syncInvoicesFromApi() {
       // fabricated payer name.
       payer: item.description,
       description: item.description,
+      lines: item.lines || [],
+      items: item.lines && item.lines.length
+        ? item.lines.map(l => ({ desc: l.quantity > 1 ? `${l.description} × ${l.quantity}` : l.description, amt: fromMinor(l.lineTotalMinor) }))
+        : [{ desc: item.description, amt: fromMinor(item.amountMinor) }],
       status: INVOICE_STATUS_LABEL[item.status] || item.status,
       live: true,
     }));
@@ -4823,6 +5002,30 @@ function dispatch(action, target, domEvent) {
     case 'edit-price-item': state.modal={type:'price-item',itemId:String(id)};render();break;
     case 'toggle-price-item': togglePriceItem(String(id)); break;
     case 'open-catalogue': openCatalogue(); break;
+    case 'print-price-sheet': printPriceSheet(); break;
+    case 'print-brochure': printBrochure(); break;
+    case 'open-results': openBookingResults(String(id)); break;
+    case 'add-result-test': {
+      const sel = document.querySelector('#results-form select[name="addTest"]');
+      const item = sel && state.priceList.find(x => x.serviceItemId === sel.value);
+      addResultTests(String(id), item ? [{ testName: item.name, serviceItemId: item.serviceItemId }] : []);
+      break;
+    }
+    case 'add-result-invoice': {
+      const b = bookingById(String(id));
+      const inv = b && state.invoiceList.find(i => i.live && i.invoiceId === b.invoiceId);
+      addResultTests(String(id), ((inv && inv.lines) || []).filter(l => l.description !== 'Additional fee').map(l => ({ testName: l.description.slice(0, 160), ...(l.serviceItemId ? { serviceItemId: l.serviceItemId } : {}) })));
+      break;
+    }
+    case 'save-result': saveResult(String(id), target.dataset.ready === '1'); break;
+    case 'open-reminder': state.modal = { type: 'booking-reminder', bookingId: String(id) }; render(); break;
+    case 'remind-copy': {
+      const msg = document.querySelector('#reminder-form textarea[name="msg"]').value;
+      (navigator.clipboard ? navigator.clipboard.writeText(msg) : Promise.reject()).then(() => showToast('Copied', 'Paste it into any app.'), () => showToast('Not copied', 'Select the text and copy it.'));
+      break;
+    }
+    case 'remind-sms': window.location.href = `sms:+${target.dataset.phone}?&body=${encodeURIComponent(document.querySelector('#reminder-form textarea[name="msg"]').value)}`; break;
+    case 'remind-whatsapp': window.open(`https://wa.me/${target.dataset.phone}?text=${encodeURIComponent(document.querySelector('#reminder-form textarea[name="msg"]').value)}`, '_blank', 'noopener'); break;
     case 'open-checkup': openCheckup(''); break;
     case 'edit-checkup': openCheckup(String(id)); break;
     case 'toggle-checkup': toggleCheckup(String(id)); break;
@@ -5251,6 +5454,20 @@ document.addEventListener('submit', async event => {
     const extra = Number(fd.get('extraFee')) || 0;
     const corporateAccountId = (fd.get('corporateAccountId') || '').toString();
     const totalAmt = srvAmt + extra;
+    // Itemised lines for a live invoice. They are sent only when they add up to the total.
+    let lines;
+    if (!SHOW_SAMPLE_DATA) {
+      const byId = new Map(state.priceList.map(x => [x.serviceItemId, x]));
+      const picked = fd.getAll('pickTest').map(id => byId.get(String(id))).filter(Boolean);
+      const pickedTotal = picked.reduce((sum, x) => sum + x.unitPriceMinor, 0);
+      if (picked.length && pickedTotal === toMinor(srvAmt)) {
+        lines = picked.map(x => ({ description: x.name.slice(0, 200), quantity: 1, unitPriceMinor: x.unitPriceMinor, serviceItemId: x.serviceItemId }));
+      } else {
+        lines = [{ description: srvName.slice(0, 200), quantity, unitPriceMinor: toMinor(Number(fd.get('serviceAmount'))) }];
+      }
+      if (extra) lines.push({ description: 'Additional fee', quantity: 1, unitPriceMinor: toMinor(extra) });
+      if (lines.reduce((sum, l) => sum + l.quantity * l.unitPriceMinor, 0) !== toMinor(totalAmt)) lines = undefined;
+    }
     const newInv = {
       id: 'INV-' + Math.floor(2100 + Math.random() * 900),
       patient: pt.name,
@@ -5260,7 +5477,9 @@ document.addEventListener('submit', async event => {
       paid: 0,
       status: 'Unpaid',
       date: new Date().toISOString().slice(0, 10),
-      items: [{ desc: invoiceText, amt: srvAmt }, ...(extra ? [{ desc: 'Supplemental Diagnostics / Labs', amt: extra }] : [])],
+      items: lines
+        ? lines.map(l => ({ desc: l.quantity > 1 ? `${l.description} × ${l.quantity}` : l.description, amt: fromMinor(l.quantity * l.unitPriceMinor) }))
+        : [{ desc: invoiceText, amt: srvAmt }, ...(extra ? [{ desc: 'Supplemental Diagnostics / Labs', amt: extra }] : [])],
       payer: fd.get('payerDetail').toString()
     };
     state.invoiceList.unshift(newInv);
@@ -5277,6 +5496,7 @@ document.addEventListener('submit', async event => {
         amountMinor: toMinor(totalAmt),
         currency: 'NGN',
         ...(corporateAccountId ? { corporateAccountId } : {}),
+        ...(lines ? { lines } : {}),
       });
       newInv.apiInvoiceId = created.invoiceId;
       if (corporateAccountId) state.corporateSynced = false;

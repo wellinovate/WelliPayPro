@@ -1751,6 +1751,30 @@ function updateCheckupSum() {
   out.textContent = `${count} tests selected. Their prices add up to ${money(fromMinor(total))}.`;
 }
 
+// Fills the invoice item and amount from the tests ticked in the create-invoice modal.
+function applyPickedTests(form) {
+  const byId = new Map(state.priceList.map(x => [x.serviceItemId, x]));
+  const picked = [...form.querySelectorAll('input[name="pickTest"]:checked')].map(b => byId.get(b.value)).filter(Boolean);
+  const out = document.getElementById('inv-test-sum');
+  if (!picked.length) { if (out) out.textContent = ''; return; }
+  const total = picked.reduce((sum, x) => sum + x.unitPriceMinor, 0);
+  let text = picked.map(x => x.name).join(', ');
+  if (text.length > 200) {
+    let shown = [];
+    let len = 0;
+    for (const x of picked) {
+      const tail = ` + ${picked.length - shown.length - 1} more`;
+      if (len + x.name.length + 2 + tail.length > 200) break;
+      shown.push(x.name); len += x.name.length + 2;
+    }
+    text = `${shown.join(', ')} + ${picked.length - shown.length} more`;
+  }
+  form.elements.serviceName.value = text;
+  form.elements.serviceAmount.value = total / 100;
+  if (form.elements.quantity) form.elements.quantity.value = 1;
+  if (out) out.textContent = `${picked.length} tests. Total ${money(fromMinor(total))}.`;
+}
+
 let corporatePromise = null;
 function syncCorporate() {
   if (!corporatePromise) {
@@ -2681,6 +2705,14 @@ function renderModal() {
               ${state.priceList.filter(x => x.active).map(x => `<option value="${escapeHtml(x.serviceItemId)}">${escapeHtml(x.name)}${x.isPackage ? ' (package)' : ''} — ${money(fromMinor(x.unitPriceMinor))}</option>`).join('')}
               ${isLab() && state.checkups.some(c => c.available) ? `<optgroup label="Check-up packages">${state.checkups.filter(c => c.available).map(c => `<option value="pkg:${escapeHtml(c.checkupPackageId)}">${escapeHtml(c.name)} (${escapeHtml(TIER_LABEL[c.tier] || c.tier)}) — ${money(fromMinor(c.priceMinor))}</option>`).join('')}</optgroup>` : ''}
             </select></div>` : ''}
+          ${isLab() && state.priceList.some(x => x.active && !x.isPackage) ? `<details class="form-group" style="border:1px solid var(--color-divider);padding:8px 10px">
+            <summary style="cursor:pointer;font-size:13px">Pick several tests (no package)</summary>
+            <input class="input" id="inv-test-search" placeholder="Search tests" style="margin:8px 0" aria-label="Search tests">
+            <div style="max-height:180px;overflow:auto">
+              ${state.priceList.filter(x => x.active && !x.isPackage).map(x => `<label class="inv-test-row" data-name="${escapeHtml(x.name.toLowerCase())}" style="display:block;font-size:13px;padding:2px 0"><input type="checkbox" name="pickTest" value="${escapeHtml(x.serviceItemId)}"> ${escapeHtml(x.name)} · ${money(fromMinor(x.unitPriceMinor))}</label>`).join('')}
+            </div>
+            <p id="inv-test-sum" style="font-size:12px;color:var(--muted);margin:6px 0 0"></p>
+          </details>` : ''}
           <div class="form-group"><label>${escapeHtml(copy.itemLabel)} *</label><input class="input" name="serviceName" required maxlength="200" placeholder="${escapeHtml(copy.itemPlaceholder)}"></div>
           <div class="form-grid two-col">
             ${copy.quantity ? `<div class="form-group"><label>Quantity *</label><input class="input" type="number" name="quantity" required min="1" step="1" value="1"></div>` : ''}
@@ -5056,6 +5088,11 @@ document.addEventListener('click', event => {
 });
 
 document.addEventListener('input', event => {
+  if (event.target.id === 'inv-test-search') {
+    const needle = event.target.value.trim().toLowerCase();
+    document.querySelectorAll('.inv-test-row').forEach(row => { row.style.display = !needle || row.dataset.name.includes(needle) ? '' : 'none'; });
+    return;
+  }
   if (state.modal && state.modal.type === 'catalogue') {
     if (event.target.id === 'catalogue-q') { state.modal.q = event.target.value; render(); return; }
     if (event.target.dataset.pickPrice) {
@@ -5102,6 +5139,7 @@ document.addEventListener('change', event => {
     }
   }
   if (event.target.name === 'test' && event.target.closest('#checkup-form')) updateCheckupSum();
+  if (event.target.name === 'pickTest') applyPickedTests(event.target.closest('form'));
   if (event.target.name === 'filter') { state.filter = event.target.value; render(); }
   if (event.target.name === 'payer') { state.payer = event.target.value; resetPayment(); render(); }
   if (event.target.id === 'refund-threshold') { state.settings.threshold = Math.max(0, Number(event.target.value) || 0); }

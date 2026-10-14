@@ -570,6 +570,10 @@ function greetingForNow() {
   return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
 }
 
+// The console is only reachable with a real staff sign-in, so figures that are
+// not backed by wellipay-api stay hidden. Set to true only for a local demo.
+const SHOW_SAMPLE_DATA = false;
+
 /* 1. Dashboard */
 function renderDashboard() {
   const sampleTiles = [['₦2,450,000','This period','Revenue'],['₦1,950,000','This period','Collected'],['₦500,000','This period','Outstanding'],['₦1,200,000','Owed to facility','HMO receivables'],['₦750,000','Awaiting HMO decision','Pending claims'],['₦450,000','In gateway pipeline','Pending settlements'],['124','This period','Patients served'],['₦35,000','This period','Refunds']];
@@ -578,7 +582,8 @@ function renderDashboard() {
   const trend = [1.8,2.1,1.6,2.4,2.0,2.6,2.45];
   const trendMax = Math.max(...trend);
   const unmatchedMarkup = state.unmatched.length ? state.unmatched.slice(0,3).map(item=>`<div class="data-row"><div class="data-primary"><strong>${money(item.amount)} · ${escapeHtml(item.source)}</strong><span>${escapeHtml(item.suggestion)}</span></div><button class="btn btn-secondary" data-action="open-match" data-id="${escapeHtml(item.id)}">Match</button></div>`).join('') : '<p class="empty-state">Nothing unmatched right now.</p>';
-  const approvalRows = `${state.approvals.length ? `<div class="table-wrap"><table class="table approval-table"><thead><tr><th>Type</th><th>Amount</th><th>Requester</th><th>Reason</th><th>Decision</th></tr></thead><tbody>${state.approvals.map(item=>`<tr><td>${escapeHtml(item.type)}</td><td>${money(item.amount)}</td><td>${escapeHtml(item.requester)}</td><td>${escapeHtml(item.reason)}</td><td>${item.deciding ? tag('Processing…','outline') : `<button class="btn btn-secondary" data-action="approval" data-decision="Rejected" data-id="${escapeHtml(item.id)}">Reject</button> <button class="btn btn-primary" data-action="approval" data-decision="Approved" data-id="${escapeHtml(item.id)}">Approve</button>`}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-state">Queue is clear — nothing pending approval.</p>'}${state.approvalHistory.length ? `<div class="approval-history"><span class="card-kicker">Recent decisions</span>${state.approvalHistory.slice(0,5).map(item=>`<div class="data-row"><div class="data-primary"><strong>${escapeHtml(item.decision)} ${item.type.toLowerCase()} · ${money(item.amount)}</strong><span>${escapeHtml(item.requester)} · ${escapeHtml(item.reason)} · ${escapeHtml(item.actor)} · ${escapeHtml(item.time)}</span></div>${tag(item.decision,item.decision==='Approved'?'neutral':'accent')}</div>`).join('')}</div>` : ''}`;
+  const approvalItems = SHOW_SAMPLE_DATA ? state.approvals : state.approvals.filter(a => a.live);
+  const approvalRows = `${approvalItems.length ? `<div class="table-wrap"><table class="table approval-table"><thead><tr><th>Type</th><th>Amount</th><th>Requester</th><th>Reason</th><th>Decision</th></tr></thead><tbody>${approvalItems.map(item=>`<tr><td>${escapeHtml(item.type)}</td><td>${money(item.amount)}</td><td>${escapeHtml(item.requester)}</td><td>${escapeHtml(item.reason)}</td><td>${item.deciding ? tag('Processing…','outline') : `<button class="btn btn-secondary" data-action="approval" data-decision="Rejected" data-id="${escapeHtml(item.id)}">Reject</button> <button class="btn btn-primary" data-action="approval" data-decision="Approved" data-id="${escapeHtml(item.id)}">Approve</button>`}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-state">Queue is clear — nothing pending approval.</p>'}${state.approvalHistory.length ? `<div class="approval-history"><span class="card-kicker">Recent decisions</span>${state.approvalHistory.slice(0,5).map(item=>`<div class="data-row"><div class="data-primary"><strong>${escapeHtml(item.decision)} ${item.type.toLowerCase()} · ${money(item.amount)}</strong><span>${escapeHtml(item.requester)} · ${escapeHtml(item.reason)} · ${escapeHtml(item.actor)} · ${escapeHtml(item.time)}</span></div>${tag(item.decision,item.decision==='Approved'?'neutral':'accent')}</div>`).join('')}</div>` : ''}`;
   const messages = state.messages.map(item=>`<div class="chat-line ${escapeHtml(item.role)}"><div class="chat-bubble">${escapeHtml(item.text)}</div></div>`).join('');
   const snapshot = state.liveSnapshot;
   const snapshotCard = snapshot ? card('<div class="section-heading"><span>Live snapshot</span><span style="color:var(--muted);font-weight:400;font-size:13px">from wellipay-api</span></div>', `<div class="mini-metrics"><div class="mini-metric"><strong>${money(snapshot.collected)}</strong><span>Collected · ${snapshot.paymentCount} payments</span></div><div class="mini-metric"><strong>${money(snapshot.pendingClaims)}</strong><span>Pending claims</span></div><div class="mini-metric"><strong>${money(snapshot.approvedClaims)}</strong><span>Approved claims</span></div><div class="mini-metric"><strong>${money(snapshot.patientBalance)}</strong><span>Patient balance · ${snapshot.patientCount} patients</span></div></div>`) : (state.dashboardSyncing ? card('Live snapshot', '<p class="empty-state">Loading live figures…</p>') : '');
@@ -595,22 +600,22 @@ function renderDashboard() {
     ${renderBranchBanner()}
     <div class="page-heading"><div><h1>${greetingForNow()}, ${(authState.user?.name || 'there').split(' ')[0]}</h1><p>${new Date().toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · ${escapeHtml(orgName())}${state.branch === 'All branches' ? '' : ', ' + escapeHtml(state.branch) + ' Branch'}</p></div><div class="seg" role="group" aria-label="Date range">${['Today','Week','Month','Quarter'].map(value=>`<label class="seg-opt"><input type="radio" name="filter" value="${value}" ${state.filter===value?'checked':''}><span>${value}</span></label>`).join('')}</div></div>
     ${snapshotCard}
-    ${metricGrid(tiles)}
-    <div class="grid two-col">
+    ${SHOW_SAMPLE_DATA ? metricGrid(tiles) : ''}
+    ${SHOW_SAMPLE_DATA ? `<div class="grid two-col">
       ${card('Revenue trend · last 7 days (sample data)',`<div class="chart-summary" style="margin-bottom:12px;"><strong>₦2.45M</strong><span>+8.4% vs last week</span></div><div style="height:160px;position:relative"><canvas id="revenueTrendChart"></canvas></div>`,'trend-card')}
       ${card('Payer mix · this month (sample data)', `<div class="chart-summary" style="margin-bottom:12px;"><strong>₦6.2M</strong><span>collected by payer</span></div><div style="height:160px;position:relative"><canvas id="payerMixChart"></canvas></div>`, 'mix-card')}
-    </div>
+    </div>` : ''}
     ${card('Branch revenue', branchRevenueBody)}
     <div class="grid two-col">
       ${card('<div class="section-heading"><span>Receivables & ageing</span><a href="#receivables">View all →</a></div>', receivablesCardBody)}
-      ${card('<div class="section-heading"><span>Smart Reconciliation Centre (sample data)</span><a href="#reconciliation">Open workspace →</a></div>',`<div class="mini-metrics"><div class="mini-metric"><strong>${state.matched.toLocaleString()}</strong><span>Matched</span></div><div class="mini-metric"><strong style="color:var(--color-accent-700)">${state.unmatched.length}</strong><span>Unmatched</span></div><div class="mini-metric"><strong>${state.exceptions}</strong><span>Exceptions</span></div><div class="mini-metric"><strong>${state.duplicates}</strong><span>Duplicate</span></div></div><div class="row-list">${unmatchedMarkup}</div>`)}
+      ${SHOW_SAMPLE_DATA ? card('<div class="section-heading"><span>Smart Reconciliation Centre (sample data)</span><a href="#reconciliation">Open workspace →</a></div>',`<div class="mini-metrics"><div class="mini-metric"><strong>${state.matched.toLocaleString()}</strong><span>Matched</span></div><div class="mini-metric"><strong style="color:var(--color-accent-700)">${state.unmatched.length}</strong><span>Unmatched</span></div><div class="mini-metric"><strong>${state.exceptions}</strong><span>Exceptions</span></div><div class="mini-metric"><strong>${state.duplicates}</strong><span>Duplicate</span></div></div><div class="row-list">${unmatchedMarkup}</div>`) : ''}
     </div>
-    <div class="grid two-col">
+    ${SHOW_SAMPLE_DATA ? `<div class="grid two-col">
       ${card('Revenue leakage alerts (sample data)',`<div class="row-list">${[['₦185,000','14 completed services have no corresponding invoice.','Maitama'],['₦62,000','3 HMO-eligible services were billed as self-pay.','Wuse'],['₦41,000','Duplicate discount applied on 6 invoices.','Garki']].map(([amount,reason,branch])=>`<div class="data-row"><div class="data-primary"><strong class="alert-amount">${amount}</strong><span>${reason}</span></div>${tag(branch,'accent')}</div>`).join('')}</div>`)}
       ${card('Claim scrubbing readiness (sample data)',`<div class="row-list">${[['CLM-5544','Reliance HMO',87,['Missing pre-auth ref']],['CLM-5545','Hygeia HMO',62,['Tariff mismatch','Expired eligibility']],['CLM-5546','AXA Mansard',95,[]]].map(([id,hmo,pct,issues])=>`<div class="data-row"><div class="data-primary"><strong>${id} · ${hmo}</strong><div class="readiness"><div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div><strong>${pct}%</strong></div><div class="issue-tags">${issues.length?issues.map(issue=>tag(issue,'outline')).join(''):tag('Ready to submit')}</div></div></div>`).join('')}</div>`)}
-    </div>
-    ${card('Approval queue · refunds & write-offs (sample data — real refunds are under Refunds)',approvalRows)}
-    ${card('Ask WelliPay (sample answers, not from live data)',`<div class="chat-log" id="chat-log">${messages}</div><div class="chips">${['Which HMO owes us the most?','Show unpaid invoices over 30 days','Which claims are likely to be rejected?','What payments haven’t been reconciled?'].map(text=>`<button class="chip-button" data-action="ask-suggestion" data-text="${text}">${text}</button>`).join('')}</div><form class="chat-form" id="chat-form"><input class="input" name="question" placeholder="Ask about revenue, claims, receivables…" aria-label="Ask WelliPay a question" required><button class="btn btn-primary" type="submit">Ask</button></form>`)}
+    </div>` : ''}
+    ${card('Approval queue · refunds',approvalRows)}
+    ${SHOW_SAMPLE_DATA ? card('Ask WelliPay (sample answers, not from live data)',`<div class="chat-log" id="chat-log">${messages}</div><div class="chips">${['Which HMO owes us the most?','Show unpaid invoices over 30 days','Which claims are likely to be rejected?','What payments haven’t been reconciled?'].map(text=>`<button class="chip-button" data-action="ask-suggestion" data-text="${text}">${text}</button>`).join('')}</div><form class="chat-form" id="chat-form"><input class="input" name="question" placeholder="Ask about revenue, claims, receivables…" aria-label="Ask WelliPay a question" required><button class="btn btn-primary" type="submit">Ask</button></form>`) : ''}
   </div>`;
 }
 
@@ -690,7 +695,14 @@ function renderPatients() {
 
 /* 4. Invoices */
 function renderInvoices() {
-  const filtered = state.invoiceList.filter(inv => {
+  const invoiceRows = SHOW_SAMPLE_DATA ? state.invoiceList : state.invoiceList.filter(inv => inv.live);
+  const invoiced = invoiceRows.reduce((sum, i) => sum + i.amount, 0);
+  const collected = invoiceRows.reduce((sum, i) => sum + i.paid, 0);
+  const openCount = invoiceRows.filter(i => i.status !== 'Paid' && i.status !== 'Draft').length;
+  const invoiceTiles = SHOW_SAMPLE_DATA
+    ? [['142','Open Invoices','Ledger'],['₦8.4M','Invoiced This Month','Billed'],['6 days','Avg Time to Pay','Collection'],['96.2%','Collection Rate','Settled']]
+    : [[String(openCount),'Open Invoices','Ledger'],[money(invoiced),'Invoiced, all time','Billed'],[money(collected),'Collected','Paid'],[invoiced ? `${Math.round(collected / invoiced * 100)}%` : '—','Collection Rate','Settled']];
+  const filtered = invoiceRows.filter(inv => {
     const matchesFilter = state.invoiceFilter === 'All' || inv.status.toLowerCase() === state.invoiceFilter.toLowerCase();
     const matchesSearch = !state.invoiceSearch || inv.id.toLowerCase().includes(state.invoiceSearch.toLowerCase()) || inv.patient.toLowerCase().includes(state.invoiceSearch.toLowerCase());
     const matchesBranch = state.branch === 'All branches' || inv.branch === state.branch;
@@ -700,7 +712,7 @@ function renderInvoices() {
   return `<div class="page">
     ${renderBranchBanner()}
     ${pageHeading('Revenue Cycle', 'Digital Invoice Engine', 'Itemised billing, multi-payer split tracking, payment status and SMS dispatch.')}
-    ${metricGrid([['142','Open Invoices','Ledger'],['₦8.4M','Invoiced This Month','Billed'],['6 days','Avg Time to Pay','Collection'],['96.2%','Collection Rate','Settled']])}
+    ${metricGrid(invoiceTiles)}
     ${card('<div class="section-heading"><span>Invoice Ledger</span><div class="toolbar"><button class="btn btn-primary" data-action="open-create-invoice">Create Invoice</button><button class="btn btn-secondary" data-action="export-invoices-pdf">Export PDF</button><button class="btn btn-secondary" data-action="export-invoices">Export CSV</button></div></div>', `
       <div class="filter-bar">
         <div class="filter-group">
@@ -734,6 +746,7 @@ function renderInvoices() {
           </tbody>
         </table>
       </div>
+      ${filtered.length ? '' : `<p class="empty-state">${state.invoicesSyncing ? 'Loading live invoices…' : 'No invoices yet. Use Create Invoice to add the first one.'}</p>`}
     `)}
   </div>`;
 }
@@ -1073,10 +1086,18 @@ function renderSettlements() {
 
 /* 15. Refunds Engine */
 function renderRefunds() {
+  const refundRows = SHOW_SAMPLE_DATA ? state.refundList : state.refundList.filter(r => r.live);
+  const approvedTotal = refundRows.filter(r => r.status === 'Approved').reduce((sum, r) => sum + r.amount, 0);
+  const pendingCount = refundRows.filter(r => r.status.includes('Pending')).length;
+  const refundTiles = SHOW_SAMPLE_DATA
+    ? [['₦35,000','Refunded This Month','Settled'],[String(pendingCount),'Pending Approval','Queue'],['4.1 hrs','Avg Approval Time','SLA'],[money(state.settings.threshold),'Dual Approval Threshold','Security Rule']]
+    : [[money(approvedTotal),'Approved refunds, all time','Refunded'],[String(pendingCount),'Pending Approval','Queue'],[String(refundRows.length),'Refund requests','Total'],[money(state.settings.threshold),'Dual Approval Threshold','Security Rule']];
+  const owedTotal = refundRows.filter(r => r.recovery === 'OWED').reduce((sum, r) => sum + r.amount, 0);
   return `<div class="page">
     ${renderBranchBanner()}
     ${pageHeading('Claims & Payers', 'Refund Engine', 'Full, partial and disputed payment refunds with enforced dual-approval controls.')}
-    ${metricGrid([['₦35,000','Refunded This Month','Settled'],[String(state.refundList.filter(r=>r.status.includes('Pending')).length),'Pending Approval','Queue'],['4.1 hrs','Avg Approval Time','SLA'],[money(state.settings.threshold),'Dual Approval Threshold','Security Rule']])}
+    ${metricGrid(refundTiles)}
+    ${owedTotal > 0 ? card('Owed to Wellinovate', `<p style="margin:0;font-size:12px;">Approved refunds on card and transfer payments are paid from Wellinovate's Paystack balance, because the original payment settled to your account. Your organisation owes Wellinovate <strong>${money(owedTotal)}</strong> for these refunds. Wellinovate will contact you to settle it.</p>`) : ''}
     ${card('Dual Approval Policy', `
       <p style="margin:0;font-size:12px;">Refund requests exceeding <strong>${money(state.settings.threshold)}</strong> require dual-key verification from both the <strong>Finance Manager</strong> and the <strong>Medical Director</strong> before bank reversal release.</p>
     `)}
@@ -1085,14 +1106,14 @@ function renderRefunds() {
         <table class="table">
           <thead><tr><th>Refund ID</th><th>Invoice & Patient</th><th>Amount</th><th>Requester</th><th>Reason</th><th>Status</th><th>Action</th></tr></thead>
           <tbody>
-            ${state.refundList.map(r => `
+            ${refundRows.map(r => `
               <tr>
                 <td><strong>${escapeHtml(r.id)}</strong></td>
                 <td>${escapeHtml(r.patient)}<br><small style="color:var(--muted)">${escapeHtml(r.inv)}</small></td>
                 <td><strong>${money(r.amount)}</strong></td>
                 <td>${escapeHtml(r.requester)}</td>
                 <td>${escapeHtml(r.reason)}</td>
-                <td>${tag(r.status, r.status === 'Approved' || r.status === 'Settled' ? 'neutral' : 'accent')}</td>
+                <td>${tag(r.status, r.status === 'Approved' || r.status === 'Settled' ? 'neutral' : 'accent')}${r.recovery === 'OWED' ? ' ' + tag('Owed to Wellinovate', 'outline') : ''}</td>
                 <td>
                   ${r.deciding ? tag('Processing…', 'outline') : r.status.includes('Pending') ? `
                     <button class="btn btn-secondary" data-action="approve-refund-item" data-id="${escapeHtml(r.id)}" style="font-size:11px;padding:4px 8px;">Approve</button>
@@ -1104,6 +1125,7 @@ function renderRefunds() {
           </tbody>
         </table>
       </div>
+      ${refundRows.length ? '' : '<p class="empty-state">No refund requests yet.</p>'}
     `)}
   </div>`;
 }
@@ -2463,6 +2485,7 @@ async function syncRefundsFromApi() {
         date: new Date(item.createdAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }),
         status: REFUND_STATUS_LABEL[item.status] || item.status,
         dualApproval: item.amountMinor >= toMinor(state.settings.threshold),
+        recovery: item.recoveryStatus || null,
         live: true,
       };
     });

@@ -103,6 +103,7 @@ async function publicRequest(path, { method = 'GET', body } = {}) {
 }
 
 export const fetchBanks = () => publicRequest('/onboarding/banks');
+export const fetchApplicationTerms = () => publicRequest('/onboarding/terms');
 export const submitProviderApplication = (body) => publicRequest('/onboarding/applications', { method: 'POST', body });
 
 export function logoutStaff() {

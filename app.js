@@ -299,7 +299,7 @@ import { wellipayApi, toMinor, fromMinor, loginStaff, logoutStaff, getStaffSessi
 
 const groups = [
   { name: 'Overview', items: [['dashboard', 'Dashboard', 'grid'], ['hospital-desk', 'Hospital Desk', 'wallet'], ['ai-insights', 'AI Insights', 'spark'], ['notifications', 'Notifications', 'bell']] },
-  { name: 'Revenue Cycle', items: [['patients', 'Patients', 'users'], ['invoices', 'Invoices', 'file'], ['payments', 'Payments', 'credit'], ['services-pricing', 'Services & Pricing', 'list'], ['bookings', 'Bookings & Collection', 'calendar'], ['corporate-accounts', 'Corporate Accounts', 'building']] },
+  { name: 'Revenue Cycle', items: [['patients', 'Patients', 'users'], ['invoices', 'Invoices', 'file'], ['payments', 'Payments', 'credit'], ['services-pricing', 'Services & Pricing', 'list'], ['bookings', 'Bookings & Collection', 'calendar'], ['checkup-packages', 'Check-Up Packages', 'list'], ['corporate-accounts', 'Corporate Accounts', 'building']] },
   { name: 'Claims & Payers', items: [['claims', 'Claims', 'claim'], ['hmo-insurance', 'HMO / Insurance', 'shield'], ['authorization', 'Authorization Centre', 'check'], ['family-sponsors', 'Family / Sponsors', 'users'], ['wellipass', 'WelliPass', 'qr'], ['receivables', 'Receivables', 'receipt'], ['reconciliation', 'Reconciliation', 'refresh'], ['settlements', 'Settlements', 'bank'], ['refunds', 'Refunds', 'undo']] },
   { name: 'Growth', items: [['financing', 'Financing', 'trend'], ['payment-plans', 'Payment Plans', 'calendar'], ['referrals', 'Referrals', 'share'], ['partners', 'Providers / Partners', 'link']] },
   { name: 'Operations', items: [['reports', 'Reports', 'chart'], ['branches', 'Branches', 'building'], ['staff', 'Staff', 'users'], ['integrations', 'Integrations', 'plug'], ['api-developers', 'API & Developers', 'code']] },
@@ -375,6 +375,12 @@ const state = {
   priceList: [],
   priceListSynced: false,
   priceListError: '',
+  catalogue: { categories: [], tests: [] },
+  catalogueSynced: false,
+  catalogueError: '',
+  checkups: [],
+  checkupsSynced: false,
+  checkupsError: '',
   patientsSyncing: false,
   paymentsSynced: false,
   paymentsSyncing: false,
@@ -560,7 +566,7 @@ function isLab() { return !SHOW_SAMPLE_DATA && providerTypeOrDefault() === 'DIAG
 function usesCorporate() { return !SHOW_SAMPLE_DATA && ['DIAGNOSTIC_LAB', 'HOSPITAL'].includes(providerTypeOrDefault()); }
 function navVisible(id) {
   if (id === 'branches') return SHOW_SAMPLE_DATA;
-  if (id === 'bookings') return isLab();
+  if (id === 'bookings' || id === 'checkup-packages') return isLab();
   if (id === 'corporate-accounts') return usesCorporate();
   return true;
 }
@@ -934,10 +940,11 @@ function renderServicesPricing() {
       ? `<p class="empty-state">${state.priceListError ? escapeHtml(state.priceListError) : 'Loading price list…'}</p>`
       : items.length
         ? `<div class="table-wrap"><table class="table">
-            <thead><tr><th>${escapeHtml(copy.itemLabel)}</th><th>Category</th><th>Price</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>${escapeHtml(copy.itemLabel)}</th><th>Category</th>${isLab() ? '<th>Sample</th><th>Turnaround</th><th>Home</th><th>Digital</th>' : ''}<th>Price</th><th>Status</th><th></th></tr></thead>
             <tbody>${items.map(it => `<tr>
-              <td><strong>${escapeHtml(it.name)}</strong>${it.isPackage ? `<br><small style="color:var(--muted)">Package: ${escapeHtml(packageContents(it).join(', '))}</small>` : ''}</td>
+              <td><strong>${escapeHtml(it.name)}</strong>${it.masterCode ? `<br><small style="color:var(--muted)">${escapeHtml(it.masterCode)}</small>` : ''}${it.isPackage ? `<br><small style="color:var(--muted)">Package: ${escapeHtml(packageContents(it).join(', '))}</small>` : ''}</td>
               <td>${it.category ? escapeHtml(it.category) : '—'}</td>
+              ${isLab() ? `<td>${it.sampleType ? escapeHtml(it.sampleType) : '—'}</td><td>${it.turnaround ? escapeHtml(it.turnaround) : '—'}</td><td>${it.homeCollection ? 'Yes' : 'No'}</td><td>${it.digitalResults ? 'Yes' : 'No'}</td>` : ''}
               <td>${money(fromMinor(it.unitPriceMinor))}</td>
               <td>${tag(it.active ? 'Active' : 'Off', it.active ? 'neutral' : 'outline')}${it.isPackage ? ' ' + tag('Package', 'accent') : ''}</td>
               <td><button class="btn btn-secondary" data-action="edit-price-item" data-id="${escapeHtml(it.serviceItemId)}">Edit</button>
@@ -946,7 +953,7 @@ function renderServicesPricing() {
         : `<p class="empty-state">No items yet. Use Add item to save the first one.</p>`;
     return `<div class="page">
     ${pageHeading('Revenue Cycle', copy.catalogue, 'Your price list. Pick from it when you create an invoice.')}
-    ${card('<div class="section-heading"><span>Price list</span><button class="btn btn-primary" data-action="open-price-item">Add item</button></div>', body)}
+    ${card(`<div class="section-heading"><span>Price list</span><span>${isLab() ? '<button class="btn btn-secondary" data-action="open-catalogue">Test catalogue</button> ' : ''}<button class="btn btn-primary" data-action="open-price-item">Add item</button></span></div>`, body)}
   </div>`;
   }
   const filtered = state.servicesList.filter(s => {
@@ -1635,6 +1642,115 @@ function renderCorporateAccounts() {
   </div>`;
 }
 
+const TIER_LABEL = { PLATINUM: 'Platinum', DIAMOND: 'Diamond', EXECUTIVE: 'Executive', CLASSIC: 'Classic' };
+const TIER_ORDER = ['PLATINUM', 'DIAMOND', 'EXECUTIVE', 'CLASSIC'];
+const AUDIENCE_LABEL = { ALL: 'Everyone', MALE: 'Male', FEMALE: 'Female' };
+
+function checkupContents(pack) {
+  const byId = new Map(state.priceList.map(x => [x.serviceItemId, x.name]));
+  return (pack.includedIds || []).map(id => byId.get(id) || 'Removed item');
+}
+
+function renderCheckupPackages() {
+  const rows = [...state.checkups].sort((a, b) => TIER_ORDER.indexOf(a.tier) - TIER_ORDER.indexOf(b.tier) || a.name.localeCompare(b.name));
+  const body = !state.checkupsSynced
+    ? `<p class="empty-state">${state.checkupsError ? escapeHtml(state.checkupsError) : 'Loading packages…'}</p>`
+    : rows.length
+      ? `<div class="table-wrap"><table class="table">
+          <thead><tr><th>Package</th><th>Tier</th><th>For</th><th>Tests</th><th>Price</th><th>Status</th><th></th></tr></thead>
+          <tbody>${rows.map(c => `<tr>
+            <td><strong>${escapeHtml(c.name)}</strong>${c.exclusions ? `<br><small style="color:var(--muted)">Not included: ${escapeHtml(c.exclusions)}</small>` : ''}</td>
+            <td>${tag(TIER_LABEL[c.tier] || c.tier, 'accent')}</td>
+            <td>${escapeHtml(AUDIENCE_LABEL[c.audience] || c.audience)}</td>
+            <td>${c.includedIds.length}<br><small style="color:var(--muted)">${escapeHtml(checkupContents(c).join(', '))}</small></td>
+            <td>${money(fromMinor(c.priceMinor))}</td>
+            <td>${tag(c.available ? 'Available' : 'Off', c.available ? 'neutral' : 'outline')}</td>
+            <td><button class="btn btn-secondary" data-action="edit-checkup" data-id="${escapeHtml(c.checkupPackageId)}">Edit</button>
+                <button class="btn btn-ghost" data-action="toggle-checkup" data-id="${escapeHtml(c.checkupPackageId)}">${c.available ? 'Switch off' : 'Switch on'}</button></td>
+          </tr>`).join('')}</tbody></table></div>`
+      : '<p class="empty-state">No check-up packages yet. Add tests from the test catalogue first, then use New package.</p>';
+  const metrics = state.checkupsSynced
+    ? [[String(rows.length), 'Packages', 'All tiers'], [String(rows.filter(c => c.available).length), 'Available', 'On offer'], [String(new Set(rows.map(c => c.tier)).size), 'Tiers in use', 'Of 4']]
+    : [['…', 'Packages', 'Loading'], ['…', 'Available', 'Loading'], ['…', 'Tiers in use', 'Loading']];
+  return `<div class="page">
+    ${pageHeading('Revenue Cycle', 'Check-Up Packages', 'Optional Classic, Executive, Diamond and Platinum packages. Each lists tests from your price list. You set the price.')}
+    ${metricGrid(metrics)}
+    ${card('<div class="section-heading"><span>Packages</span><button class="btn btn-primary" data-action="open-checkup">New package</button></div>', body)}
+  </div>`;
+}
+
+let checkupsPromise = null;
+function syncCheckups() {
+  if (!checkupsPromise) {
+    checkupsPromise = wellipayApi.listCheckupPackages()
+      .then(data => { state.checkups = data.items; state.checkupsSynced = true; state.checkupsError = ''; })
+      .catch(err => { state.checkupsError = `Packages not loaded: ${err.message}`; showToast('API Sync Failed', state.checkupsError); })
+      .finally(() => { checkupsPromise = null; render(); });
+  }
+  return checkupsPromise;
+}
+
+let cataloguePromise = null;
+function syncCatalogue() {
+  if (!cataloguePromise) {
+    cataloguePromise = wellipayApi.listDiagnosticCatalogue()
+      .then(data => { state.catalogue = data; state.catalogueSynced = true; state.catalogueError = ''; })
+      .catch(err => { state.catalogueError = `Test catalogue not loaded: ${err.message}`; showToast('API Sync Failed', state.catalogueError); })
+      .finally(() => { cataloguePromise = null; render(); });
+  }
+  return cataloguePromise;
+}
+
+function openCatalogue() {
+  state.modal = { type: 'catalogue', q: '', category: '', picks: {} };
+  state.catalogueSynced = false;
+  state.catalogueError = '';
+  render();
+  syncCatalogue();
+}
+
+function openCheckup(packageId) {
+  const pack = packageId ? state.checkups.find(c => c.checkupPackageId === packageId) : null;
+  state.modal = { type: 'checkup', packageId: pack ? pack.checkupPackageId : '' };
+  if (!state.catalogueSynced && !state.catalogueError) syncCatalogue();
+  render();
+}
+
+async function toggleCheckup(id) {
+  const pack = state.checkups.find(c => c.checkupPackageId === id);
+  if (!pack) return;
+  try {
+    const updated = await wellipayApi.updateCheckupPackage(id, { available: !pack.available });
+    state.checkups = state.checkups.map(c => c.checkupPackageId === id ? updated : c);
+    render();
+  } catch (err) {
+    showToast('Package not changed', err.message);
+  }
+}
+
+// Ticks the price list items that match a general check-up list (MALE or FEMALE).
+function quickSelectCheckup(list) {
+  const form = document.getElementById('checkup-form');
+  if (!form) return;
+  const codes = new Set(state.catalogue.tests.filter(t => t.checkups.includes(list)).map(t => t.code));
+  const ids = new Set(state.priceList.filter(x => x.active && x.masterCode && codes.has(x.masterCode)).map(x => x.serviceItemId));
+  form.querySelectorAll('input[name="test"]').forEach(box => { box.checked = ids.has(box.value); });
+  updateCheckupSum();
+  const missing = codes.size - ids.size;
+  showToast('General check-up selected', missing > 0 ? `${ids.size} of ${codes.size} tests are on your price list. Add the other ${missing} from the test catalogue.` : `${ids.size} tests selected.`);
+}
+
+function updateCheckupSum() {
+  const form = document.getElementById('checkup-form');
+  const out = document.getElementById('checkup-sum');
+  if (!form || !out) return;
+  const byId = new Map(state.priceList.map(x => [x.serviceItemId, x.unitPriceMinor]));
+  let total = 0;
+  let count = 0;
+  form.querySelectorAll('input[name="test"]:checked').forEach(box => { total += byId.get(box.value) || 0; count += 1; });
+  out.textContent = `${count} tests selected. Their prices add up to ${money(fromMinor(total))}.`;
+}
+
 let corporatePromise = null;
 function syncCorporate() {
   if (!corporatePromise) {
@@ -2187,6 +2303,7 @@ function render() {
     payments: renderPayments,
     'services-pricing': renderServicesPricing,
     bookings: renderBookings,
+    'checkup-packages': renderCheckupPackages,
     'corporate-accounts': renderCorporateAccounts,
     claims: renderClaims,
     'hmo-insurance': renderHmoInsurance,
@@ -2214,6 +2331,7 @@ function render() {
   const typed = captureModalInput();
   modalRoot.innerHTML = renderModal();
   restoreModalInput(typed);
+  updateCheckupSum();
   content.focus({ preventScroll: true });
 
   if ((state.active === 'patients' || state.active === 'invoices' || state.active === 'hospital-desk' || state.active === 'bookings' || state.active === 'hmo-insurance') && !state.patientRecordsSynced) ensurePatientRecords().then(() => render());
@@ -2227,6 +2345,8 @@ function render() {
   if (!SHOW_SAMPLE_DATA && state.active === 'hmo-insurance' && !state.hmoPoliciesSynced && !state.hmoPoliciesError) syncHmoPolicies();
   if (!SHOW_SAMPLE_DATA && state.active === 'claims' && !state.invoicesSynced) syncInvoicesFromApi();
   if (isLab() && state.active === 'bookings' && !state.bookingsSynced && !state.bookingsError) syncBookings();
+  if (isLab() && (state.active === 'checkup-packages' || state.active === 'invoices') && !state.checkupsSynced && !state.checkupsError) syncCheckups();
+  if (isLab() && state.active === 'checkup-packages' && !state.priceListSynced && !state.priceListError) syncPriceList();
   if (isLab() && state.active === 'bookings' && !state.invoicesSynced) syncInvoicesFromApi();
   if (usesCorporate() && (state.active === 'corporate-accounts' || state.active === 'invoices' || state.active === 'hospital-desk') && !state.corporateSynced && !state.corporateError) syncCorporate();
   if (state.active === 'family-sponsors' && !SHOW_SAMPLE_DATA) { if (!state.invoicesSynced) syncInvoicesFromApi(); if (!state.fundingSynced) syncFundingFromApi(); }
@@ -2559,6 +2679,7 @@ function renderModal() {
       : `${state.priceList.some(x => x.active) ? `<div class="form-group"><label>From price list (optional)</label>
             <select id="inv-price-pick"><option value="">Choose a saved item, or type below</option>
               ${state.priceList.filter(x => x.active).map(x => `<option value="${escapeHtml(x.serviceItemId)}">${escapeHtml(x.name)}${x.isPackage ? ' (package)' : ''} — ${money(fromMinor(x.unitPriceMinor))}</option>`).join('')}
+              ${isLab() && state.checkups.some(c => c.available) ? `<optgroup label="Check-up packages">${state.checkups.filter(c => c.available).map(c => `<option value="pkg:${escapeHtml(c.checkupPackageId)}">${escapeHtml(c.name)} (${escapeHtml(TIER_LABEL[c.tier] || c.tier)}) — ${money(fromMinor(c.priceMinor))}</option>`).join('')}</optgroup>` : ''}
             </select></div>` : ''}
           <div class="form-group"><label>${escapeHtml(copy.itemLabel)} *</label><input class="input" name="serviceName" required maxlength="200" placeholder="${escapeHtml(copy.itemPlaceholder)}"></div>
           <div class="form-grid two-col">
@@ -2839,6 +2960,91 @@ function renderModal() {
     </div>`;
   }
 
+  if (state.modal.type === 'catalogue') {
+    const m = state.modal;
+    const cat = state.catalogue;
+    const offeredNow = t => !!t.offer;
+    const shown = cat.tests.filter(t => (!m.category || t.categoryCode === m.category) && (!m.q || t.name.toLowerCase().includes(m.q.toLowerCase()) || t.code.toLowerCase().includes(m.q.toLowerCase())));
+    const list = !state.catalogueSynced
+      ? `<p class="empty-state">${state.catalogueError ? escapeHtml(state.catalogueError) : 'Loading test catalogue…'}</p>`
+      : shown.length
+        ? `<div class="table-wrap" style="max-height:340px;overflow:auto"><table class="table">
+            <thead><tr><th></th><th>Test</th><th>Sample</th><th>Your price (₦)</th></tr></thead>
+            <tbody>${shown.map(t => {
+              const pick = m.picks[t.code] || { checked: false, price: '' };
+              return `<tr>
+                <td><input type="checkbox" data-pick-code="${escapeHtml(t.code)}" aria-label="Offer ${escapeHtml(t.name)}" ${offeredNow(t) ? 'disabled' : ''} ${pick.checked ? 'checked' : ''}></td>
+                <td><strong>${escapeHtml(t.name)}</strong><br><small style="color:var(--muted)">${escapeHtml(t.code)} · ${escapeHtml(t.category)}</small></td>
+                <td>${escapeHtml(t.sampleType)}</td>
+                <td>${offeredNow(t) ? tag('On your list', 'neutral') : `<input class="input" type="number" min="1" step="any" data-pick-price="${escapeHtml(t.code)}" value="${escapeHtml(pick.price)}" style="width:110px" aria-label="Price for ${escapeHtml(t.name)}">`}</td>
+              </tr>`;
+            }).join('')}</tbody></table></div>`
+        : '<p class="empty-state">No tests match.</p>';
+    const picked = Object.values(m.picks).filter(p => p.checked).length;
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="catalogue-title">
+        <h2 id="catalogue-title">Test catalogue</h2>
+        <p>Tick the tests you offer and set your own price. The settings below apply to every test you add in this step. You can change them per test later.</p>
+        <form id="catalogue-form" class="form-grid">
+          <div class="form-grid two-col">
+            <div class="form-group"><label>Category</label>
+              <select name="category" id="catalogue-category"><option value="">All categories</option>
+                ${cat.categories.map(c => `<option value="${escapeHtml(c.code)}" ${m.category === c.code ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
+              </select></div>
+            <div class="form-group"><label>Search</label><input class="input" name="q" id="catalogue-q" value="${escapeHtml(m.q)}" placeholder="Test name or code"></div>
+          </div>
+          <div class="form-grid two-col">
+            <div class="form-group"><label>Turnaround time</label><input class="input" name="defTurnaround" maxlength="60" placeholder="e.g. 24 hours"></div>
+            <div style="display:flex;flex-direction:column;gap:6px;justify-content:flex-end">
+              <label style="font-size:13px"><input type="checkbox" name="defHome"> Home sample collection</label>
+              <label style="font-size:13px"><input type="checkbox" name="defDigital"> Digital result delivery</label>
+            </div>
+          </div>
+          ${list}
+          <div class="modal-actions">
+            <button class="btn btn-secondary" type="button" data-action="close-modal">Close</button>
+            <button class="btn btn-primary" type="submit" id="catalogue-submit" ${state.catalogueSynced ? '' : 'disabled'}>Add ${picked} to price list</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+  }
+
+  if (state.modal.type === 'checkup') {
+    const pack = state.modal.packageId ? state.checkups.find(c => c.checkupPackageId === state.modal.packageId) : null;
+    const singles = state.priceList.filter(x => !x.isPackage && x.active);
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="checkup-title">
+        <h2 id="checkup-title">${pack ? 'Edit check-up package' : 'New check-up package'}</h2>
+        <p>A package lists tests from your price list. It does not change them.</p>
+        <form id="checkup-form" class="form-grid" data-id="${pack ? escapeHtml(pack.checkupPackageId) : ''}">
+          <div class="form-grid two-col">
+            <div class="form-group"><label>Package name *</label><input class="input" name="name" required minlength="2" maxlength="120" value="${pack ? escapeHtml(pack.name) : ''}" placeholder="e.g. Executive check-up (male)"></div>
+            <div class="form-group"><label>Price (₦) *</label><input class="input" type="number" name="price" required min="1" step="any" value="${pack ? pack.priceMinor / 100 : ''}"></div>
+          </div>
+          <div class="form-grid two-col">
+            <div class="form-group"><label>Tier *</label><select name="tier">${TIER_ORDER.slice().reverse().map(t => `<option value="${t}" ${pack && pack.tier === t ? 'selected' : ''}>${TIER_LABEL[t]}</option>`).join('')}</select></div>
+            <div class="form-group"><label>For</label><select name="audience">${['ALL', 'MALE', 'FEMALE'].map(a => `<option value="${a}" ${pack && pack.audience === a ? 'selected' : ''}>${AUDIENCE_LABEL[a]}</option>`).join('')}</select></div>
+          </div>
+          <fieldset class="form-group" style="border:1px solid var(--color-divider);padding:10px;max-height:240px;overflow:auto"><legend style="font-size:12px;padding:0 6px">Included tests (two or more)</legend>
+            <div style="margin:0 0 6px;display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn btn-secondary" type="button" data-action="checkup-quick" data-list="MALE" ${state.catalogueSynced ? '' : 'disabled'}>Select general check-up, male</button>
+              <button class="btn btn-secondary" type="button" data-action="checkup-quick" data-list="FEMALE" ${state.catalogueSynced ? '' : 'disabled'}>Select general check-up, female</button>
+            </div>
+            ${singles.length ? singles.map(x => `<label style="display:block;font-size:13px;padding:2px 0"><input type="checkbox" name="test" value="${escapeHtml(x.serviceItemId)}" ${pack && pack.includedIds.includes(x.serviceItemId) ? 'checked' : ''}> ${escapeHtml(x.name)} · ${money(fromMinor(x.unitPriceMinor))}</label>`).join('') : '<p class="empty-state">Your price list has no tests yet. Add some from the test catalogue first.</p>'}
+          </fieldset>
+          <p id="checkup-sum" style="font-size:12px;color:var(--muted);margin:0"></p>
+          <div class="form-group"><label>Not included (optional)</label><textarea class="input" name="exclusions" maxlength="1000" rows="2" placeholder="e.g. Imaging, specialist consultation">${pack && pack.exclusions ? escapeHtml(pack.exclusions) : ''}</textarea></div>
+          <label style="font-size:13px"><input type="checkbox" name="available" ${!pack || pack.available ? 'checked' : ''}> Available to book</label>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
+            <button class="btn btn-primary" type="submit" id="checkup-submit">Save</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+  }
+
   if (state.modal.type === 'corporate-account') {
     const a = state.modal.accountId ? state.corporateAccounts.find(x => x.accountId === state.modal.accountId) : null;
     return `<div class="modal-backdrop" data-action="dismiss-modal">
@@ -2957,6 +3163,15 @@ function renderModal() {
             <div class="form-group"><label>${copy.quantity ? 'Unit price (₦) *' : 'Price (₦) *'}</label><input class="input" type="number" name="price" required min="1" step="any" value="${it ? it.unitPriceMinor / 100 : ''}" placeholder="e.g. 8600"></div>
             <div class="form-group"><label>Category (optional)</label><input class="input" name="category" maxlength="60" value="${it && it.category ? escapeHtml(it.category) : ''}" placeholder="e.g. Haematology"></div>
           </div>
+          ${isLab() ? `<div class="form-grid two-col">
+            <div class="form-group"><label>Sample type</label><input class="input" name="sampleType" maxlength="60" value="${it && it.sampleType ? escapeHtml(it.sampleType) : ''}" placeholder="e.g. Blood"></div>
+            <div class="form-group"><label>Turnaround time</label><input class="input" name="turnaround" maxlength="60" value="${it && it.turnaround ? escapeHtml(it.turnaround) : ''}" placeholder="e.g. 24 hours"></div>
+          </div>
+          <div class="form-group"><label>Preparation</label><textarea class="input" name="preparation" maxlength="500" rows="2" placeholder="e.g. Fast for 8 to 12 hours">${it && it.preparation ? escapeHtml(it.preparation) : ''}</textarea></div>
+          <div class="form-grid two-col">
+            <label style="font-size:13px"><input type="checkbox" name="homeCollection" ${it && it.homeCollection ? 'checked' : ''}> Home sample collection</label>
+            <label style="font-size:13px"><input type="checkbox" name="digitalResults" ${it && it.digitalResults ? 'checked' : ''}> Digital result delivery</label>
+          </div>` : ''}
           ${(() => {
             const singles = state.priceList.filter(x => !x.isPackage && x.active && (!it || x.serviceItemId !== it.serviceItemId));
             if (!singles.length) return '';
@@ -4575,6 +4790,11 @@ function dispatch(action, target, domEvent) {
     case 'open-price-item': state.modal={type:'price-item'};render();break;
     case 'edit-price-item': state.modal={type:'price-item',itemId:String(id)};render();break;
     case 'toggle-price-item': togglePriceItem(String(id)); break;
+    case 'open-catalogue': openCatalogue(); break;
+    case 'open-checkup': openCheckup(''); break;
+    case 'edit-checkup': openCheckup(String(id)); break;
+    case 'toggle-checkup': toggleCheckup(String(id)); break;
+    case 'checkup-quick': quickSelectCheckup(target.dataset.list); break;
     case 'open-add-service': state.modal={type:'add-service'};render();break;
 
     /* Refunds */
@@ -4836,6 +5056,14 @@ document.addEventListener('click', event => {
 });
 
 document.addEventListener('input', event => {
+  if (state.modal && state.modal.type === 'catalogue') {
+    if (event.target.id === 'catalogue-q') { state.modal.q = event.target.value; render(); return; }
+    if (event.target.dataset.pickPrice) {
+      const code = event.target.dataset.pickPrice;
+      state.modal.picks[code] = { ...(state.modal.picks[code] || { checked: false }), price: event.target.value };
+      return;
+    }
+  }
   if (event.target.dataset.staffLevel) { changeLiveStaffAccessLevel(event.target.dataset.staffLevel, event.target.value); }
   if (event.target.id === 'refund-threshold') {
     state.settings.threshold = Math.max(0, Number(event.target.value) || 0);
@@ -4863,10 +5091,28 @@ document.addEventListener('input', event => {
 });
 
 document.addEventListener('change', event => {
+  if (state.modal && state.modal.type === 'catalogue') {
+    if (event.target.id === 'catalogue-category') { state.modal.category = event.target.value; render(); return; }
+    if (event.target.dataset.pickCode) {
+      const code = event.target.dataset.pickCode;
+      state.modal.picks[code] = { ...(state.modal.picks[code] || { price: '' }), checked: event.target.checked };
+      const btn = document.getElementById('catalogue-submit');
+      if (btn) btn.textContent = `Add ${Object.values(state.modal.picks).filter(p => p.checked).length} to price list`;
+      return;
+    }
+  }
+  if (event.target.name === 'test' && event.target.closest('#checkup-form')) updateCheckupSum();
   if (event.target.name === 'filter') { state.filter = event.target.value; render(); }
   if (event.target.name === 'payer') { state.payer = event.target.value; resetPayment(); render(); }
   if (event.target.id === 'refund-threshold') { state.settings.threshold = Math.max(0, Number(event.target.value) || 0); }
-  if (event.target.id === 'inv-price-pick') {
+  if (event.target.id === 'inv-price-pick' && event.target.value.startsWith('pkg:')) {
+    const pack = state.checkups.find(c => c.checkupPackageId === event.target.value.slice(4));
+    const form = event.target.closest('form');
+    if (pack && form) {
+      form.elements.serviceName.value = `${pack.name} (${checkupContents(pack).join(', ')})`.slice(0, 200);
+      form.elements.serviceAmount.value = pack.priceMinor / 100;
+    }
+  } else if (event.target.id === 'inv-price-pick') {
     const item = state.priceList.find(x => x.serviceItemId === event.target.value);
     const form = event.target.closest('form');
     if (item && form) {
@@ -5194,6 +5440,15 @@ document.addEventListener('submit', async event => {
       unitPriceMinor: toMinor(Number(fd.get('price'))),
       componentIds: components,
     };
+    if (isLab()) {
+      const text = name => fd.get(name).toString().trim();
+      for (const name of ['sampleType', 'turnaround', 'preparation']) {
+        if (text(name)) body[name] = text(name);
+        else if (itemId) body[name] = null;
+      }
+      body.homeCollection = fd.get('homeCollection') === 'on';
+      body.digitalResults = fd.get('digitalResults') === 'on';
+    }
     try {
       if (itemId) {
         const updated = await wellipayApi.updateServiceItem(itemId, { ...body, category: category || null });
@@ -5207,6 +5462,64 @@ document.addEventListener('submit', async event => {
       render();
     } catch (err) {
       showToast('Item not saved', err.message);
+      if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+    }
+  }
+  if (event.target.id === 'catalogue-form') {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    const picks = Object.entries(state.modal.picks).filter(([, p]) => p.checked);
+    if (!picks.length) { showToast('Nothing selected', 'Tick at least one test.'); return; }
+    const bad = picks.find(([, p]) => !(Number(p.price) > 0));
+    if (bad) { showToast('Price needed', `Enter a price for ${bad[0]}.`); return; }
+    const turnaround = fd.get('defTurnaround').toString().trim();
+    const homeCollection = fd.get('defHome') === 'on';
+    const digitalResults = fd.get('defDigital') === 'on';
+    const tests = picks.map(([code, p]) => ({ code, unitPriceMinor: toMinor(Number(p.price)), homeCollection, digitalResults, ...(turnaround ? { turnaround } : {}) }));
+    const btn = document.getElementById('catalogue-submit');
+    if (btn) { btn.disabled = true; btn.textContent = 'Adding…'; }
+    try {
+      const result = await wellipayApi.offerDiagnosticTests({ tests });
+      state.priceList = [...state.priceList, ...result.created].sort((a, b) => a.name.localeCompare(b.name));
+      state.modal.picks = {};
+      showToast('Price list updated', `${result.created.length} added${result.skipped.length ? `, ${result.skipped.length} skipped` : ''}.`);
+      state.catalogueSynced = false;
+      await syncCatalogue();
+    } catch (err) {
+      showToast('Tests not added', err.message);
+      if (btn) { btn.disabled = false; btn.textContent = 'Try again'; }
+    }
+  }
+  if (event.target.id === 'checkup-form') {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    const packageId = event.target.dataset.id;
+    const includedIds = fd.getAll('test').map(String);
+    if (includedIds.length < 2) { showToast('Check the package', 'Tick at least two tests.'); return; }
+    const exclusions = fd.get('exclusions').toString().trim();
+    const body = {
+      name: fd.get('name').toString().trim(),
+      tier: fd.get('tier').toString(),
+      audience: fd.get('audience').toString(),
+      priceMinor: toMinor(Number(fd.get('price'))),
+      includedIds,
+      available: fd.get('available') === 'on',
+    };
+    const btn = document.getElementById('checkup-submit');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    try {
+      if (packageId) {
+        const updated = await wellipayApi.updateCheckupPackage(packageId, { ...body, exclusions: exclusions || null });
+        state.checkups = state.checkups.map(c => c.checkupPackageId === packageId ? updated : c);
+      } else {
+        const created = await wellipayApi.createCheckupPackage(exclusions ? { ...body, exclusions } : body);
+        state.checkups = [...state.checkups, created];
+      }
+      state.modal = null;
+      showToast('Package saved', body.name);
+      render();
+    } catch (err) {
+      showToast('Package not saved', err.message);
       if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
     }
   }

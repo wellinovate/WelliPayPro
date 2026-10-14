@@ -196,6 +196,7 @@ function toQueryString(params) {
 }
 
 export const wellipayApi = {
+  createPayLink: (invoiceId, body) => apiRequest(`/provider/invoices/${encodeURIComponent(invoiceId)}/pay-link`, { method: 'POST', body }),
   createInvoice: (body) => apiRequest('/provider/invoices', { method: 'POST', body, idempotent: 'inv' }),
   getInvoice: (invoiceId) => apiRequest(`/provider/invoices/${encodeURIComponent(invoiceId)}`),
   listInvoices: (query) => apiRequest(`/provider/invoices${toQueryString(query)}`),

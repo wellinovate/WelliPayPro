@@ -6,8 +6,8 @@
 // the earlier hardcoded DEMO_USERS list. A logged-in staff member's own
 // role is a free-text job title. What they may do comes from their access
 // level (ACCESS_LEVELS below), which the API enforces on every request.
-// The console does not hide menu items; a blocked action shows the API's
-// message in a toast.
+// The console hides menu items the level cannot use (pageAllowed below), and
+// the API still enforces the level on every request.
 const ACCESS_LEVELS = {
   ADMIN: { label: 'Admin', hint: 'Everything, including staff and webhooks' },
   FINANCE: { label: 'Finance', hint: 'Decide refunds, confirm settlements, match transactions' },
@@ -405,6 +405,7 @@ const state = {
   reconciliationSyncing: false,
   liveReconciliationSummary: null,
   staffSynced: false,
+  webhooks: [], webhooksSynced: false, webhooksSyncing: false, webhooksError: '',
   staffSyncing: false,
   liveStaff: [],
   paymentPlansSynced: false,
@@ -571,7 +572,22 @@ function providerTypeOrDefault() { return getTenant()?.providerType || 'HOSPITAL
 function isLab() { return !SHOW_SAMPLE_DATA && providerTypeOrDefault() === 'DIAGNOSTIC_LAB'; }
 function isPharmacy() { return !SHOW_SAMPLE_DATA && providerTypeOrDefault() === 'PHARMACY'; }
 function usesCorporate() { return !SHOW_SAMPLE_DATA && ['DIAGNOSTIC_LAB', 'HOSPITAL'].includes(providerTypeOrDefault()); }
+// Pages by access level. The API is the real gate; this keeps the menu from
+// offering pages that would only answer 403. A level the console does not know
+// (or a session with no level) sees everything.
+const ADMIN_ONLY_PAGES = ['staff', 'integrations', 'api-developers', 'settings'];
+const ADMIN_FINANCE_PAGES = ['subscription', 'audit-log'];
+const CASHIER_PAGES = ['hospital-desk', 'notifications', 'patients', 'invoices', 'payments', 'services-pricing', 'bookings', 'family-sponsors', 'wellipass', 'refunds', 'payment-plans', 'referrals', 'support', 'mobile-app', ...PHARMACY_PAGES];
+function pageAllowed(id) {
+  const level = authState.user?.accessLevel;
+  if (!level || level === 'ADMIN' || !ACCESS_LEVELS[level]) return true;
+  if (ADMIN_ONLY_PAGES.includes(id)) return false;
+  if (level === 'CASHIER') return CASHIER_PAGES.includes(id);
+  if (ADMIN_FINANCE_PAGES.includes(id)) return level === 'FINANCE';
+  return true;
+}
 function navVisible(id) {
+  if (!pageAllowed(id)) return false;
   if (id === 'branches') return SHOW_SAMPLE_DATA;
   if (id === 'bookings' || id === 'checkup-packages') return isLab();
   if (PHARMACY_PAGES.includes(id)) return isPharmacy();
@@ -2409,6 +2425,84 @@ function renderReferrals() {
   </div>`;
 }
 
+/* Webhook endpoints (Admin only). Real list from GET /provider/webhook-endpoints. */
+function renderApiDevelopers() {
+  if (SHOW_SAMPLE_DATA) return renderStub();
+  const fmt = iso => new Date(iso).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' });
+  const rows = state.webhooks.map(w => `<tr>
+    <td style="word-break:break-all;"><strong>${escapeHtml(w.url)}</strong></td>
+    <td>${w.active ? tag('Active', 'success') : tag('Deactivated')}</td>
+    <td><small>${escapeHtml(fmt(w.createdAt))}</small></td>
+    <td>${w.active ? `<button class="btn btn-secondary" data-action="deactivate-webhook" data-id="${escapeHtml(w.webhookEndpointId)}">Deactivate</button>` : ''}</td>
+  </tr>`).join('');
+  const activeCount = state.webhooks.filter(w => w.active).length;
+  const listBody = state.webhooksError
+    ? `<p class="empty-state">${escapeHtml(state.webhooksError)} <button class="btn btn-secondary" data-action="retry-webhooks">Try again</button></p>`
+    : !state.webhooksSynced
+      ? '<p class="empty-state">Loading endpoints…</p>'
+      : state.webhooks.length === 0
+        ? '<p class="empty-state">No endpoints yet. Events stay queued until one is added.</p>'
+        : `<div class="table-wrap"><table class="table"><thead><tr><th>Endpoint URL</th><th>Status</th><th>Added</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  return `<div class="page">
+    ${renderBranchBanner()}
+    ${pageHeading('Operations', 'API & Developers', 'Webhook endpoints that receive WelliPay events such as payments and refunds.')}
+    ${metricGrid([[state.webhooksSynced ? String(activeCount) : '—', 'Active endpoints', 'Webhooks'], [state.webhooksSynced ? String(state.webhooks.length - activeCount) : '—', 'Deactivated', 'Webhooks']])}
+    ${card('<div class="section-heading"><span>Webhook endpoints</span><button class="btn btn-primary" data-action="open-add-webhook">Add endpoint</button></div>', listBody)}
+    ${card('Verifying a delivery', `
+      <p>Each event is sent as a POST with a JSON body: <code>eventId</code>, <code>eventType</code>, <code>occurredAt</code>, <code>tenantRef</code>, <code>resourceRef</code>, <code>data</code>.</p>
+      <p>Two headers come with it: <code>X-WelliPay-Timestamp</code> (Unix seconds) and <code>X-WelliPay-Signature</code>.</p>
+      <p>The signature is <code>sha256=</code> followed by the hex HMAC-SHA256 of <code>timestamp + "." + raw request body</code>, keyed with the endpoint secret. Compare it before trusting the body, and reject old timestamps.</p>
+      <p>Answer with a 2xx status. Any other answer, or no answer, is retried with a growing delay. The Notifications page lists the events the API has queued.</p>
+    `)}
+  </div>`;
+}
+
+async function syncWebhooks() {
+  if (state.webhooksSyncing) return;
+  state.webhooksSyncing = true;
+  try {
+    const data = await wellipayApi.listWebhookEndpoints();
+    state.webhooks = data.items;
+    state.webhooksSynced = true;
+    state.webhooksError = '';
+  } catch (err) {
+    state.webhooksError = `Endpoints not loaded: ${err.message}`;
+  } finally {
+    state.webhooksSyncing = false;
+    if (state.active === 'api-developers') render();
+  }
+}
+
+async function deactivateWebhook(id) {
+  const endpoint = state.webhooks.find(w => w.webhookEndpointId === id);
+  if (!endpoint || !window.confirm(`Deactivate ${endpoint.url}? It stops receiving events and cannot be turned back on. Add a new endpoint to resume.`)) return;
+  try {
+    await wellipayApi.deleteWebhookEndpoint(id);
+    logAudit('Webhook Deactivated', endpoint.url);
+    showToast('Endpoint deactivated', endpoint.url);
+    state.webhooksSynced = false;
+  } catch (err) {
+    showToast('Not deactivated', err.message);
+  }
+  render();
+}
+
+async function createWebhook(url) {
+  const m = state.modal;
+  if (!m || m.busy) return;
+  m.busy = true; render();
+  try {
+    const created = await wellipayApi.createWebhookEndpoint({ url });
+    logAudit('Webhook Added', created.url);
+    state.modal = { type: 'webhook-secret', url: created.url, secret: created.secret };
+    state.webhooksSynced = false;
+  } catch (err) {
+    m.busy = false;
+    showToast('Endpoint not added', err.message);
+  }
+  render();
+}
+
 /* 26. Remaining Connected Screens */
 function renderStub() {
   const stubData = {
@@ -2531,6 +2625,12 @@ function restoreModalInput(saved) {
 
 function render() {
   if (!labels[state.active]) state.active = 'dashboard';
+  if (!pageAllowed(state.active)) {
+    const blocked = labels[state.active];
+    state.active = pageAllowed('dashboard') ? 'dashboard' : 'hospital-desk';
+    history.replaceState(null, '', `#${state.active}`);
+    showToast('Page not available', `${blocked} is not open to your access level.`);
+  }
   renderNav();
   document.querySelector('#page-title').textContent = navLabel(state.active, labels[state.active]);
   const branchPicker = document.querySelector('.branch-picker');
@@ -2564,6 +2664,7 @@ function render() {
     reports: renderReports,
     branches: renderBranches,
     staff: renderStaff,
+    'api-developers': renderApiDevelopers,
     'audit-log': renderAuditLog,
     notifications: renderNotifications,
     'ai-insights': renderAiInsights,
@@ -2610,6 +2711,7 @@ function render() {
   if ((state.active === 'refunds' || state.active === 'dashboard') && !state.refundsSynced) syncRefundsFromApi();
   if (state.active === 'reconciliation' && !state.reconciliationSynced) syncReconciliationFromApi();
   if ((state.active === 'staff' || state.active === 'branches') && !state.staffSynced) syncStaffFromApi();
+  if (state.active === 'api-developers' && !SHOW_SAMPLE_DATA && !state.webhooksSynced && !state.webhooksError) syncWebhooks();
   if (state.active === 'payment-plans' && !state.paymentPlansSynced) syncPaymentPlansFromApi();
   if (state.active === 'payment-plans' && !state.invoicesSynced) syncInvoicesFromApi();
   if (state.active === 'notifications' && !state.eventsSynced) syncEventsFromApi();
@@ -3592,6 +3694,36 @@ function renderModal() {
             <button class="btn btn-primary" type="submit">Submit for Approval</button>
           </div>
         </form>
+      </section>
+    </div>`;
+  }
+
+  if (state.modal.type === 'add-webhook') {
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="add-wh-title">
+        <h2 id="add-wh-title">Add webhook endpoint</h2>
+        <p>WelliPay will POST signed events to this address. The signing secret is shown once after you add it.</p>
+        <form id="add-webhook-form" class="form-grid">
+          <div class="form-group"><label>Endpoint URL *</label><input class="input" type="url" name="url" required maxlength="500" placeholder="https://example.com/hooks/wellipay"></div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
+            <button class="btn btn-primary" type="submit" ${state.modal.busy ? 'disabled' : ''}>${state.modal.busy ? 'Adding…' : 'Add endpoint'}</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+  }
+
+  if (state.modal.type === 'webhook-secret') {
+    return `<div class="modal-backdrop">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="wh-secret-title">
+        <h2 id="wh-secret-title">Signing secret</h2>
+        <p>Copy this secret now. It is not shown again. Use it to verify the signature on each delivery to ${escapeHtml(state.modal.url)}.</p>
+        <div class="form-group"><label>Secret</label><input class="input" id="webhook-secret-value" readonly value="${escapeHtml(state.modal.secret)}"></div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" type="button" data-action="copy-webhook-secret">Copy</button>
+          <button class="btn btn-primary" type="button" data-action="close-modal">I have saved it</button>
+        </div>
       </section>
     </div>`;
   }
@@ -5238,6 +5370,14 @@ function dispatch(action, target, domEvent) {
     }
 
     /* Staff */
+    case 'open-add-webhook': state.modal={type:'add-webhook'};render();break;
+    case 'deactivate-webhook': deactivateWebhook(id);break;
+    case 'retry-webhooks': state.webhooksError='';render();break;
+    case 'copy-webhook-secret': {
+      const value = document.querySelector('#webhook-secret-value')?.value || '';
+      (navigator.clipboard ? navigator.clipboard.writeText(value) : Promise.reject()).then(() => showToast('Copied', 'Store it in your receiver\'s settings.'), () => showToast('Not copied', 'Select the secret and copy it.'));
+      break;
+    }
     case 'open-invite-staff': state.modal={type:'invite-staff'};render();break;
     case 'deactivate-staff': toggleLiveStaffStatus(id, 'DEACTIVATED');break;
     case 'reactivate-staff': toggleLiveStaffStatus(id, 'ACTIVE');break;
@@ -6051,6 +6191,12 @@ document.addEventListener('submit', async event => {
     event.preventDefault();
     const fd = new FormData(event.target);
     startPaystackCharge(fd.get('email').toString().trim(), Number(fd.get('amount')));
+  }
+  if (event.target.id === 'add-webhook-form') {
+    event.preventDefault();
+    const url = new FormData(event.target).get('url').toString().trim();
+    if (!/^https:\/\//i.test(url)) { showToast('Use an https address', 'Endpoints must start with https://.'); return; }
+    createWebhook(url);
   }
   if (event.target.id === 'invite-staff-form') {
     event.preventDefault();

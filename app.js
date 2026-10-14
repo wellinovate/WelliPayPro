@@ -382,6 +382,7 @@ const state = {
   checkupsSynced: false,
   checkupsError: '',
   resultsByBooking: {},
+  smsEnabled: null,
   patientsSyncing: false,
   paymentsSynced: false,
   paymentsSyncing: false,
@@ -1573,7 +1574,7 @@ function renderBookings() {
               <td>${b.kind === 'IMAGING' ? 'Scan at the centre' : escapeHtml(BOOKING_TYPE_LABEL[b.type] || b.type)}</td>
               <td>${escapeHtml([b.address, b.notes].filter(Boolean).join(' · ') || '—')}</td>
               <td>${b.invoiceId ? (linked ? `${escapeHtml(linked.id)}<br>${tag(escapeHtml(linked.status), linked.status === 'Paid' ? 'neutral' : linked.status === 'Unpaid' ? 'accent' : 'outline')}` : 'Linked') : `<button class="btn btn-ghost" data-action="open-link-invoice" data-id="${escapeHtml(b.bookingId)}">Link invoice</button>`}</td>
-              <td>${tag(bookingStatusLabel(b), b.status === 'READY' ? 'neutral' : 'outline')}</td>
+              <td>${tag(bookingStatusLabel(b), b.status === 'READY' ? 'neutral' : 'outline')}${b.reminderSentAt ? `<br><small style="color:var(--muted)">Reminded ${escapeHtml(formatWhen(b.reminderSentAt))}</small>` : ''}</td>
               <td>${next ? `<button class="btn btn-secondary" data-action="advance-booking" data-id="${escapeHtml(b.bookingId)}" data-status="${next[0]}">${next[1]}</button>` : ''}${['SAMPLE_COLLECTED', 'PROCESSING', 'READY'].includes(b.status) ? ` <button class="btn btn-secondary" data-action="open-results" data-id="${escapeHtml(b.bookingId)}">${b.kind === 'IMAGING' ? 'Report' : 'Results'}</button>` : ''}${b.status === 'BOOKED' ? ` <button class="btn btn-secondary" data-action="open-reminder" data-id="${escapeHtml(b.bookingId)}">Remind</button> <button class="btn btn-ghost" data-action="advance-booking" data-id="${escapeHtml(b.bookingId)}" data-status="CANCELLED">Cancel</button>` : ''}</td>
             </tr>`;
           }).join('')}</tbody></table></div>`
@@ -1652,6 +1653,22 @@ function phoneDigits(raw) {
   if (d.startsWith('234')) return d;
   if (d.startsWith('0')) return '234' + d.slice(1);
   return d;
+}
+
+async function sendReminderSms(id) {
+  const msg = document.querySelector('#reminder-form textarea[name="msg"]').value.trim();
+  const btn = document.getElementById('remind-send');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  try {
+    const updated = await wellipayApi.sendBookingReminder(id, { message: msg });
+    state.bookings = state.bookings.map(b => b.bookingId === id ? updated : b);
+    state.modal = null;
+    showToast('SMS sent', patientNameFor(updated.patientRef));
+    render();
+  } catch (err) {
+    showToast('SMS not sent', err.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Send SMS now'; }
+  }
 }
 
 function reminderText(b) {
@@ -3159,8 +3176,9 @@ function renderModal() {
           <div class="modal-actions">
             <button class="btn btn-secondary" type="button" data-action="close-modal">Close</button>
             <button class="btn btn-secondary" type="button" data-action="remind-copy">Copy</button>
+            ${state.smsEnabled && digits ? `<button class="btn btn-primary" type="button" data-action="remind-send" data-id="${escapeHtml(b.bookingId)}" id="remind-send">Send SMS now</button>` : ''}
             <button class="btn btn-secondary" type="button" data-action="remind-sms" data-phone="${escapeHtml(digits)}" ${digits ? '' : 'disabled'}>Open SMS</button>
-            <button class="btn btn-primary" type="button" data-action="remind-whatsapp" data-phone="${escapeHtml(digits)}" ${digits ? '' : 'disabled'}>Open WhatsApp</button>
+            <button class="btn ${state.smsEnabled && digits ? 'btn-secondary' : 'btn-primary'}" type="button" data-action="remind-whatsapp" data-phone="${escapeHtml(digits)}" ${digits ? '' : 'disabled'}>Open WhatsApp</button>
           </div>
         </form>
       </section>
@@ -5018,7 +5036,12 @@ function dispatch(action, target, domEvent) {
       break;
     }
     case 'save-result': saveResult(String(id), target.dataset.ready === '1'); break;
-    case 'open-reminder': state.modal = { type: 'booking-reminder', bookingId: String(id) }; render(); break;
+    case 'open-reminder':
+      state.modal = { type: 'booking-reminder', bookingId: String(id) };
+      render();
+      if (state.smsEnabled === null) wellipayApi.getSmsStatus().then(r => { state.smsEnabled = !!r.enabled; render(); }).catch(() => { state.smsEnabled = false; });
+      break;
+    case 'remind-send': sendReminderSms(String(id)); break;
     case 'remind-copy': {
       const msg = document.querySelector('#reminder-form textarea[name="msg"]').value;
       (navigator.clipboard ? navigator.clipboard.writeText(msg) : Promise.reject()).then(() => showToast('Copied', 'Paste it into any app.'), () => showToast('Not copied', 'Select the text and copy it.'));

@@ -411,6 +411,7 @@ const state = {
   liveReconciliationSummary: null,
   staffSynced: false,
   livePreAuths: [], preAuthsSynced: false, preAuthsSyncing: false, preAuthsError: '',
+  subscription: null, subscriptionError: '', subscriptionSyncing: false,
   liveRecordLinks: [], recordLinksSynced: false, recordLinksSyncing: false, recordLinksError: '',
   integrations: null, integrationsSynced: false, integrationsSyncing: false, integrationsError: '',
   accountSaving: false, account: null, accountSynced: false, accountSyncing: false, accountError: '', banks: [],
@@ -2793,8 +2794,38 @@ function renderSupport() {
 
 function renderSubscription() {
   if (SHOW_SAMPLE_DATA) return renderStub();
+  const sub = state.subscription;
+  const naira = minor => `₦${(minor / 100).toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  let body;
+  if (state.subscriptionError) {
+    body = `<p class="empty-state">${escapeHtml(state.subscriptionError)} <button class="btn btn-secondary" data-action="retry-subscription">Try again</button></p>`;
+  } else if (!sub) {
+    body = '<p class="empty-state">Loading…</p>';
+  } else {
+    const unset = 'Not recorded';
+    body = `<div class="table-wrap"><table class="table"><tbody>
+      <tr><th>Plan</th><td>${escapeHtml(sub.planName || unset)}</td></tr>
+      <tr><th>Monthly fee</th><td>${sub.monthlyFeeMinor === null ? unset : escapeHtml(naira(sub.monthlyFeeMinor))}</td></tr>
+      <tr><th>WelliPay share of online payments</th><td>${escapeHtml(String(sub.platformFeePercent))}%${sub.platformFeeSource === 'default' ? ' <small>(standard rate)</small>' : ''}</td></tr>
+      <tr><th>Started</th><td>${sub.startedAt ? escapeHtml(new Date(sub.startedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })) : unset}</td></tr>
+    </tbody></table></div>
+    <p style="color:var(--muted);font-size:0.85em;margin-top:12px;">Where a line says not recorded, Wellinovate has not entered it yet. Ask Wellinovate for your current plan and invoices.</p>`;
+  }
   return `<div class="page">${renderBranchBanner()}${pageHeading('Account', 'Subscription', 'Your WelliPay plan and fees.')}
-    ${card('Plan and fees', `<p>The console does not hold plan or fee details. Ask Wellinovate for your current plan, fees and invoices.</p>`)}</div>`;
+    ${card('Plan and fees', body)}</div>`;
+}
+async function syncSubscription() {
+  if (state.subscriptionSyncing) return;
+  state.subscriptionSyncing = true;
+  try {
+    state.subscription = await wellipayApi.getSubscription();
+    state.subscriptionError = '';
+  } catch (err) {
+    state.subscriptionError = `Plan not loaded: ${err.message}`;
+  } finally {
+    state.subscriptionSyncing = false;
+    if (state.active === 'subscription') render();
+  }
 }
 
 /* Webhook endpoints (Admin only). Real list from GET /provider/webhook-endpoints. */
@@ -3102,6 +3133,7 @@ function render() {
     if (!state.welliPassStatsSynced && !state.welliPassStatsSyncing) syncWelliPassStatsFromApi();
     if (!state.preAuthsSynced && !state.preAuthsError) syncPreAuths();
   }
+  if (state.active === 'subscription' && !SHOW_SAMPLE_DATA && !state.subscription && !state.subscriptionError) syncSubscription();
   if (state.active === 'record-links' && !SHOW_SAMPLE_DATA && !state.recordLinksSynced && !state.recordLinksError) syncRecordLinks();
   if (state.active === 'settlements' && !state.settlementsSynced) syncSettlementsFromApi();
   if (state.active === 'settlements' && !state.paymentSettlement) setTimeout(() => loadPaymentSettlement(false), 0);
@@ -5807,6 +5839,7 @@ function dispatch(action, target, domEvent) {
     /* Staff */
     case 'open-preauth-status': state.modal={type:'preauth-status', id:String(id)};render();break;
     case 'retry-preauths': state.preAuthsError='';render();break;
+    case 'retry-subscription': state.subscriptionError='';render();break;
     case 'retry-record-links': state.recordLinksError='';render();break;
     case 'open-record-link': state.modal={type:'record-link-action', id:String(id), mode:String(target.dataset.mode)};render();break;
     case 'retry-account': state.accountError='';render();break;

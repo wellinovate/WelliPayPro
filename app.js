@@ -305,7 +305,7 @@ import { wellipayApi, onNetworkChange, reportNetwork, toMinor, fromMinor, loginS
 
 const groups = [
   { name: 'Overview', items: [['dashboard', 'Dashboard', 'grid'], ['hospital-desk', 'Hospital Desk', 'wallet'], ['ai-insights', 'AI Insights', 'spark'], ['notifications', 'Notifications', 'bell']] },
-  { name: 'Revenue Cycle', items: [['patients', 'Patients', 'users'], ['invoices', 'Invoices', 'file'], ['payments', 'Payments', 'credit'], ['services-pricing', 'Services & Pricing', 'list'], ['bookings', 'Bookings & Collection', 'calendar'], ['checkup-packages', 'Check-Up Packages', 'list'], ['corporate-accounts', 'Corporate Accounts', 'building']] },
+  { name: 'Revenue Cycle', items: [['patients', 'Patients', 'users'], ['record-links', 'Record links', 'link'], ['invoices', 'Invoices', 'file'], ['payments', 'Payments', 'credit'], ['services-pricing', 'Services & Pricing', 'list'], ['bookings', 'Bookings & Collection', 'calendar'], ['checkup-packages', 'Check-Up Packages', 'list'], ['corporate-accounts', 'Corporate Accounts', 'building']] },
   { name: 'Pharmacy', items: [['pharmacy-products', 'Products', 'list'], ['pharmacy-inventory', 'Inventory', 'receipt'], ['pharmacy-prescriptions', 'Prescriptions', 'file'], ['pharmacy-orders', 'Orders & Delivery', 'wallet'], ['pharmacy-register', 'Controlled-drug register', 'shield']] },
   { name: 'Claims & Payers', items: [['claims', 'Claims', 'claim'], ['hmo-insurance', 'HMO / Insurance', 'shield'], ['authorization', 'Authorization Centre', 'check'], ['family-sponsors', 'Family / Sponsors', 'users'], ['wellipass', 'WelliPass', 'qr'], ['receivables', 'Receivables', 'receipt'], ['reconciliation', 'Reconciliation', 'refresh'], ['settlements', 'Settlements', 'bank'], ['refunds', 'Refunds', 'undo']] },
   { name: 'Growth', items: [['financing', 'Financing', 'trend'], ['payment-plans', 'Payment Plans', 'calendar'], ['referrals', 'Referrals', 'share'], ['partners', 'Providers / Partners', 'link']] },
@@ -411,6 +411,7 @@ const state = {
   liveReconciliationSummary: null,
   staffSynced: false,
   livePreAuths: [], preAuthsSynced: false, preAuthsSyncing: false, preAuthsError: '',
+  liveRecordLinks: [], recordLinksSynced: false, recordLinksSyncing: false, recordLinksError: '',
   integrations: null, integrationsSynced: false, integrationsSyncing: false, integrationsError: '',
   accountSaving: false, account: null, accountSynced: false, accountSyncing: false, accountError: '', banks: [],
   webhooks: [], webhooksSynced: false, webhooksSyncing: false, webhooksError: '',
@@ -585,7 +586,7 @@ function usesCorporate() { return !SHOW_SAMPLE_DATA && ['DIAGNOSTIC_LAB', 'HOSPI
 // (or a session with no level) sees everything.
 const ADMIN_ONLY_PAGES = ['staff', 'integrations', 'api-developers', 'settings'];
 const ADMIN_FINANCE_PAGES = ['subscription', 'audit-log'];
-const CASHIER_PAGES = ['hospital-desk', 'notifications', 'patients', 'invoices', 'payments', 'services-pricing', 'bookings', 'family-sponsors', 'wellipass', 'refunds', 'payment-plans', 'referrals', 'support', 'mobile-app', ...PHARMACY_PAGES];
+const CASHIER_PAGES = ['hospital-desk', 'notifications', 'patients', 'record-links', 'invoices', 'payments', 'services-pricing', 'bookings', 'family-sponsors', 'wellipass', 'refunds', 'payment-plans', 'referrals', 'support', 'mobile-app', ...PHARMACY_PAGES];
 function pageAllowed(id) {
   const level = authState.user?.accessLevel;
   if (!level || level === 'ADMIN' || !ACCESS_LEVELS[level]) return true;
@@ -597,6 +598,7 @@ function pageAllowed(id) {
 function navVisible(id) {
   if (!pageAllowed(id)) return false;
   if (id === 'branches') return SHOW_SAMPLE_DATA;
+  if (id === 'record-links') return !SHOW_SAMPLE_DATA;
   if (id === 'bookings' || id === 'checkup-packages') return isLab();
   if (PHARMACY_PAGES.includes(id)) return isPharmacy();
   if (id === 'corporate-accounts') return usesCorporate();
@@ -2571,6 +2573,86 @@ async function savePreAuthStatus(id, status, notes) {
   render();
 }
 
+/* Record links: patient numbers waiting for review, and every link to a health-record ID. */
+const RECORD_LINK_KIND = { WELLIRECORD: 'WelliRecord', EXTERNAL_SYSTEM: 'Other system', PROVIDER_PATIENT_NUMBER: 'Patient number' };
+const RECORD_LINK_STATUS = { PENDING_VERIFICATION: ['Waiting', 'warning'], VERIFIED: ['Verified', 'success'], REJECTED: ['Rejected', 'danger'], REVOKED: ['Removed', 'neutral'], EXPIRED: ['Expired', 'neutral'] };
+function canDecideRecordLink() {
+  const level = authState.user?.accessLevel;
+  return !level || !ACCESS_LEVELS[level] || ['ADMIN', 'FINANCE', 'BILLING'].includes(level);
+}
+function renderRecordLinks() {
+  if (SHOW_SAMPLE_DATA) return '';
+  const links = state.liveRecordLinks;
+  const loading = !state.recordLinksSynced && !state.recordLinksError;
+  const dash = n => (state.recordLinksSynced ? String(n) : '—');
+  const waiting = links.filter(l => l.kind === 'PROVIDER_PATIENT_NUMBER' && l.status === 'PENDING_VERIFICATION');
+  const fmtDate = iso => iso ? new Date(iso).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  const decide = canDecideRecordLink();
+  const who = l => `<strong>${escapeHtml(l.patientName || 'Not in registry')}</strong><br><small>${escapeHtml(l.patientRef || '')}${l.patientPhone ? ` · ${escapeHtml(l.patientPhone)}` : ''}</small>`;
+  const btn = (mode, label, id, cls = 'btn-secondary') => `<button class="btn ${cls}" data-action="open-record-link" data-id="${escapeHtml(id)}" data-mode="${mode}">${label}</button>`;
+  const err = state.recordLinksError ? `<p class="empty-state">${escapeHtml(state.recordLinksError)} <button class="btn btn-secondary" data-action="retry-record-links">Try again</button></p>` : '';
+  const waitingBody = err || (loading ? '<p class="empty-state">Loading…</p>'
+    : waiting.length === 0 ? '<p class="empty-state">No patient numbers are waiting. Patients add them from the WelliPay app.</p>'
+    : `<div class="table-wrap"><table class="table"><thead><tr><th>Patient on your registry</th><th>Number submitted</th><th>Requested</th><th></th></tr></thead><tbody>${waiting.map(l => `<tr>
+        <td>${who(l)}</td>
+        <td>${escapeHtml(l.reference)}</td>
+        <td><small>${escapeHtml(fmtDate(l.createdAt))}</small></td>
+        <td>${decide ? `${btn('APPROVE', 'Approve', l.id, 'btn-primary')} ${btn('REJECT', 'Reject', l.id)}` : ''}</td>
+      </tr>`).join('')}</tbody></table></div>`);
+  const allBody = err || (loading ? '<p class="empty-state">Loading…</p>'
+    : links.length === 0 ? '<p class="empty-state">No links yet.</p>'
+    : `<div class="table-wrap"><table class="table"><thead><tr><th>Patient</th><th>Type</th><th>Reference</th><th>Status</th><th>Updated</th><th></th></tr></thead><tbody>${links.map(l => `<tr>
+        <td>${who(l)}</td>
+        <td>${escapeHtml(RECORD_LINK_KIND[l.kind] || l.kind)}${l.integrationName ? `<br><small>${escapeHtml(l.integrationName)}</small>` : ''}</td>
+        <td>${escapeHtml(l.reference)}</td>
+        <td>${tag(RECORD_LINK_STATUS[l.status]?.[0] || escapeHtml(l.status), RECORD_LINK_STATUS[l.status]?.[1] || 'neutral')}${l.decisionNote ? `<br><small>${escapeHtml(l.decisionNote)}</small>` : ''}</td>
+        <td><small>${escapeHtml(fmtDate(l.revokedAt || l.verifiedAt || l.createdAt))}</small></td>
+        <td>${decide && (l.status === 'VERIFIED' || l.status === 'PENDING_VERIFICATION') ? btn('REVOKE', 'Remove', l.id) : ''}</td>
+      </tr>`).join('')}</tbody></table></div>`);
+  return `<div class="page">
+    ${renderBranchBanner()}
+    ${pageHeading('Record links', 'Patient health-record links', 'Links between a patient\u2019s WelliPay profile and an ID in another system.')}
+    <p style="color:var(--muted);font-size:0.85em;margin:-8px 0 12px;">A link is a reference. It does not prove identity and does not give anyone access to records. Before you approve a patient number, compare the name and phone on this page with the patient who holds that number in your own system.</p>
+    ${metricGrid([[dash(waiting.length), 'Waiting for review', 'Patient numbers'], [dash(links.filter(l => l.status === 'VERIFIED').length), 'Verified', 'All link types'], [dash(links.filter(l => l.status === 'REJECTED' || l.status === 'REVOKED').length), 'Rejected or removed', 'All link types']])}
+    ${card('Patient numbers waiting for review', waitingBody)}
+    ${card('All links', allBody)}
+  </div>`;
+}
+async function syncRecordLinks() {
+  if (state.recordLinksSyncing) return;
+  state.recordLinksSyncing = true;
+  try {
+    const data = await wellipayApi.listRecordConnections();
+    state.liveRecordLinks = data.items;
+    state.recordLinksSynced = true;
+    state.recordLinksError = '';
+  } catch (err) {
+    state.recordLinksError = `Record links not loaded: ${err.message}`;
+  } finally {
+    state.recordLinksSyncing = false;
+    if (state.active === 'record-links') render();
+  }
+}
+async function saveRecordLinkAction(id, mode, note) {
+  const m = state.modal;
+  if (!m || m.busy) return;
+  m.busy = true; render();
+  const link = state.liveRecordLinks.find(x => x.id === id);
+  try {
+    if (mode === 'REVOKE') await wellipayApi.revokeRecordConnection(id, note ? { note } : {});
+    else await wellipayApi.decideRecordConnection(id, { decision: mode, ...(note ? { note } : {}) });
+    const verb = { APPROVE: 'Record Link Approved', REJECT: 'Record Link Rejected', REVOKE: 'Record Link Removed' }[mode];
+    logAudit(verb, `${link?.patientName || link?.patientRef || 'Patient'} · ${link?.reference || ''}`);
+    showToast({ APPROVE: 'Approved', REJECT: 'Rejected', REVOKE: 'Link removed' }[mode], 'The patient sees the change in the app.');
+    state.modal = null;
+    state.recordLinksSynced = false;
+  } catch (err) {
+    m.busy = false;
+    showToast('Not saved', err.message);
+  }
+  render();
+}
+
 /* Settings: the refund approval limit and the settlement account, both held by the API. */
 function canSeeAccount() {
   const level = authState.user?.accessLevel;
@@ -2941,6 +3023,7 @@ function render() {
     claims: renderClaims,
     'hmo-insurance': renderHmoInsurance,
     authorization: renderAuthorization,
+    'record-links': renderRecordLinks,
     'family-sponsors': renderFamily,
     wellipass: renderWelliPass,
     receivables: renderReceivables,
@@ -3019,6 +3102,7 @@ function render() {
     if (!state.welliPassStatsSynced && !state.welliPassStatsSyncing) syncWelliPassStatsFromApi();
     if (!state.preAuthsSynced && !state.preAuthsError) syncPreAuths();
   }
+  if (state.active === 'record-links' && !SHOW_SAMPLE_DATA && !state.recordLinksSynced && !state.recordLinksError) syncRecordLinks();
   if (state.active === 'settlements' && !state.settlementsSynced) syncSettlementsFromApi();
   if (state.active === 'settlements' && !state.paymentSettlement) setTimeout(() => loadPaymentSettlement(false), 0);
 
@@ -4010,6 +4094,32 @@ function renderModal() {
           <div class="modal-actions">
             <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
             <button class="btn btn-primary" type="submit" ${state.modal.busy ? 'disabled' : ''}>${state.modal.busy ? 'Saving…' : 'Save'}</button>
+          </div>
+        </form>
+      </section>
+    </div>`;
+  }
+
+  if (state.modal.type === 'record-link-action') {
+    const l = state.liveRecordLinks.find(x => x.id === state.modal.id);
+    if (!l) return '';
+    const mode = state.modal.mode;
+    const copy = {
+      APPROVE: ['Approve patient number', `Approve only if the name and phone below match the patient who holds number ${l.reference} in your own system. This confirms the number belongs to this patient. It does not give anyone access to records.`, 'Approve'],
+      REJECT: ['Reject patient number', 'The patient sees your note. Say what to check, for example "The name does not match our register."', 'Reject'],
+      REVOKE: ['Remove link', 'The patient can connect again later. The history of this link stays on record.', 'Remove link'],
+    }[mode];
+    if (!copy) return '';
+    return `<div class="modal-backdrop" data-action="dismiss-modal">
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="rl-title">
+        <h2 id="rl-title">${copy[0]}</h2>
+        <p><strong>${escapeHtml(l.patientName || l.patientRef || 'Patient')}</strong>${l.patientPhone ? ` · ${escapeHtml(l.patientPhone)}` : ''}<br>Number: ${escapeHtml(l.reference)}</p>
+        <p>${escapeHtml(copy[1])}</p>
+        <form id="record-link-form" class="form-grid">
+          <div class="form-group"><label>Note${mode === 'REJECT' ? ' *' : ''}</label><input class="input" name="note" maxlength="300" ${mode === 'REJECT' ? 'required' : ''} placeholder="Optional"></div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
+            <button class="btn btn-primary" type="submit" ${state.modal.busy ? 'disabled' : ''}>${state.modal.busy ? 'Saving…' : copy[2]}</button>
           </div>
         </form>
       </section>
@@ -5697,6 +5807,8 @@ function dispatch(action, target, domEvent) {
     /* Staff */
     case 'open-preauth-status': state.modal={type:'preauth-status', id:String(id)};render();break;
     case 'retry-preauths': state.preAuthsError='';render();break;
+    case 'retry-record-links': state.recordLinksError='';render();break;
+    case 'open-record-link': state.modal={type:'record-link-action', id:String(id), mode:String(target.dataset.mode)};render();break;
     case 'retry-account': state.accountError='';render();break;
     case 'remove-refund-limit': saveRefundLimit(null);break;
     case 'retry-integrations': state.integrationsError='';render();break;
@@ -6526,6 +6638,10 @@ document.addEventListener('submit', async event => {
     event.preventDefault();
     const fd = new FormData(event.target);
     savePreAuthStatus(state.modal.id, fd.get('status').toString(), fd.get('notes').toString().trim());
+  }
+  if (event.target.id === 'record-link-form') {
+    event.preventDefault();
+    saveRecordLinkAction(state.modal.id, state.modal.mode, new FormData(event.target).get('note').toString().trim());
   }
   if (event.target.id === 'refund-limit-form') {
     event.preventDefault();

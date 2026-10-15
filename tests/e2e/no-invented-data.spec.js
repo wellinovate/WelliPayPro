@@ -43,19 +43,32 @@ test('Payments tiles are computed from the live journal', async ({ page }) => {
   await expect(c.locator('table tbody tr')).toHaveCount(3);
 });
 
-test('an audit entry carries the signed-in person, not a sample name', async ({ page }) => {
-  await mockApi(page, {
-    routes: { 'POST /provider/webhook-endpoints': body => [201, { webhookEndpointId: 'w1', url: body.url, secret: 'abc', active: true, createdAt: new Date().toISOString() }] },
+test('the audit log shows the saved trail from the API, not sample names', async ({ page }) => {
+  const calls = await mockApi(page, {
+    routes: {
+      'GET /provider/audit-events': (_b, req) => {
+        const q = new URL(req.url()).searchParams;
+        const all = [
+          { id: 'a2', at: '2026-10-16T09:30:00Z', actorType: 'STAFF', actorName: 'Ada Obi', action: 'Decided a refund', method: 'PATCH', route: '/provider/refunds/:refundId/decision', resourceId: 'rf_1', statusCode: 200 },
+          { id: 'a1', at: '2026-10-16T09:00:00Z', actorType: 'STAFF', actorName: 'Ada Obi', action: 'Signed in', method: 'POST', route: '/staff/login', statusCode: 200 },
+        ];
+        const items = q.get('q') ? all.filter(e => e.action.toLowerCase().includes(q.get('q').toLowerCase())) : all;
+        return [200, { items }];
+      },
+    },
   });
   await signIn(page);
   await expect(page.locator('#app-shell')).toBeVisible();
-  await page.evaluate(() => { location.hash = 'api-developers'; });
-  await page.click('[data-action=open-add-webhook]');
-  await page.fill('#add-webhook-form [name=url]', 'https://example.com/h');
-  await page.evaluate(() => document.querySelector('#add-webhook-form').requestSubmit());
-  await expect(page.locator('#webhook-secret-value')).toBeVisible();
   await page.evaluate(() => { location.hash = 'audit-log'; });
-  await expect(page.locator('#content')).toContainText('Webhook Added');
-  await expect(page.locator('#content')).toContainText('Ada Obi');
-  await expect(page.locator('#content')).not.toContainText('Adaeze');
+  const c = page.locator('#content');
+  await expect(c).toContainText('Decided a refund');
+  await expect(c).toContainText('Ada Obi');
+  await expect(c).toContainText('Signed in');
+  await expect(c).not.toContainText('Adaeze');
+  await expect(c).not.toContainText('212');
+  await page.fill('#audit-filter-form [name=q]', 'refund');
+  await page.evaluate(() => document.querySelector('#audit-filter-form').requestSubmit());
+  await expect(c).not.toContainText('Signed in');
+  await expect(c).toContainText('Decided a refund');
+  expect(calls.some(x => x.key === 'GET /provider/audit-events')).toBe(true);
 });

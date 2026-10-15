@@ -75,3 +75,20 @@ test('a billing user sees refunds but no approve or reject buttons', async ({ pa
   await expect(page.locator('[data-action="approve-refund-item"]')).toHaveCount(0);
   await expect(page.locator('[data-action="reject-refund-item"]')).toHaveCount(0);
 });
+
+test('a user cannot approve a refund they requested but can reject it', async ({ page }) => {
+  const routes = refundRoutes({ first: false });
+  const original = routes['GET /provider/refunds'];
+  routes['GET /provider/refunds'] = () => {
+    const [status, body] = original();
+    body.items[0].requestedBy = 'Ada Obi [s1]';
+    return [status, body];
+  };
+  await mockApi(page, { routes });
+  await signIn(page);
+  await expect(page.locator('#app-shell')).toBeVisible();
+  await page.evaluate(() => { location.hash = 'refunds'; });
+  await expect(page.locator('#content')).toContainText('You requested this refund. Someone else must approve it.');
+  await expect(page.locator('[data-action="approve-refund-item"]')).toHaveCount(0);
+  await expect(page.locator('[data-action="reject-refund-item"]')).toHaveCount(1);
+});

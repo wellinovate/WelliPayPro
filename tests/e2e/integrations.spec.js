@@ -24,13 +24,13 @@ test('Integrations shows what the API reports and nothing invented', async ({ pa
 });
 
 test('Support and Subscription state what the console does not hold', async ({ page }) => {
-  await mockApi(page);
+  await mockApi(page, { routes: { 'GET /provider/subscription': () => [200, { planName: null, monthlyFeeMinor: null, startedAt: null, platformFeePercent: 1, platformFeeSource: 'default' }] } });
   await signIn(page);
   await expect(page.locator('#app-shell')).toBeVisible();
   await page.evaluate(() => { location.hash = 'support'; });
   await expect(page.locator('#content')).toContainText('does not track support tickets');
   await expect(page.locator('#content')).not.toContainText('4.8 / 5');
   await page.evaluate(() => { location.hash = 'subscription'; });
-  await expect(page.locator('#content')).toContainText('does not hold plan or fee details');
+  await expect(page.locator('#content')).toContainText('Not recorded');
   await expect(page.locator('#content')).not.toContainText('85,000');
 });

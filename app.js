@@ -70,6 +70,8 @@ const BILLING_COPY = {
   PHARMACY: { desk: 'Pharmacy Desk', catalogue: 'Drugs & Pricing', itemLabel: 'Drug or item', itemPlaceholder: 'e.g. Amoxicillin 500mg capsules', quantity: true, catalogueNote: 'Enter each drug, the quantity and the unit price when you create an invoice.' },
   INDEPENDENT_PRACTITIONER: { desk: 'Practice Desk', catalogue: 'Services & Pricing', itemLabel: 'Consultation or procedure', itemPlaceholder: 'e.g. Follow-up consultation', catalogueNote: 'Enter each service and its price when you create an invoice.' },
 };
+function deskName() { return SHOW_SAMPLE_DATA ? 'Hospital Desk' : billingCopy().desk; }
+function facilityWord() { return SHOW_SAMPLE_DATA || providerTypeOrDefault() === 'HOSPITAL' ? 'hospital' : providerTypeOrDefault() === 'INDEPENDENT_PRACTITIONER' ? 'practice' : 'facility'; }
 function billingCopy() {
   return BILLING_COPY[getTenant()?.providerType] || BILLING_COPY.HOSPITAL;
 }
@@ -196,7 +198,7 @@ async function showApplyScreen() {
           <div class="form-group"><label for="ap-email">Email address</label><input class="input" id="ap-email" type="email" autocomplete="email" required></div>
           <div class="form-group"><label for="ap-phone">Phone number</label><input class="input" id="ap-phone" type="tel" autocomplete="tel" placeholder="08012345678" required></div>
           <div class="form-group"><label for="ap-address">Address (optional)</label><input class="input" id="ap-address" maxlength="240"></div>
-          <div class="form-group"><label for="ap-licence">Registration or licence number (optional)</label><input class="input" id="ap-licence" maxlength="80"></div>
+          <div class="form-group"><label for="ap-licence">Registration or licence number (optional)</label><input class="input" id="ap-licence" maxlength="80"><small style="color:var(--muted)">Facility or pharmacy registration number. An independent practitioner gives their professional council number (such as MDCN). We check it by hand.</small></div>
           <div class="form-group"><label for="ap-bank">Bank</label>
             <select class="input" id="ap-bank" required><option value="">Loading banks…</option></select></div>
           <div class="form-group"><label for="ap-account">Account number (10 digits)</label><input class="input" id="ap-account" inputmode="numeric" pattern="\\d{10}" maxlength="10" required></div>
@@ -411,6 +413,7 @@ const state = {
   liveReconciliationSummary: null,
   staffSynced: false,
   livePreAuths: [], preAuthsSynced: false, preAuthsSyncing: false, preAuthsError: '',
+  subscription: null, subscriptionError: '', subscriptionSyncing: false,
   liveRecordLinks: [], recordLinksSynced: false, recordLinksSyncing: false, recordLinksError: '',
   liveAuditEvents: [], auditSynced: false, auditSyncing: false, auditError: '', auditCursor: '', auditActor: '', auditText: '',
   integrations: null, integrationsSynced: false, integrationsSyncing: false, integrationsError: '',
@@ -804,7 +807,7 @@ function renderDesk() {
   const activity=[['87','Patients'],['74','Bills'],['₦3.4M','Collected'],['₦850K','Pending']];
   return `<div class="page">
     ${renderBranchBanner()}
-    <div class="page-heading"><div><span class="eyebrow">Hospital Desk</span><h2>Front desk & cashier</h2><p>Manage today’s patient billing, insurance eligibility and point-of-sale collections.</p></div><div class="toolbar"><button class="btn btn-secondary" data-action="open-new-patient">New Patient</button><button class="btn btn-secondary" data-action="open-find-patient">Find Patient</button><button class="btn btn-primary" data-action="open-wellipass">Scan WelliPass</button></div></div>
+    <div class="page-heading"><div><span class="eyebrow">${escapeHtml(deskName())}</span><h2>Front desk & cashier</h2><p>Manage today’s patient billing, insurance eligibility and point-of-sale collections.</p></div><div class="toolbar"><button class="btn btn-secondary" data-action="open-new-patient">New Patient</button><button class="btn btn-secondary" data-action="open-find-patient">Find Patient</button><button class="btn btn-primary" data-action="open-wellipass">Scan WelliPass</button></div></div>
     ${metricGrid(activity.map(([value,label])=>[value,label,label]),'grid activity-grid')}
     <div class="desk-layout"><div class="desk-stack">${card('Payment queue',`<div class="row-list">${[['John',50000,'Awaiting','outline'],['Mary',120000,'HMO','outline'],['Peter',80000,'Family','accent'],['David',200000,'Financing','outline'],['Sarah',30000,'Partial','neutral']].map(([name,amount,status,type])=>`<div class="queue-row"><strong>${name}</strong><span>${money(amount)}</span>${tag(status,type)}</div>`).join('')}</div>`)}${card('Recent activity',`${dataRow('Receipt RCT-9021','Tunde A. · Wuse · 09:12','Paid')}${dataRow('HMO request sent','Reliance Gold · 09:04','Pending','outline')}${dataRow('Family payment received','Peter · 08:51','Settled')}`)}</div>
     <section class="card elev-sm bill-card"><span class="card-kicker">Create bill & collect payment</span><div class="patient-summary"><div><strong>${escapeHtml(state.patient.name)} · ${escapeHtml(state.patient.welliId)}</strong><span>${escapeHtml(state.patient.hmo)}</span></div><button class="btn btn-ghost" data-action="open-find-patient">Change →</button></div><div class="row-list">${[['Consultation',15000],['ECG',18000],['Lab — Full Blood Count',25000]].map(([name,amount])=>`<div class="data-row"><span>${name}</span><strong>${money(amount)}</strong></div>`).join('')}<div class="data-row"><strong>Total</strong><strong>${money(total)}</strong></div></div><div class="payer-group"><span class="card-kicker">Who is paying?</span><div class="seg">${[['patient','Patient'],['family','Family'],['hmo','HMO'],['financing','Financing'],['mixed','Mixed']].map(([id,label])=>`<label class="seg-opt"><input type="radio" name="payer" value="${id}" ${state.payer===id?'checked':''}><span>${label}</span></label>`).join('')}</div></div><div class="workflow-panel ${state.payment==='paid'?'neutral':''}">${flow}</div></section></div>
@@ -1015,7 +1018,7 @@ function renderServicesPricing() {
 
   return `<div class="page">
     ${renderBranchBanner()}
-    ${pageHeading('Revenue Cycle', 'Service Catalogue & Pricing Engine', 'Manage hospital tariffs, package bundles and per-HMO contracted reimbursement rates.')}
+    ${pageHeading('Revenue Cycle', 'Service Catalogue & Pricing Engine', `Manage ${facilityWord()} tariffs, package bundles and per-HMO contracted reimbursement rates.`)}
     ${metricGrid([['214','Active Services','Catalog'],['38 of 41','HMO Tariffs Mapped','Coverage'],['12','Care Packages','Bundles'],['−14%','Avg HMO Tariff Variance','Margin Risk']])}
     ${card('<div class="section-heading"><span>Service Tariff Master</span><button class="btn btn-primary" data-action="open-add-service">Add Service / Tariff</button></div>', `
       <div class="filter-bar">
@@ -1591,7 +1594,7 @@ function renderPaymentPlans() {
   }).join('');
   return `<div class="page">
     ${renderBranchBanner()}
-    ${pageHeading('Growth', 'Patient Installment Plans', 'Manage internal hospital payment arrangements and track upcoming collection dates.')}
+    ${pageHeading('Growth', 'Patient Installment Plans', `Manage internal ${facilityWord()} payment arrangements and track upcoming collection dates.`)}
     ${metricGrid(planTiles)}
     <p style="color:var(--muted);font-size:0.85em;margin:-8px 0 12px;">Tiles above are illustrative. "New Payment Plan" below schedules a real invoice's remaining balance in wellipay-api — even split across months, no interest, no automatic missed-installment penalty.</p>
     ${card('<div class="section-heading"><span>Installment Schedule Tracker</span><button class="btn btn-primary" data-action="open-new-payment-plan">New Payment Plan</button></div>', `
@@ -2468,7 +2471,7 @@ function renderMobileIntegration() {
       `)}</div>`;
   }
   const app=state.mobileApp;
-  const features=[['billPayments','Patient bill payments','Patients can pay ' + orgName() + ' invoices from the separate app.'],['billHistory','Bill history','Patients can view current and past facility bills.'],['familyFunding','Family funding','Patients can request contributions from linked sponsors.'],['welliPass','WelliPass access','Patients can present a WelliPass at the hospital desk.']];
+  const features=[['billPayments','Patient bill payments','Patients can pay ' + orgName() + ' invoices from the separate app.'],['billHistory','Bill history','Patients can view current and past facility bills.'],['familyFunding','Family funding','Patients can request contributions from linked sponsors.'],['welliPass','WelliPass access','Patients can present a WelliPass at the ' + (SHOW_SAMPLE_DATA ? 'hospital' : deskName().toLowerCase()) + '.']];
   const featureMarkup=features.map(([id,label,description])=>`<label class="integration-feature"><span><strong>${label}</strong><small>${description}</small></span><input type="checkbox" data-mobile-feature="${id}" ${app.features[id]?'checked':''} aria-label="${label}"></label>`).join('');
   const eventMarkup=app.events.map(([time,name,detail])=>`<div class="data-row"><div class="data-primary"><strong>${name}</strong><span>${detail}</span></div><time class="event-time">${time}</time></div>`).join('');
   return `<div class="page">${renderBranchBanner()}${pageHeading('Connected Apps','Patient Mobile App','Configure how ' + orgName() + ' connects with the separate WelliPay patient app. Patients use the MobileApp on their own devices; this console manages the provider connection.')}
@@ -2579,7 +2582,7 @@ function renderAuthorization() {
     <td><small>${escapeHtml(fmtDate(c.requestedAt))}</small></td>
   </tr>`).join('');
   const checkBody = !state.welliPassStatsSynced ? '<p class="empty-state">Loading eligibility checks…</p>'
-    : checks.length === 0 ? '<p class="empty-state">No eligibility checks yet. The Hospital Desk runs one when a patient needs HMO authorization.</p>'
+    : checks.length === 0 ? '<p class="empty-state">No eligibility checks yet. The ${escapeHtml(deskName())} runs one when a patient needs HMO authorization.</p>'
     : `<div class="table-wrap"><table class="table"><thead><tr><th>Patient</th><th>Payer</th><th>Decision</th><th>Requested</th></tr></thead><tbody>${checkRows}</tbody></table></div>${checks.length > 25 ? `<p style="color:var(--muted);font-size:0.85em;">Showing the latest 25 of ${checks.length}.</p>` : ''}`;
   return `<div class="page">
     ${renderBranchBanner()}
@@ -2844,8 +2847,38 @@ function renderSupport() {
 
 function renderSubscription() {
   if (SHOW_SAMPLE_DATA) return renderStub();
+  const sub = state.subscription;
+  const naira = minor => `₦${(minor / 100).toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  let body;
+  if (state.subscriptionError) {
+    body = `<p class="empty-state">${escapeHtml(state.subscriptionError)} <button class="btn btn-secondary" data-action="retry-subscription">Try again</button></p>`;
+  } else if (!sub) {
+    body = '<p class="empty-state">Loading…</p>';
+  } else {
+    const unset = 'Not recorded';
+    body = `<div class="table-wrap"><table class="table"><tbody>
+      <tr><th>Plan</th><td>${escapeHtml(sub.planName || unset)}</td></tr>
+      <tr><th>Monthly fee</th><td>${sub.monthlyFeeMinor === null ? unset : escapeHtml(naira(sub.monthlyFeeMinor))}</td></tr>
+      <tr><th>WelliPay share of online payments</th><td>${escapeHtml(String(sub.platformFeePercent))}%${sub.platformFeeSource === 'default' ? ' <small>(standard rate)</small>' : ''}</td></tr>
+      <tr><th>Started</th><td>${sub.startedAt ? escapeHtml(new Date(sub.startedAt).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })) : unset}</td></tr>
+    </tbody></table></div>
+    <p style="color:var(--muted);font-size:0.85em;margin-top:12px;">Where a line says not recorded, Wellinovate has not entered it yet. Ask Wellinovate for your current plan and invoices.</p>`;
+  }
   return `<div class="page">${renderBranchBanner()}${pageHeading('Account', 'Subscription', 'Your WelliPay plan and fees.')}
-    ${card('Plan and fees', `<p>The console does not hold plan or fee details. Ask Wellinovate for your current plan, fees and invoices.</p>`)}</div>`;
+    ${card('Plan and fees', body)}</div>`;
+}
+async function syncSubscription() {
+  if (state.subscriptionSyncing) return;
+  state.subscriptionSyncing = true;
+  try {
+    state.subscription = await wellipayApi.getSubscription();
+    state.subscriptionError = '';
+  } catch (err) {
+    state.subscriptionError = `Plan not loaded: ${err.message}`;
+  } finally {
+    state.subscriptionSyncing = false;
+    if (state.active === 'subscription') render();
+  }
 }
 
 /* Webhook endpoints (Admin only). Real list from GET /provider/webhook-endpoints. */
@@ -3153,6 +3186,7 @@ function render() {
     if (!state.welliPassStatsSynced && !state.welliPassStatsSyncing) syncWelliPassStatsFromApi();
     if (!state.preAuthsSynced && !state.preAuthsError) syncPreAuths();
   }
+  if (state.active === 'subscription' && !SHOW_SAMPLE_DATA && !state.subscription && !state.subscriptionError) syncSubscription();
   if (state.active === 'record-links' && !SHOW_SAMPLE_DATA && !state.recordLinksSynced && !state.recordLinksError) syncRecordLinks();
   if (state.active === 'audit-log' && !SHOW_SAMPLE_DATA && !state.auditSynced && !state.auditError) syncAuditEvents(true);
   if (state.active === 'settlements' && !state.settlementsSynced) syncSettlementsFromApi();
@@ -4021,7 +4055,7 @@ function renderModal() {
         </div>
         <div class="modal-actions">
           <button class="btn btn-secondary" data-action="close-modal">Close</button>
-          <button class="btn btn-primary" data-action="bill-patient" data-id="${escapeHtml(p.id)}">Load into Hospital Desk</button>
+          <button class="btn btn-primary" data-action="bill-patient" data-id="${escapeHtml(p.id)}">Load into ${escapeHtml(deskName())}</button>
         </div>
       </section>
     </div>`;
@@ -5859,6 +5893,7 @@ function dispatch(action, target, domEvent) {
     /* Staff */
     case 'open-preauth-status': state.modal={type:'preauth-status', id:String(id)};render();break;
     case 'retry-preauths': state.preAuthsError='';render();break;
+    case 'retry-subscription': state.subscriptionError='';render();break;
     case 'retry-record-links': state.recordLinksError='';render();break;
     case 'retry-audit': state.auditError='';render();break;
     case 'audit-more': syncAuditEvents(false);break;

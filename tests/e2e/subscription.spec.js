@@ -8,6 +8,7 @@ test('Subscription shows recorded terms and says when none are recorded', async 
     },
   });
   await signIn(page);
+  await expect(page.locator('#app-shell')).toBeVisible();
   await page.evaluate(() => { location.hash = 'subscription'; });
   const c = page.locator('#content');
   await expect(c).toContainText('Not recorded');
@@ -22,6 +23,7 @@ test('Subscription shows an agreed plan', async ({ page }) => {
     },
   });
   await signIn(page);
+  await expect(page.locator('#app-shell')).toBeVisible();
   await page.evaluate(() => { location.hash = 'subscription'; });
   const c = page.locator('#content');
   await expect(c).toContainText('Standard');

@@ -412,6 +412,7 @@ const state = {
   staffSynced: false,
   livePreAuths: [], preAuthsSynced: false, preAuthsSyncing: false, preAuthsError: '',
   liveRecordLinks: [], recordLinksSynced: false, recordLinksSyncing: false, recordLinksError: '',
+  liveAuditEvents: [], auditSynced: false, auditSyncing: false, auditError: '', auditCursor: '', auditActor: '', auditText: '',
   integrations: null, integrationsSynced: false, integrationsSyncing: false, integrationsError: '',
   accountSaving: false, account: null, accountSynced: false, accountSyncing: false, accountError: '', banks: [],
   webhooks: [], webhooksSynced: false, webhooksSyncing: false, webhooksError: '',
@@ -2231,7 +2232,57 @@ function renderStaff() {
 }
 
 /* 21. Audit Log */
+/* Audit log in live mode: the saved trail from the API. */
+function renderAuditLogLive() {
+  const events = state.liveAuditEvents;
+  const loading = !state.auditSynced && !state.auditError;
+  const fmt = iso => new Date(iso).toLocaleString('en-NG', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const filtered = Boolean(state.auditActor || state.auditText);
+  const rows = events.map(ev => `<tr>
+    <td><strong>${escapeHtml(ev.action)}</strong>${ev.statusCode >= 400 ? `<br><small>${tag('Failed', 'danger')}</small>` : ''}</td>
+    <td><small>${escapeHtml(ev.resourceId || '')}</small></td>
+    <td>${escapeHtml(ev.actorName || ev.actorId || 'Unknown')}${ev.actorType === 'CLIENT' ? '<br><small>Integration</small>' : ''}</td>
+    <td><small>${escapeHtml(fmt(ev.at))}</small></td>
+  </tr>`).join('');
+  const body = state.auditError
+    ? `<p class="empty-state">${escapeHtml(state.auditError)} <button class="btn btn-secondary" data-action="retry-audit">Try again</button></p>`
+    : loading ? '<p class="empty-state">Loading…</p>'
+    : events.length === 0 ? `<p class="empty-state">${filtered ? 'No entries match.' : 'No entries yet. Changes made from now on appear here.'}</p>`
+    : `<div class="table-wrap"><table class="table"><thead><tr><th>Action</th><th>Record</th><th>Who</th><th>When</th></tr></thead><tbody>${rows}</tbody></table></div>
+       ${state.auditCursor ? `<p style="margin-top:12px;"><button class="btn btn-secondary" data-action="audit-more" ${state.auditSyncing ? 'disabled' : ''}>${state.auditSyncing ? 'Loading…' : 'Load older entries'}</button></p>` : ''}`;
+  return `<div class="page">
+    ${renderBranchBanner()}
+    ${pageHeading('Account', 'Audit Log', 'Who changed what, and when. Saved by WelliPay and cannot be edited or deleted.')}
+    <p style="color:var(--muted);font-size:0.85em;margin:-8px 0 12px;">Records successful changes and staff sign-ins. It does not record what was typed, so no patient details or passwords are kept here. Changes made before this log was switched on are not included.</p>
+    ${card('Entries', `
+      <form id="audit-filter-form" class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));align-items:end;margin-bottom:12px;">
+        <div class="form-group"><label>Who</label><input class="input" name="actor" maxlength="80" value="${escapeHtml(state.auditActor)}" placeholder="Name"></div>
+        <div class="form-group"><label>Action</label><input class="input" name="q" maxlength="80" value="${escapeHtml(state.auditText)}" placeholder="e.g. refund"></div>
+        <div class="form-group"><button class="btn btn-primary" type="submit">Filter</button></div>
+      </form>
+      ${body}`)}
+  </div>`;
+}
+async function syncAuditEvents(reset) {
+  if (state.auditSyncing) return;
+  state.auditSyncing = true;
+  if (!reset) render();
+  try {
+    const data = await wellipayApi.listAuditEvents({ limit: 50, ...(state.auditActor ? { actor: state.auditActor } : {}), ...(state.auditText ? { q: state.auditText } : {}), ...(!reset && state.auditCursor ? { cursor: state.auditCursor } : {}) });
+    state.liveAuditEvents = reset ? data.items : [...state.liveAuditEvents, ...data.items];
+    state.auditCursor = data.nextCursor || '';
+    state.auditSynced = true;
+    state.auditError = '';
+  } catch (err) {
+    state.auditError = `Audit log not loaded: ${err.message}`;
+  } finally {
+    state.auditSyncing = false;
+    if (state.active === 'audit-log') render();
+  }
+}
+
 function renderAuditLog() {
+  if (!SHOW_SAMPLE_DATA) return renderAuditLogLive();
   const auditEvents = SHOW_SAMPLE_DATA ? state.auditLog : state.auditLog.filter(e => e.session);
   return `<div class="page">
     ${renderBranchBanner()}
@@ -3103,6 +3154,7 @@ function render() {
     if (!state.preAuthsSynced && !state.preAuthsError) syncPreAuths();
   }
   if (state.active === 'record-links' && !SHOW_SAMPLE_DATA && !state.recordLinksSynced && !state.recordLinksError) syncRecordLinks();
+  if (state.active === 'audit-log' && !SHOW_SAMPLE_DATA && !state.auditSynced && !state.auditError) syncAuditEvents(true);
   if (state.active === 'settlements' && !state.settlementsSynced) syncSettlementsFromApi();
   if (state.active === 'settlements' && !state.paymentSettlement) setTimeout(() => loadPaymentSettlement(false), 0);
 
@@ -5808,6 +5860,8 @@ function dispatch(action, target, domEvent) {
     case 'open-preauth-status': state.modal={type:'preauth-status', id:String(id)};render();break;
     case 'retry-preauths': state.preAuthsError='';render();break;
     case 'retry-record-links': state.recordLinksError='';render();break;
+    case 'retry-audit': state.auditError='';render();break;
+    case 'audit-more': syncAuditEvents(false);break;
     case 'open-record-link': state.modal={type:'record-link-action', id:String(id), mode:String(target.dataset.mode)};render();break;
     case 'retry-account': state.accountError='';render();break;
     case 'remove-refund-limit': saveRefundLimit(null);break;
@@ -6638,6 +6692,15 @@ document.addEventListener('submit', async event => {
     event.preventDefault();
     const fd = new FormData(event.target);
     savePreAuthStatus(state.modal.id, fd.get('status').toString(), fd.get('notes').toString().trim());
+  }
+  if (event.target.id === 'audit-filter-form') {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    state.auditActor = fd.get('actor').toString().trim();
+    state.auditText = fd.get('q').toString().trim();
+    state.auditCursor = '';
+    state.auditSynced = false;
+    render();
   }
   if (event.target.id === 'record-link-form') {
     event.preventDefault();

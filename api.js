@@ -328,6 +328,7 @@ export const wellipayApi = {
   listRecordConnections: (query) => apiRequest(`/provider/record-connections${toQueryString(query)}`),
   decideRecordConnection: (id, body) => apiRequest(`/provider/record-connections/${encodeURIComponent(id)}/decision`, { method: 'PATCH', body }),
   revokeRecordConnection: (id, body) => apiRequest(`/provider/record-connections/${encodeURIComponent(id)}/revoke`, { method: 'POST', body: body || {} }),
+  getSubscription: () => apiRequest('/provider/subscription'),
   listPreAuthorizations: (query) => apiRequest(`/provider/pre-authorizations${toQueryString(query)}`),
   updatePreAuthorization: (id, body) => apiRequest(`/provider/pre-authorizations/${encodeURIComponent(id)}`, { method: 'PATCH', body }),
   getIntegrationStatus: () => apiRequest('/provider/integrations/status'),

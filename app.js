@@ -628,9 +628,12 @@ function showToast(title, message = '') {
   if (!isFailure) setTimeout(() => { if (toast.parentNode) toast.remove(); }, 3800);
 }
 
-function logAudit(action, detail, actor = 'Adaeze O. (Finance Manager)') {
+// Entries made in this browser session. They are not saved anywhere yet, so a
+// reload clears them. In live mode the actor is the signed-in person.
+function logAudit(action, detail, actor) {
+  const who = actor || (SHOW_SAMPLE_DATA ? 'Adaeze O. (Finance Manager)' : currentActorName());
   const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  state.auditLog.unshift({ id: Date.now(), action, detail, actor, time, branch: state.branch === 'All branches' ? 'Consolidated' : state.branch });
+  state.auditLog.unshift({ id: Date.now(), action, detail, actor: who, time, session: true, branch: state.branch === 'All branches' ? 'Consolidated' : state.branch });
 }
 
 function downloadCsv(filename, rows) {
@@ -919,7 +922,19 @@ function renderInvoices() {
 
 /* 5. Payments */
 function renderPayments() {
-  const filtered = state.paymentList.filter(pmt => {
+  const journal = SHOW_SAMPLE_DATA ? state.paymentList : state.paymentList.filter(p => p.live);
+  const today = new Date().toDateString();
+  const paidToday = journal.filter(p => p.status === 'Success' && p.occurredAt && new Date(p.occurredAt).toDateString() === today);
+  const synced = state.paymentsSynced;
+  const paymentTiles = SHOW_SAMPLE_DATA
+    ? [['₦3.4M','Collected Today','Real-Time'],['86','Successful Transactions','Count'],['96.4%','Gateway Success Rate','Performance'],['4','Queued Retries','Processing']]
+    : [
+        [synced ? money(paidToday.reduce((sum, p) => sum + p.amount, 0)) : '—', 'Collected today', 'Successful payments'],
+        [synced ? String(paidToday.length) : '—', 'Payments today', 'Count'],
+        [synced ? String(journal.filter(p => p.status === 'Success').length) : '—', 'Successful, latest 50', 'Count'],
+        [synced ? String(journal.filter(p => p.status !== 'Success').length) : '—', 'Pending or failed, latest 50', 'Count'],
+      ];
+  const filtered = journal.filter(pmt => {
     const matchesFilter = state.paymentFilter === 'All' || pmt.channel.toLowerCase().includes(state.paymentFilter.toLowerCase());
     const matchesBranch = state.branch === 'All branches' || pmt.branch === state.branch;
     return matchesFilter && matchesBranch;
@@ -928,7 +943,7 @@ function renderPayments() {
   return `<div class="page">
     ${renderBranchBanner()}
     ${pageHeading('Revenue Cycle', 'Payment Collection & Journal', 'Card, bank transfer, USSD, HMO direct settlements and cash collection records.')}
-    ${metricGrid([['₦3.4M','Collected Today','Real-Time'],['86','Successful Transactions','Count'],['96.4%','Gateway Success Rate','Performance'],['4','Queued Retries','Processing']])}
+    ${metricGrid(paymentTiles)}
     ${card('<div class="section-heading"><span>Transaction Journal</span><button class="btn btn-secondary" data-action="export-payments">Export CSV</button></div>', `
       <div class="filter-bar">
         <div class="filter-group">
@@ -1235,7 +1250,7 @@ function renderWelliPass() {
       ['wellipay-api', 'Source', 'Live'],
     ])}
     <div class="grid two-col">
-      ${card('Active WelliPass Sample (illustrative) — Ngozi Adeleke', `
+      ${!SHOW_SAMPLE_DATA ? '' : card('Active WelliPass Sample (illustrative) — Ngozi Adeleke', `
         <div class="wellipass-head">
           <span class="eyebrow" style="color:white">WELLIPASS · VERIFIED</span>
           <strong>Ngozi Adeleke</strong>
@@ -1285,8 +1300,12 @@ function renderReceivables() {
 
 /* 13. Reconciliation */
 function renderReconciliation() {
-  const summaries=[[state.matched.toLocaleString(),'Matched'],[state.unmatched.length,'Unmatched'],[state.exceptions,'Exceptions'],[state.duplicates,'Duplicate']];
-  const unmatched=state.unmatched.length?state.unmatched.map(item=>`<div class="data-row"><div class="data-primary"><strong>${money(item.amount)} · ${escapeHtml(item.source)} · ${escapeHtml(item.date)}</strong><span>${item.live ? `Ref: ${item.reference || '—'}` : `Suggested: ${escapeHtml(item.suggestion)}`}</span></div>${item.deciding ? tag('Processing…','outline') : `<button class="btn btn-secondary" data-action="open-match" data-id="${escapeHtml(item.id)}">Review match</button>`}</div>`).join(''):'<p class="empty-state">Nothing unmatched right now.</p>';
+  const ls0 = state.liveReconciliationSummary;
+  const summaries = SHOW_SAMPLE_DATA
+    ? [[state.matched.toLocaleString(),'Matched'],[state.unmatched.length,'Unmatched'],[state.exceptions,'Exceptions'],[state.duplicates,'Duplicate']]
+    : [[ls0 ? String(ls0.matched) : '—','Matched'],[ls0 ? String(ls0.unmatched) : '—','Unmatched'],[ls0 ? String(ls0.exception) : '—','Exceptions']];
+  const unmatchedItems = SHOW_SAMPLE_DATA ? state.unmatched : state.unmatched.filter(i => i.live);
+  const unmatched=unmatchedItems.length?unmatchedItems.map(item=>`<div class="data-row"><div class="data-primary"><strong>${money(item.amount)} · ${escapeHtml(item.source)} · ${escapeHtml(item.date)}</strong><span>${item.live ? `Ref: ${item.reference || '—'}` : `Suggested: ${escapeHtml(item.suggestion)}`}</span></div>${item.deciding ? tag('Processing…','outline') : `<button class="btn btn-secondary" data-action="open-match" data-id="${escapeHtml(item.id)}">Review match</button>`}</div>`).join(''):'<p class="empty-state">Nothing unmatched right now.</p>';
   const liveSummary = state.liveReconciliationSummary;
   const liveCard = liveSummary
     ? card('<div class="section-heading"><span>Live reconciliation</span><span style="color:var(--muted);font-weight:400;font-size:13px">from wellipay-api</span></div>', `<div class="mini-metrics"><div class="mini-metric"><strong>${liveSummary.unmatched}</strong><span>Unmatched</span></div><div class="mini-metric"><strong>${liveSummary.matched}</strong><span>Matched</span></div><div class="mini-metric"><strong>${liveSummary.exception}</strong><span>Exceptions</span></div></div>`)
@@ -1295,9 +1314,9 @@ function renderReconciliation() {
     ${renderBranchBanner()}
     ${pageHeading('Smart Reconciliation Centre','Reconciliation workspace','Review gateway transfers, resolve exceptions and confirm invoice matches.')}
     ${metricGrid(summaries.map(([value,label])=>[value,label,label]),'grid activity-grid')}
-    ${liveCard}
+    ${SHOW_SAMPLE_DATA ? liveCard : ''}
     ${card('Unmatched payments',unmatched)}
-    ${card('Recently matched',`<div class="table-wrap"><table class="table"><thead><tr><th>Invoice</th><th>Amount</th><th>Matched via</th><th>When</th></tr></thead><tbody><tr><td>INV-2040</td><td>₦45,000</td><td>Auto — reference match</td><td>09:02</td></tr><tr><td>INV-2041</td><td>₦18,000</td><td>Manual — Adaeze O.</td><td>08:47</td></tr><tr><td>INV-2039</td><td>₦120,000</td><td>Auto — reference match</td><td>08:30</td></tr></tbody></table></div>`)}
+    ${!SHOW_SAMPLE_DATA ? '' : card('Recently matched',`<div class="table-wrap"><table class="table"><thead><tr><th>Invoice</th><th>Amount</th><th>Matched via</th><th>When</th></tr></thead><tbody><tr><td>INV-2040</td><td>₦45,000</td><td>Auto — reference match</td><td>09:02</td></tr><tr><td>INV-2041</td><td>₦18,000</td><td>Manual — Adaeze O.</td><td>08:47</td></tr><tr><td>INV-2039</td><td>₦120,000</td><td>Auto — reference match</td><td>08:30</td></tr></tbody></table></div>`)}
   </div>`;
 }
 
@@ -1538,7 +1557,14 @@ function renderLivePlanRow(plan) {
 
 function renderPaymentPlans() {
   const liveRows = state.livePaymentPlans.map(renderLivePlanRow).join('');
-  const mockRows = state.paymentPlanList.map(plan => {
+  const nowMs = Date.now();
+  const activePlans = state.livePaymentPlans.filter(p => p.status !== 'COMPLETED');
+  const sumInst = (plans, status) => plans.reduce((sum, p) => sum + p.installments.filter(i => i.status === status).reduce((t, i) => t + i.amountMinor, 0), 0);
+  const overdueCount = activePlans.reduce((sum, p) => sum + p.installments.filter(i => i.status === 'PENDING' && new Date(i.dueAt).getTime() < nowMs).length, 0);
+  const planTiles = SHOW_SAMPLE_DATA
+    ? [['57','Active Installment Plans','Active'],['₦2.3M','Collected This Month','Revenue'],['4','Missed Installments','Follow-Up'],['₦850K','Pipeline Remaining','Receivable']]
+    : [[String(activePlans.length),'Active plans','Active'],[money(fromMinor(sumInst(state.livePaymentPlans, 'PAID'))),'Collected on plans, all time','Revenue'],[String(overdueCount),'Installments past due','Follow-up'],[money(fromMinor(sumInst(activePlans, 'PENDING'))),'Still to collect','Receivable']];
+  const mockRows = (SHOW_SAMPLE_DATA ? state.paymentPlanList : []).map(plan => {
     const pct = Math.round((plan.paid / plan.total) * 100);
     return `
       <tr>
@@ -1563,7 +1589,7 @@ function renderPaymentPlans() {
   return `<div class="page">
     ${renderBranchBanner()}
     ${pageHeading('Growth', 'Patient Installment Plans', 'Manage internal hospital payment arrangements and track upcoming collection dates.')}
-    ${metricGrid([['57','Active Installment Plans','Active'],['₦2.3M','Collected This Month','Revenue'],['4','Missed Installments','Follow-Up'],['₦850K','Pipeline Remaining','Receivable']])}
+    ${metricGrid(planTiles)}
     <p style="color:var(--muted);font-size:0.85em;margin:-8px 0 12px;">Tiles above are illustrative. "New Payment Plan" below schedules a real invoice's remaining balance in wellipay-api — even split across months, no interest, no automatic missed-installment penalty.</p>
     ${card('<div class="section-heading"><span>Installment Schedule Tracker</span><button class="btn btn-primary" data-action="open-new-payment-plan">New Payment Plan</button></div>', `
       <div class="table-wrap">
@@ -2181,12 +2207,16 @@ function renderStaffRow(item, isLive) {
 }
 
 function renderStaff() {
-  const rows = [...state.liveStaff.map(s => renderStaffRow(s, true)), ...state.staffList.map(s => renderStaffRow(s, false))];
+  const rows = [...state.liveStaff.map(s => renderStaffRow(s, true)), ...(SHOW_SAMPLE_DATA ? state.staffList : []).map(s => renderStaffRow(s, false))];
+  const activeStaff = state.liveStaff.filter(s => s.status === 'ACTIVE');
+  const staffTiles = SHOW_SAMPLE_DATA
+    ? [['46','Active Staff Members','Roster'],['5','Role Levels Configured','Security'],['2','Pending Invitations','Onboarding'],['100%','Audit Logging Active','Compliance']]
+    : [[state.staffSynced ? String(activeStaff.length) : '—','Active staff','Roster'],[state.staffSynced ? String(state.liveStaff.length - activeStaff.length) : '—','Deactivated','Roster'],[state.staffSynced ? String(activeStaff.filter(s => s.accessLevel === 'ADMIN').length) : '—','Active admins','Access'],[state.staffSynced ? String(new Set(activeStaff.map(s => s.accessLevel)).size) : '—','Access levels in use','Access']];
   return `<div class="page">
     ${renderBranchBanner()}
     ${pageHeading('Operations', 'Staff & Role-Based Access', 'Configure permissions, cashier shift limits and audit roles for clinical & billing personnel.')}
-    ${metricGrid([['46','Active Staff Members','Roster'],['5','Role Levels Configured','Security'],['2','Pending Invitations','Onboarding'],['100%','Audit Logging Active','Compliance']])}
-    <p style="color:var(--muted);font-size:0.85em;margin:-8px 0 12px;">Roster tiles above are illustrative. Invite/deactivate/Set Password below write to a real staff directory in wellipay-api. Each staff member can sign in with their own email and password once one is set — the API enforces each person's access level on every request. Admin: everything. Finance: decides refunds and confirms settlements. Billing: claims, policies and payment plans. Cashier: invoices, payments and refund requests. Viewer: read-only. A level change applies at the person's next sign-in.</p>
+    ${metricGrid(staffTiles)}
+    <p style="color:var(--muted);font-size:0.85em;margin:-8px 0 12px;">${SHOW_SAMPLE_DATA ? 'Roster tiles above are illustrative. ' : ''}Invite/deactivate/Set Password below write to a real staff directory in wellipay-api. Each staff member can sign in with their own email and password once one is set — the API enforces each person's access level on every request. Admin: everything. Finance: decides refunds and confirms settlements. Billing: claims, policies and payment plans. Cashier: invoices, payments and refund requests. Viewer: read-only. A level change applies at the person's next sign-in.</p>
     ${card('<div class="section-heading"><span>Staff Directory</span><button class="btn btn-primary" data-action="open-invite-staff">Invite Staff Member</button></div>', `
       <div class="table-wrap">
         <table class="table">
@@ -2200,16 +2230,20 @@ function renderStaff() {
 
 /* 21. Audit Log */
 function renderAuditLog() {
+  const auditEvents = SHOW_SAMPLE_DATA ? state.auditLog : state.auditLog.filter(e => e.session);
   return `<div class="page">
     ${renderBranchBanner()}
     ${pageHeading('Account', 'Immutable Audit Log', 'Real-time chronological record of every financial approval, tariff modification and patient transaction.')}
-    ${metricGrid([['212','Events Logged Today','Stream'],['3','Sensitive Admin Approvals','Audited'],['7 Years','Statutory Data Retention','Compliant'],['Tamper-Evident','Cryptographic Ledger','Security']])}
+    ${SHOW_SAMPLE_DATA
+      ? metricGrid([['212','Events Logged Today','Stream'],['3','Sensitive Admin Approvals','Audited'],['7 Years','Statutory Data Retention','Compliant'],['Tamper-Evident','Cryptographic Ledger','Security']])
+      : metricGrid([[String(auditEvents.length),'Actions this session','This browser']])}
+    ${SHOW_SAMPLE_DATA ? '' : '<p style="color:var(--muted);font-size:0.85em;margin:-8px 0 12px;">This list shows what you did in this browser since you signed in. It is not saved, so a reload clears it. A saved audit trail is not built yet.</p>'}
     ${card('Audit Event Stream', `
       <div class="table-wrap">
         <table class="table">
           <thead><tr><th>Action</th><th>Details</th><th>Actor</th><th>Branch</th><th>Time</th></tr></thead>
           <tbody>
-            ${state.auditLog.map(ev => `
+            ${auditEvents.map(ev => `
               <tr>
                 <td><strong>${escapeHtml(ev.action)}</strong></td>
                 <td>${escapeHtml(ev.detail)}</td>
@@ -2366,6 +2400,20 @@ function renderSettingsSample() {
 
 /* 25. Mobile App Integration */
 function renderMobileIntegration() {
+  if (!SHOW_SAMPLE_DATA) {
+    return `<div class="page">${renderBranchBanner()}${pageHeading('Connected Apps', 'Patient Mobile App', 'How patients use the WelliPay app with ' + orgName() + '.')}
+      ${card('What patients can do', `
+        <p>Patients use the WelliPay app on their own phones. It talks to the same WelliPay service as this console, so there is nothing to connect or switch on here.</p>
+        <ul>
+          <li>See and pay your invoices, by card or bank transfer.</li>
+          <li>Ask family or a sponsor to fund a bill.</li>
+          <li>Keep a wallet balance and saved payment methods.</li>
+          <li>Request pre-authorization against an HMO policy.</li>
+          ${isPharmacy() ? '<li>Send prescriptions with a photo, track orders and delivery.</li>' : ''}
+        </ul>
+        <p style="color:var(--muted);font-size:0.85em;">The console does not count linked patients or app events yet.</p>
+      `)}</div>`;
+  }
   const app=state.mobileApp;
   const features=[['billPayments','Patient bill payments','Patients can pay ' + orgName() + ' invoices from the separate app.'],['billHistory','Bill history','Patients can view current and past facility bills.'],['familyFunding','Family funding','Patients can request contributions from linked sponsors.'],['welliPass','WelliPass access','Patients can present a WelliPass at the hospital desk.']];
   const featureMarkup=features.map(([id,label,description])=>`<label class="integration-feature"><span><strong>${label}</strong><small>${description}</small></span><input type="checkbox" data-mobile-feature="${id}" ${app.features[id]?'checked':''} aria-label="${label}"></label>`).join('');
@@ -5735,9 +5783,9 @@ function dispatch(action, target, domEvent) {
       break;
     }
     case 'export-payments': {
-      downloadCsv('payments_journal_abc_healthcare.csv', [
+      downloadCsv(`payments_journal_${orgName().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'provider'}.csv`, [
         ['Tx ID', 'Reference', 'Channel', 'Patient', 'Invoice', 'Amount', 'Time', 'Branch', 'Status'],
-        ...state.paymentList.map(p => [p.id, p.ref, p.channel, p.patient, p.inv, p.amount, p.time, p.branch, p.status])
+        ...(SHOW_SAMPLE_DATA ? state.paymentList : state.paymentList.filter(p => p.live)).map(p => [p.id, p.ref, p.channel, p.patient, p.inv, p.amount, p.time, p.branch, p.status])
       ]);
       break;
     }

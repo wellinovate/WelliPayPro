@@ -406,6 +406,7 @@ const state = {
   liveReconciliationSummary: null,
   staffSynced: false,
   livePreAuths: [], preAuthsSynced: false, preAuthsSyncing: false, preAuthsError: '',
+  integrations: null, integrationsSynced: false, integrationsSyncing: false, integrationsError: '',
   accountSaving: false, account: null, accountSynced: false, accountSyncing: false, accountError: '', banks: [],
   webhooks: [], webhooksSynced: false, webhooksSyncing: false, webhooksError: '',
   staffSyncing: false,
@@ -2600,6 +2601,66 @@ async function saveRefundLimit(limitNaira) {
   render();
 }
 
+/* Integrations: what is set up on the service. Read from GET /provider/integrations/status. */
+function renderIntegrations() {
+  if (SHOW_SAMPLE_DATA) return renderStub();
+  const i = state.integrations;
+  let body;
+  if (state.integrationsError) body = `<p class="empty-state">${escapeHtml(state.integrationsError)} <button class="btn btn-secondary" data-action="retry-integrations">Try again</button></p>`;
+  else if (!state.integrationsSynced) body = '<p class="empty-state">Loading…</p>';
+  else {
+    const w = i.webhooks;
+    const lastSent = w.lastDeliveredAt ? new Date(w.lastDeliveredAt).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'none yet';
+    body = `
+      ${dataRow('Paystack', `Card and bank-transfer payments. ${i.paystack.hasPayoutAccount ? 'A payout account is set up.' : 'No payout account is set up.'}`, i.paystack.configured ? 'Set up' : 'Not set up', i.paystack.configured ? 'success' : 'accent')}
+      ${dataRow('SMS (Termii)', `Booking reminders and pharmacy order notices. Sender name: ${escapeHtml(i.sms.senderId)}.`, i.sms.configured ? 'Set up' : 'Not set up', i.sms.configured ? 'success' : 'accent')}
+      ${dataRow('Webhooks', `${w.activeEndpoints} active endpoint${w.activeEndpoints === 1 ? '' : 's'} · ${w.pendingEvents} event${w.pendingEvents === 1 ? '' : 's'} waiting · ${w.deadLetteredEvents} given up · last delivered: ${escapeHtml(lastSent)}.`, w.activeEndpoints ? 'Active' : 'No endpoint', w.activeEndpoints ? 'success' : 'outline', `<a class="btn btn-secondary" href="#api-developers">Manage</a>`)}
+      <p style="color:var(--muted);font-size:0.85em;">"Set up" means the service holds a key for it. It does not test that the provider accepts the key. A missing item is set on the WelliPay service by Wellinovate.</p>`;
+  }
+  return `<div class="page">${renderBranchBanner()}${pageHeading('Operations', 'Integrations', 'What is connected to your WelliPay account.')}${card('Connected services', body)}</div>`;
+}
+
+async function syncIntegrations() {
+  if (state.integrationsSyncing) return;
+  state.integrationsSyncing = true;
+  try {
+    state.integrations = await wellipayApi.getIntegrationStatus();
+    state.integrationsSynced = true;
+    state.integrationsError = '';
+  } catch (err) {
+    state.integrationsError = `Status not loaded: ${err.message}`;
+  } finally {
+    state.integrationsSyncing = false;
+    if (state.active === 'integrations') render();
+  }
+}
+
+// Support and Subscription have no data behind them yet. These pages say so
+// instead of showing sample tickets, response times or plan prices.
+function renderSupport() {
+  if (SHOW_SAMPLE_DATA) return renderStub();
+  const email = window.WELLIPAY_SUPPORT_EMAIL;
+  const who = authState.user ? `${authState.user.name}, ${orgName()}` : orgName();
+  return `<div class="page">${renderBranchBanner()}${pageHeading('Account', 'Support', 'Report a problem to the Wellinovate team.')}
+    ${card('How to reach us', `
+      ${email ? `<p><a class="btn btn-primary" href="mailto:${escapeHtml(email)}?subject=${encodeURIComponent('WelliPay support: ' + orgName())}">Email ${escapeHtml(email)}</a></p>` : '<p>Contact the Wellinovate team that set up your account.</p>'}
+      <p>Include:</p>
+      <ul>
+        <li>Your name and organisation: ${escapeHtml(who)}.</li>
+        <li>The page you were on and the time it happened.</li>
+        <li>The reference involved, such as an invoice, payment or refund number.</li>
+        <li>What you expected and what happened. Add the red message if one appeared.</li>
+      </ul>
+      <p style="color:var(--muted);font-size:0.85em;">The console does not track support tickets yet.</p>
+    `)}</div>`;
+}
+
+function renderSubscription() {
+  if (SHOW_SAMPLE_DATA) return renderStub();
+  return `<div class="page">${renderBranchBanner()}${pageHeading('Account', 'Subscription', 'Your WelliPay plan and fees.')}
+    ${card('Plan and fees', `<p>The console does not hold plan or fee details. Ask Wellinovate for your current plan, fees and invoices.</p>`)}</div>`;
+}
+
 /* Webhook endpoints (Admin only). Real list from GET /provider/webhook-endpoints. */
 function renderApiDevelopers() {
   if (SHOW_SAMPLE_DATA) return renderStub();
@@ -2840,6 +2901,9 @@ function render() {
     branches: renderBranches,
     staff: renderStaff,
     'api-developers': renderApiDevelopers,
+    integrations: renderIntegrations,
+    support: renderSupport,
+    subscription: renderSubscription,
     'audit-log': renderAuditLog,
     notifications: renderNotifications,
     'ai-insights': renderAiInsights,
@@ -2887,6 +2951,7 @@ function render() {
   if (state.active === 'reconciliation' && !state.reconciliationSynced) syncReconciliationFromApi();
   if ((state.active === 'staff' || state.active === 'branches') && !state.staffSynced) syncStaffFromApi();
   if (!SHOW_SAMPLE_DATA && (state.active === 'settings' || state.active === 'refunds') && canSeeAccount() && !state.accountSynced && !state.accountError) syncAccount();
+  if (state.active === 'integrations' && !SHOW_SAMPLE_DATA && !state.integrationsSynced && !state.integrationsError) syncIntegrations();
   if (state.active === 'api-developers' && !SHOW_SAMPLE_DATA && !state.webhooksSynced && !state.webhooksError) syncWebhooks();
   if (state.active === 'payment-plans' && !state.paymentPlansSynced) syncPaymentPlansFromApi();
   if (state.active === 'payment-plans' && !state.invoicesSynced) syncInvoicesFromApi();
@@ -5580,6 +5645,7 @@ function dispatch(action, target, domEvent) {
     case 'retry-preauths': state.preAuthsError='';render();break;
     case 'retry-account': state.accountError='';render();break;
     case 'remove-refund-limit': saveRefundLimit(null);break;
+    case 'retry-integrations': state.integrationsError='';render();break;
     case 'open-add-webhook': state.modal={type:'add-webhook'};render();break;
     case 'deactivate-webhook': deactivateWebhook(id);break;
     case 'retry-webhooks': state.webhooksError='';render();break;

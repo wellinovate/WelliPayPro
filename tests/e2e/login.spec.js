@@ -37,6 +37,7 @@ test('an offline request shows the banner and a reachable one clears it', async 
   await signIn(page);
   await expect(page.locator('#app-shell')).toBeVisible();
   await expect(page.locator('#offline-banner')).toBeHidden();
+  await page.waitForLoadState('networkidle');
   await context.setOffline(true);
   await expect(page.locator('#offline-banner')).toBeVisible();
   await context.setOffline(false);

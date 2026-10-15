@@ -77,7 +77,8 @@ async function apiFetch(url, init) {
     reportNetwork(false);
     throw new Error('Cannot reach WelliPay. Check your internet connection and try again.');
   }
-  reportNetwork(true);
+  // A reply that was already in flight when the browser went offline must not clear the banner.
+  if (navigator.onLine !== false) reportNetwork(true);
   return res;
 }
 
@@ -326,6 +327,7 @@ export const wellipayApi = {
     apiRequest(`/provider/unmatched-transactions/${encodeURIComponent(transactionId)}/exception`, { method: 'POST', body }),
   listPreAuthorizations: (query) => apiRequest(`/provider/pre-authorizations${toQueryString(query)}`),
   updatePreAuthorization: (id, body) => apiRequest(`/provider/pre-authorizations/${encodeURIComponent(id)}`, { method: 'PATCH', body }),
+  getIntegrationStatus: () => apiRequest('/provider/integrations/status'),
   getAccount: () => apiRequest('/provider/account'),
   setRefundLimit: (body) => apiRequest('/provider/account/refund-limit', { method: 'PATCH', body }),
   listWebhookEndpoints: () => apiRequest('/provider/webhook-endpoints'),

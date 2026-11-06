@@ -141,7 +141,7 @@ Settlements page, card "Online payments and payout status". It lists each online
 
 `pay.html` is a public page that lets anyone pay one invoice without an account. On an unpaid live invoice, press Payment link, then copy the link or send it on WhatsApp. The link holds an unguessable token. Press Make a new link to stop the old one working.
 
-On the API (Render), set `PAY_PAGE_URL` to this site's `pay.html` address, for example `https://wellipaypro.onrender.com/pay.html`. Guests then return to that page after Paystack checkout. The page shows the receipt once Paystack's webhook confirms the payment, and prints a code the patient can enter in the WelliPay app to add the payment to a profile.
+On the API (Render), set `PAY_PAGE_URL` to this site's `pay.html` address, for example `https://app.wellipay.net/pay.html`. Guests then return to that page after Paystack checkout. The page shows the receipt once Paystack's webhook confirms the payment, and prints a code the patient can enter in the WelliPay app to add the payment to a profile.
 
 ## Pharmacy workspace
 

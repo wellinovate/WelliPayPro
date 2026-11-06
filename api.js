@@ -8,7 +8,7 @@
 //
 // Override this from index.html before app.js loads if needed:
 //   <script>window.WELLIPAY_API_BASE = 'https://your-env.onrender.com';</script>
-const API_BASE = window.WELLIPAY_API_BASE || 'https://wellipay-api.onrender.com';
+const API_BASE = window.WELLIPAY_API_BASE || 'https://api.wellipay.net';
 
 // Per-staff login (POST /staff/login). Once a staff member is signed in,
 // every request below carries their own token instead of the shared

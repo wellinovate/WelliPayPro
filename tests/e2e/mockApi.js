@@ -1,7 +1,7 @@
 // Mock of wellipay-api for the console tests. Every request is answered here;
 // nothing leaves the machine. `routes` maps "METHOD /path" to a function that
 // returns [status, body]. Unlisted GETs return an empty list.
-const API = 'https://wellipay-api.onrender.com';
+const API = 'https://api.wellipay.net';
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-headers': '*',

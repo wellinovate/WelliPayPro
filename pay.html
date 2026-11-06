@@ -35,7 +35,7 @@
     <main id="root" aria-live="polite"><p>Loading…</p></main>
     <script>
       (function () {
-        var API = window.WELLIPAY_API_BASE || 'https://wellipay-api.onrender.com';
+        var API = window.WELLIPAY_API_BASE || 'https://api.wellipay.net';
         var qs = new URLSearchParams(location.search);
         var token = qs.get('t');
         var ref = qs.get('reference') || qs.get('trxref');

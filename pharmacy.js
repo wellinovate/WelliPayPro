@@ -933,7 +933,7 @@ export function createPharmacy(ctx) {
 
   function courierSecretModal() {
     const { name, courierId, secret } = state.modal;
-    const base = (typeof window !== 'undefined' && window.WELLIPAY_API_BASE) || 'https://wellipay-api.onrender.com';
+    const base = (typeof window !== 'undefined' && window.WELLIPAY_API_BASE) || 'https://api.wellipay.net';
     return `<div class="modal-backdrop" data-action="dismiss-modal"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="ph-secret-title">
       <h2 id="ph-secret-title">Webhook details for ${esc(name)}</h2>
       <p>Copy the secret now. It is not shown again.</p>

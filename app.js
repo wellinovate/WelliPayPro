@@ -2587,7 +2587,7 @@ function renderAuthorization() {
   return `<div class="page">
     ${renderBranchBanner()}
     ${pageHeading('Authorization Centre', 'Pre-authorization & eligibility', 'Pre-authorization requests and eligibility checks recorded in WelliPay.')}
-    <p style="color:var(--muted);font-size:0.85em;margin:-8px 0 12px;">No HMO is connected to WelliPay yet. The API decides each request itself from the patient's policy co-pay, so an approval here is not an HMO approval. Billing, Finance and Admin can change a status after the HMO answers outside WelliPay.</p>
+    <p style="color:var(--muted);font-size:0.85em;margin:-8px 0 12px;">No HMO is connected to WelliPay yet. New pre-authorizations and eligibility checks stay pending until a person records the HMO's answer. Billing, Finance and Admin can set the status, the covered amount and the HMO's approval code after the HMO replies outside WelliPay.</p>
     ${metricGrid([[dash(byStatus('APPROVED')), 'Approved', 'Pre-authorizations'], [dash(byStatus('IN_REVIEW')), 'In review', 'Pre-authorizations'], [dash(byStatus('DECLINED')), 'Declined', 'Pre-authorizations'], [dashChecks(checks.length), 'Eligibility checks', `${dashChecks(byDecision('ELIGIBLE'))} eligible`]])}
     ${card('Pre-authorization requests', preBody)}
     ${card('Eligibility checks', checkBody)}
@@ -2610,12 +2610,14 @@ async function syncPreAuths() {
   }
 }
 
-async function savePreAuthStatus(id, status, notes) {
+async function savePreAuthStatus(id, status, notes, coveredText = '', approvalCode = '') {
   const m = state.modal;
   if (!m || m.busy) return;
   m.busy = true; render();
   try {
-    const updated = await wellipayApi.updatePreAuthorization(id, { status, ...(notes ? { notes } : {}) });
+    const coveredNaira = coveredText.replace(/[^0-9.]/g, '');
+    const body = { status, ...(notes ? { notes } : {}), ...(approvalCode ? { approvalCode } : {}), ...(coveredNaira ? { coveredAmountMinor: Math.round(parseFloat(coveredNaira) * 100) } : {}) };
+    const updated = await wellipayApi.updatePreAuthorization(id, body);
     logAudit('Pre-Auth Updated', `${patientNameFor(updated.patientRef)} · ${updated.procedure} set to ${PREAUTH_STATUS[updated.status]?.[0] || updated.status}`);
     showToast('Pre-authorization updated', `${updated.procedure} is now ${PREAUTH_STATUS[updated.status]?.[0] || updated.status}.`);
     state.modal = null;
@@ -4176,6 +4178,8 @@ function renderModal() {
         <p>${escapeHtml(patientNameFor(p.patientRef))} · ${escapeHtml(p.procedure)}. Use this to record the HMO's answer. The patient sees the new status in the app.</p>
         <form id="preauth-status-form" class="form-grid">
           <div class="form-group"><label>Status *</label><select name="status">${Object.entries(PREAUTH_STATUS).map(([v, [label]]) => `<option value="${v}" ${p.status === v ? 'selected' : ''}>${label}</option>`).join('')}</select></div>
+          <div class="form-group"><label>Amount the HMO covers (₦)</label><input class="input" name="covered" inputmode="decimal" value="${p.coveredAmount.amountMinor > 0 ? escapeHtml(String(fromMinor(p.coveredAmount.amountMinor))) : ''}" placeholder="Required to approve. Estimate: ${escapeHtml(money(fromMinor(p.estimatedCost.amountMinor)))}"></div>
+          <div class="form-group"><label>HMO approval code</label><input class="input" name="approvalCode" maxlength="40" value="${escapeHtml(p.approvalCode || '')}" placeholder="The code the HMO gave you, if any"></div>
           <div class="form-group"><label>Note</label><input class="input" name="notes" maxlength="500" value="${escapeHtml(p.notes || '')}" placeholder="e.g. HMO reference or reason"></div>
           <div class="modal-actions">
             <button class="btn btn-secondary" type="button" data-action="close-modal">Cancel</button>
@@ -6726,7 +6730,7 @@ document.addEventListener('submit', async event => {
   if (event.target.id === 'preauth-status-form') {
     event.preventDefault();
     const fd = new FormData(event.target);
-    savePreAuthStatus(state.modal.id, fd.get('status').toString(), fd.get('notes').toString().trim());
+    savePreAuthStatus(state.modal.id, fd.get('status').toString(), fd.get('notes').toString().trim(), fd.get('covered').toString(), fd.get('approvalCode').toString().trim());
   }
   if (event.target.id === 'audit-filter-form') {
     event.preventDefault();
